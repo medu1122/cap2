@@ -14,11 +14,11 @@ Brand Vault là "bộ nhớ dài hạn" của AI agents — nơi lưu toàn bộ
 
 | ID | Story | Acceptance Criteria | Points | Priority |
 |---|---|---|---|---|
-| US-09 | As an owner, I want to set up Brand Vault | Required fields validated, brand saved, AI có thể đọc | 5 | M |
-| US-10 | As an owner, I want to update Brand Vault | Update thành công, campaigns mới dùng data mới | 2 | M |
-| US-11 | As an owner, I want to define forbidden words | AI không dùng các từ trong list khi viết | 3 | M |
-| US-12 | As an owner, I want to upload my logo | logo_url lưu, hiển thị trên brand vault page | 2 | S |
-| US-13 | As an owner, I want warning if Brand Vault incomplete | Warning khi tạo campaign nếu thiếu required fields | 1 | S |
+| US-09 | As a user, I want to set up Brand Vault | Required fields validated, brand saved, AI có thể đọc | 5 | M |
+| US-10 | As a user, I want to update Brand Vault | Update thành công, campaigns mới dùng data mới | 2 | M |
+| US-11 | As a user, I want to define forbidden words | AI không dùng các từ trong list khi viết | 3 | M |
+| US-12 | As a user, I want to upload my logo | logo_url lưu, hiển thị trên brand vault page | 2 | S |
+| US-13 | As a user, I want warning if Brand Vault incomplete | Warning khi tạo campaign nếu thiếu required fields | 1 | S |
 
 ---
 

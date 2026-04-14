@@ -25,15 +25,15 @@
 | US-35 | Dashboard: 4 metric widgets | 5 | Dev | To Do |
 | US-36 | Dashboard: content by channel chart | 3 | Dev | To Do |
 | US-37 | Dashboard: AI weekly summary từ Qwen | 5 | Dev | To Do |
-| US-38 | Workflow: recurring schedule | 8 | Dev | To Do |
-| US-39 | Workflow: CSV upload → auto campaign | 8 | Dev | To Do |
-| US-40 | Workflow history list | 2 | Dev | To Do |
-| US-41 | Enable/disable workflow schedule | 3 | Dev | To Do |
+| US-38 | Workflow: recurring schedule | 8 | Dev | Done |
+| US-39 | Workflow: CSV upload → auto campaign | 8 | Dev | Done (MVP) |
+| US-40 | Workflow history list | 2 | Dev | Done |
+| US-41 | Enable/disable workflow schedule | 3 | Dev | Done |
 | US-42 | In-app notifications | 3 | Dev | To Do |
 | US-43 | Unread count badge | 2 | Dev | To Do |
 | US-44 | Mark as read | 1 | Dev | To Do |
-| US-46 | Customer lists view | 2 | Dev | To Do |
-| US-47 | Customers in list view | 1 | Dev | To Do |
+| US-46 | Customer lists view | 2 | Dev | Done (MVP) |
+| US-47 | Customers in list view | 1 | Dev | Done (MVP) |
 | **POLISH-01** | Seed demo data script hoàn chỉnh | 3 | Dev | To Do |
 | **POLISH-02** | Error handling + loading states toàn app | 3 | Dev | To Do |
 | **POLISH-03** | Responsive design check (tablet) | 2 | Dev | To Do |
@@ -90,7 +90,7 @@
 - [ ] `docker compose up` → `docker compose run api alembic upgrade head` → `python seed_demo.py` → app ready
 - [ ] Dashboard stats chính xác (verify bằng SQL query)
 - [ ] AI summary tạo được (không phải hardcoded)
-- [ ] Workflow tự động hoạt động (ít nhất với manual trigger)
+- [x] Workflow tự động hoạt động (manual + schedule trigger)
 - [ ] Notification bell có unread count sau khi campaign hoàn thành
 - [ ] Không có unhandled 500 errors trong happy path
 - [ ] README có hướng dẫn setup và demo steps

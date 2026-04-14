@@ -45,7 +45,7 @@
 
 | ID | User Story | Acceptance Criteria | Points | Priority |
 |---|---|---|---|---|
-| US-01 | As a **business owner**, I want to **register with email and password** so that **I can create my AIMAP account** | Given email chưa tồn tại, When submit form, Then tạo account + gửi verification email | 3 | M |
+| US-01 | As a **user**, I want to **register with email and password** so that **I can create my AIMAP account** | Given email chưa tồn tại, When submit form, Then tạo account + gửi verification email | 3 | M |
 | US-02 | As a **user**, I want to **verify my email address** so that **my account is activated** | Given có verification token hợp lệ, When click link, Then email_verified=TRUE | 2 | M |
 | US-03 | As a **user**, I want to **log in with email and password** so that **I can access the platform** | Given đúng credentials, When login, Then nhận JWT + refresh token, redirect dashboard | 3 | M |
 | US-04 | As a **user**, I want to **stay logged in** so that **I don't have to log in every 15 minutes** | Given access token hết hạn, When gọi API, Then auto-refresh qua refresh token | 5 | M |
@@ -62,11 +62,11 @@
 
 | ID | User Story | Acceptance Criteria | Points | Priority |
 |---|---|---|---|---|
-| US-09 | As a **business owner**, I want to **set up my Brand Vault** so that **AI always uses my brand voice** | Given chưa có brand, When điền form + submit, Then brand được tạo và AI có thể đọc | 5 | M |
-| US-10 | As a **business owner**, I want to **update my Brand Vault** so that **my brand information stays current** | Given brand đã có, When chỉnh sửa và lưu, Then brand được update và các campaign mới dùng data mới | 2 | M |
-| US-11 | As a **business owner**, I want to **define forbidden words** so that **AI never uses inappropriate language for my brand** | Given có forbidden_words list, When AI viết nội dung, Then không có từ nào trong list đó xuất hiện | 3 | M |
-| US-12 | As a **business owner**, I want to **upload my logo** so that **my brand identity is complete** | Given có file PNG/JPG < 5MB, When upload, Then logo_url được lưu và hiển thị | 2 | S |
-| US-13 | As a **business owner**, I want to **see a warning if Brand Vault is incomplete** so that **campaign quality is not compromised** | Given thiếu required fields, When tạo campaign, Then thấy warning "Brand Vault chưa đầy đủ" | 1 | S |
+| US-09 | As a **user**, I want to **set up my Brand Vault** so that **AI always uses my brand voice** | Given chưa có brand, When điền form + submit, Then brand được tạo và AI có thể đọc | 5 | M |
+| US-10 | As a **user**, I want to **update my Brand Vault** so that **my brand information stays current** | Given brand đã có, When chỉnh sửa và lưu, Then brand được update và các campaign mới dùng data mới | 2 | M |
+| US-11 | As a **user**, I want to **define forbidden words** so that **AI never uses inappropriate language for my brand** | Given có forbidden_words list, When AI viết nội dung, Then không có từ nào trong list đó xuất hiện | 3 | M |
+| US-12 | As a **user**, I want to **upload my logo** so that **my brand identity is complete** | Given có file PNG/JPG < 5MB, When upload, Then logo_url được lưu và hiển thị | 2 | S |
+| US-13 | As a **user**, I want to **see a warning if Brand Vault is incomplete** so that **campaign quality is not compromised** | Given thiếu required fields, When tạo campaign, Then thấy warning "Brand Vault chưa đầy đủ" | 1 | S |
 
 ---
 
@@ -159,6 +159,10 @@
 | US-40 | As a **business owner**, I want to **view my workflow history** so that **I can see what automation has done** | Given workflow_jobs, When xem /workflow, Then list jobs với trigger_type, status, campaign_name, timestamp | 2 | S |
 | US-41 | As a **business owner**, I want to **enable/disable a workflow schedule** so that **I can pause automation when needed** | Given schedule, When toggle is_active, Then cron không còn trigger khi is_active=false | 3 | S |
 
+**Reality update (2026-04-14):**
+- US-38, US-40, US-41 đã có triển khai runtime.
+- US-39 đã triển khai mức MVP (upload CSV, parse cơ bản, auto tạo campaign email).
+
 ---
 
 ## EPIC 10: Notifications & Customer Lists (F10)
@@ -173,6 +177,10 @@
 | US-45 | As a **business owner**, I want to **configure which notifications I receive** so that **I'm not overwhelmed** | Given notification_settings, When toggle types, Then chỉ nhận loại đã chọn | 2 | C |
 | US-46 | As a **business owner**, I want to **view my uploaded customer lists** so that **I can manage my contacts** | Given customer_lists, When vào /customer-lists, Then danh sách với name, count, status hiển thị | 2 | S |
 | US-47 | As a **business owner**, I want to **see customers in a list** so that **I can verify the import was correct** | Given customer_list, When click vào, Then bảng customers với email, name, phone hiển thị | 1 | S |
+
+**Reality update (2026-04-14):**
+- US-46, US-47 đã có giao diện và API mức MVP tại `/customer-lists`.
+- US-42..US-45 vẫn là backlog mở.
 
 ---
 
@@ -198,3 +206,14 @@
 - Sprint 3: 40 points (F08 + F09 + F10 + Polish ~5pts)
 
 > Lưu ý: Sprint 2 có velocity cao nhất vì đây là phase triển khai tính năng core nhất. Sprint 1 và 3 có buffer cho setup và polish.
+
+---
+
+## Bo sung backlog cho Admin
+
+| Feature | Sprint de xuat | Story points | Priority |
+|---|---|---:|---|
+| Admin Dashboard (health + usage) | Sprint 3 | 5 | Must |
+| User Management (lock/unlock) | Sprint 3 | 5 | Must |
+| Workflow Ops (view failed/retry) | Sprint 3 | 4 | Should |
+| Audit Logs cho thao tac admin | Sprint 3 | 3 | Should |

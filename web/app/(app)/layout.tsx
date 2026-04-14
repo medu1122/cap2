@@ -4,9 +4,9 @@ import AuthGuard from "@/components/layout/AuthGuard";
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthGuard>
-      <div className="flex min-h-screen">
+      <div className="min-h-screen bg-white">
         <Sidebar />
-        <main className="flex-1 overflow-auto">
+        <main className="ml-60 min-h-screen overflow-auto">
           {children}
         </main>
       </div>

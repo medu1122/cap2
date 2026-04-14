@@ -14,7 +14,7 @@ Hệ thống xác thực toàn diện bao gồm đăng ký, đăng nhập, quả
 
 | ID | Story | Acceptance Criteria | Points | Priority |
 |---|---|---|---|---|
-| US-01 | As an owner, I want to register with email + password | Email unique, password hashed, verification email sent | 3 | M |
+| US-01 | As a user, I want to register with email + password | Email unique, password hashed, verification email sent | 3 | M |
 | US-02 | As a user, I want to verify my email | Token valid 24h, sets email_verified=TRUE | 2 | M |
 | US-03 | As a user, I want to login | Returns access_token (15min) + refresh_token (30d) | 3 | M |
 | US-04 | As a user, I want to stay logged in | Auto-refresh token trước khi expire | 5 | M |
@@ -34,7 +34,7 @@ Hệ thống xác thực toàn diện bao gồm đăng ký, đăng nhập, quả
 id UUID PK | email VARCHAR UNIQUE | hashed_pw VARCHAR
 full_name VARCHAR | phone VARCHAR | avatar_url VARCHAR
 business_type VARCHAR | city VARCHAR | website VARCHAR
-role VARCHAR DEFAULT 'owner' | is_active BOOLEAN DEFAULT TRUE
+role VARCHAR DEFAULT 'user' | is_active BOOLEAN DEFAULT TRUE
 email_verified BOOLEAN DEFAULT FALSE
 created_at TIMESTAMPTZ | updated_at TIMESTAMPTZ
 ```

@@ -331,3 +331,18 @@ Every data-fetching view must handle:
 - **AI generation running**: show campaign row with a pulsing `Running...` status badge. Auto-refresh every 5 seconds until status changes.
 - **Approval action**: immediate UI update optimistically; revert on error.
 - **No modal overuse**: prefer in-page panels or new routes over stacked modals.
+
+---
+
+## 9. Admin UI Guidelines (bo sung)
+
+- Admin area dung route namespace rieng: `/admin/*`.
+- Sidebar admin toi thieu:
+  - Overview
+  - Users
+  - AI Usage
+  - Workflow Ops
+  - Audit Logs
+- Uu tien table-first layout, filter nhanh, bulk action ro rang.
+- Cac thao tac nguy hiem (khoa user, retry job) phai co confirm dialog.
+- Hien thi badge role ro rang trong user table (`admin`, `user`).

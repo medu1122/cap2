@@ -402,3 +402,14 @@ async def timed_agent_call(agent_name: str, channel: str | None, step_order: int
 | OpenAI API error (rate limit, 500) | Retry after 5s, max 2 retries; if still fails → mark campaign failed |
 | Brand vault missing | Validate before enqueuing job; return 400 from FastAPI |
 | Campaign already running | Return 409 from FastAPI; orchestrator checks status before starting |
+
+---
+
+## 11. Admin va Agent Operations
+
+Khi bo sung vai tro admin, he thong orchestration duoc van hanh theo huong:
+
+- Admin co dashboard de xem campaign failed va buoc nao fail.
+- Admin co the trigger retry workflow jobs sau khi da xu ly nguyen nhan.
+- Token usage duoc tong hop theo user/campaign/model de admin kiem soat chi phi.
+- Cac thao tac van hanh cua admin duoc ghi audit log rieng.

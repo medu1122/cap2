@@ -66,7 +66,7 @@ CREATE TABLE users (
     business_type   VARCHAR(100),           -- cafe, shop, dịch vụ, f&b...
     city            VARCHAR(100),           -- TP.HCM, Hà Nội, Đà Nẵng...
     website         VARCHAR(512),
-    role            VARCHAR(20) NOT NULL DEFAULT 'owner',   -- 'owner' | 'assistant'
+    role            VARCHAR(20) NOT NULL DEFAULT 'user',   -- 'admin' | 'user'
     is_active       BOOLEAN NOT NULL DEFAULT TRUE,
     email_verified  BOOLEAN NOT NULL DEFAULT FALSE,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -500,6 +500,7 @@ CREATE TABLE content_analytics (
 
 -- users
 CREATE UNIQUE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_role ON users(role);
 
 -- user_sessions
 CREATE INDEX idx_user_sessions_user_id ON user_sessions(user_id);
@@ -586,7 +587,7 @@ INSERT INTO users (
     '0901234567',
     'cafe',
     'TP.HCM',
-    'owner',
+    'user',
     TRUE,
     TRUE
 );
@@ -828,3 +829,28 @@ UNION ALL SELECT 'content_items', COUNT(*) FROM content_items
 UNION ALL SELECT 'agent_run_logs', COUNT(*) FROM agent_run_logs
 UNION ALL SELECT 'notifications', COUNT(*) FROM notifications
 UNION ALL SELECT 'ai_usage_stats', COUNT(*) FROM ai_usage_stats;
+
+-- =============================================================================
+-- 15. ADMIN GOVERNANCE TABLES (Bo sung)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS admin_action_logs (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    admin_user_id   UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    action_type     VARCHAR(100) NOT NULL,
+    target_type     VARCHAR(100),
+    target_id       UUID,
+    payload_json    JSONB,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_action_logs_admin_user_id ON admin_action_logs(admin_user_id);
+CREATE INDEX IF NOT EXISTS idx_admin_action_logs_action_type ON admin_action_logs(action_type);
+CREATE INDEX IF NOT EXISTS idx_admin_action_logs_created_at ON admin_action_logs(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS system_settings (
+    key             VARCHAR(100) PRIMARY KEY,
+    value_json      JSONB NOT NULL,
+    updated_by      UUID REFERENCES users(id) ON DELETE SET NULL,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

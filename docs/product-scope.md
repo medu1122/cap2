@@ -6,14 +6,14 @@
 
 ## 1. Problem Statement
 
-Small business owners in Vietnam (coffee shops, boutiques, food stalls, local services) typically run marketing activities alone or with a 1-2 person team. They:
+Small business users in Vietnam (coffee shops, boutiques, food stalls, local services) typically run marketing activities alone or with a small team. They:
 
 - Lack time and expertise to plan consistent marketing campaigns.
 - Cannot afford an agency or full-time marketing staff.
 - Struggle to maintain a consistent brand voice across channels.
 - Spend hours writing posts, emails, and promotional scripts manually.
 
-**AIMAP solves this** by acting as an always-on AI marketing team that can draft, review, and organize their marketing content — while keeping the owner in control via a simple approval flow.
+**AIMAP solves this** by acting as an always-on AI marketing team that can draft, review, and organize marketing content — while keeping the business user in control via a simple approval flow.
 
 ---
 
@@ -21,8 +21,8 @@ Small business owners in Vietnam (coffee shops, boutiques, food stalls, local se
 
 | User Type | Description |
 |---|---|
-| **Primary: Small Business Owner** | Runs a local shop, F&B, or service business. Wants to do marketing without becoming a marketer. Non-technical. |
-| **Secondary: Marketing Assistant** | A part-time employee or freelancer helping the owner. Slightly more tech-savvy. |
+| **Business User** | Runs a local shop, F&B, or service business. Wants to do marketing without becoming a marketer. Non-technical. |
+| **System Admin** | Operates the platform, manages users, monitors workflow/usage, and handles incidents. |
 
 ---
 
@@ -62,7 +62,7 @@ Core value delivered:
 - Auto-publishing to Facebook, Instagram, Email ESPs.
 - Real social analytics ingestion.
 - A/B content variants.
-- Multi-user teams with role-based access.
+- Fine-grained RBAC (module-level permissions).
 - Mobile application.
 - Multi-language campaign support.
 
@@ -72,8 +72,8 @@ Core value delivered:
 
 | Role | Permissions |
 |---|---|
-| `owner` | Full access: configure Brand Vault, create campaigns, approve content, view dashboard |
-| `assistant` | Create campaigns, view calendar; cannot touch Brand Vault settings |
+| `admin` | Platform operations: manage users, monitor workflow and AI usage, audit actions |
+| `user` | Product usage: Brand Vault, campaigns, approvals, calendar, dashboard |
 
 Authentication: email + password (JWT), no OAuth in MVP.
 
@@ -124,3 +124,19 @@ Approved items appear on Calendar as "Approved/Scheduled"
 | Agent logs visible to evaluator | Timeline panel shows each agent step with timestamp |
 | Calendar shows approved content | At least 5 content items plotted on calendar |
 | Dashboard shows real aggregated data | Stats reflect actual campaign/content records |
+
+---
+
+## Cap nhat product scope: Admin operations
+
+### In-scope (cap nhat)
+- Co vai tro admin de van hanh he thong.
+- Admin duoc phep:
+  - Quan tri user.
+  - Giam sat AI usage.
+  - Theo doi workflow jobs loi.
+  - Xem audit logs.
+
+### Out-of-scope (giu nguyen)
+- Khong lam RBAC phuc tap da cap.
+- Khong co phan quyen theo module/per-screen chi tiet.

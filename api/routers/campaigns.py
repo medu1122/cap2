@@ -1,8 +1,14 @@
 import uuid
-from datetime import date
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+import os
+import asyncio
+import json
+from datetime import date, datetime
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from pydantic import BaseModel
+from openai import AsyncOpenAI
+import httpx
 from core.database import get_db
 from core.deps import get_current_user
 from models.user import User
@@ -14,6 +20,82 @@ from schemas.campaign import CampaignCreate, CampaignListItem, CampaignDetail, C
 from services.agent_dispatcher import dispatch_campaign
 
 router = APIRouter()
+
+# Image storage paths — images saved locally and served via /static
+_STATIC_DIR = os.getenv("STATIC_DIR", os.path.join(os.path.dirname(__file__), "..", "static"))
+_UPLOAD_DIR = os.path.join(_STATIC_DIR, "uploads")
+_STATIC_BASE_URL = os.getenv("STATIC_BASE_URL", "http://localhost:8000/static/uploads")
+
+_qwen = AsyncOpenAI(
+    base_url=os.getenv("QWEN_BASE_URL", "http://171.238.156.10:11434/v1"),
+    api_key="ollama",
+)
+_openai = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
+QWEN_MODEL   = os.getenv("QWEN_MODEL", "qwen2.5:7b")
+QWEN_TIMEOUT = int(os.getenv("QWEN_TIMEOUT", "15"))
+
+
+class SuggestRequest(BaseModel):
+    campaign_name: str
+
+
+@router.post("/ai-suggest")
+async def ai_suggest_campaign(
+    payload: SuggestRequest,
+    current_user: User = Depends(get_current_user),
+):
+    if not payload.campaign_name.strip():
+        raise HTTPException(400, "Tên chiến dịch không được để trống")
+
+    prompt = f"""Bạn là chuyên gia marketing cho doanh nghiệp nhỏ Việt Nam.
+Dựa vào tên chiến dịch sau, hãy đề xuất thông tin chi tiết cho bản kế hoạch chiến dịch.
+
+Tên chiến dịch: "{payload.campaign_name.strip()}"
+
+Trả về JSON hợp lệ với đúng các trường sau (tiếng Việt):
+{{
+  "objective": "Mục tiêu chiến dịch, 1-2 câu ngắn gọn",
+  "product_or_service": "Sản phẩm hoặc dịch vụ chính của chiến dịch",
+  "target_audience": "Đối tượng khách hàng mục tiêu, mô tả cụ thể",
+  "offer_or_hook": "Ưu đãi hoặc điểm thu hút chính để kéo khách hàng",
+  "additional_notes": "Gợi ý thêm về góc độ truyền thông hoặc thông điệp nổi bật"
+}}
+
+Chỉ trả về JSON, không thêm bất kỳ nội dung nào khác."""
+
+    messages = [{"role": "user", "content": prompt}]
+
+    async def _call_qwen() -> dict:
+        resp = await asyncio.wait_for(
+            _qwen.chat.completions.create(
+                model=QWEN_MODEL,
+                messages=messages,
+                temperature=0.7,
+            ),
+            timeout=QWEN_TIMEOUT,
+        )
+        raw = resp.choices[0].message.content.strip()
+        raw = raw.replace("```json", "").replace("```", "").strip()
+        return json.loads(raw)
+
+    async def _call_openai() -> dict:
+        resp = await _openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            temperature=0.7,
+            response_format={"type": "json_object"},
+        )
+        return json.loads(resp.choices[0].message.content)
+
+    try:
+        data = await _call_qwen()
+    except Exception:
+        try:
+            data = await _call_openai()
+        except Exception:
+            raise HTTPException(503, "Không thể kết nối AI. Vui lòng thử lại.")
+
+    return data
 
 
 @router.get("", response_model=list[CampaignListItem])
@@ -83,9 +165,26 @@ async def get_campaign(
         select(AgentRunLog).where(AgentRunLog.campaign_id == campaign_id).order_by(AgentRunLog.step_order)
     )
 
-    detail = CampaignDetail.model_validate(campaign)
-    detail.content_items = [ContentItemOut.model_validate(ci) for ci in content_result.scalars().all()]
-    detail.agent_logs = [AgentLogOut.model_validate(log) for log in log_result.scalars().all()]
+    content_items = [ContentItemOut.model_validate(ci) for ci in content_result.scalars().all()]
+    agent_logs = [AgentLogOut.model_validate(log) for log in log_result.scalars().all()]
+
+    detail = CampaignDetail.model_validate({
+        "id": campaign.id,
+        "campaign_name": campaign.campaign_name,
+        "objective": campaign.objective,
+        "product_or_service": campaign.product_or_service,
+        "target_audience": campaign.target_audience,
+        "offer_or_hook": campaign.offer_or_hook,
+        "deadline": campaign.deadline,
+        "channels": campaign.channels,
+        "additional_notes": campaign.additional_notes,
+        "status": campaign.status,
+        "error_message": campaign.error_message,
+        "campaign_plan_json": campaign.campaign_plan_json,
+        "created_at": campaign.created_at,
+        "content_items": content_items,
+        "agent_logs": agent_logs,
+    })
     return detail
 
 
@@ -103,7 +202,12 @@ async def run_campaign(
     if campaign.status == "running":
         raise HTTPException(status_code=409, detail="Campaign is already running")
 
-    brand_result = await db.execute(select(Brand).where(Brand.user_id == current_user.id))
+    brand_result = await db.execute(
+        select(Brand)
+        .where(Brand.user_id == current_user.id)
+        .order_by(Brand.updated_at.desc())
+        .limit(1)
+    )
     brand = brand_result.scalar_one_or_none()
     if not brand:
         raise HTTPException(status_code=400, detail="Brand Vault not configured. Please set up your brand first.")
@@ -127,3 +231,111 @@ async def delete_campaign(
         raise HTTPException(status_code=404, detail="Campaign not found")
     await db.delete(campaign)
     await db.commit()
+
+
+# ── Image helpers ──────────────────────────────────────────────────────────────
+
+async def _save_campaign_image_url(campaign: Campaign, url: str, db: AsyncSession) -> None:
+    """Persist image_url into campaign_plan_json without losing existing keys."""
+    current = dict(campaign.campaign_plan_json or {})
+    current["image_url"] = url
+    campaign.campaign_plan_json = current
+    await db.commit()
+
+
+class GenerateImagePayload(BaseModel):
+    prompt: str | None = None
+
+
+@router.post("/{campaign_id}/image/generate")
+async def generate_campaign_image(
+    campaign_id: uuid.UUID,
+    payload: GenerateImagePayload,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a campaign image with DALL-E 3 and save it locally."""
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.user_id == current_user.id)
+    )
+    campaign = result.scalar_one_or_none()
+    if not campaign:
+        raise HTTPException(404, "Không tìm thấy chiến dịch")
+
+    plan = campaign.campaign_plan_json or {}
+    prompt = (
+        payload.prompt
+        or plan.get("image_prompt_final")
+        or plan.get("image_prompt_qwen")
+        or (
+            f"Professional marketing image for a Vietnamese small business. "
+            f"Campaign: {campaign.campaign_name}. "
+            f"Product: {campaign.product_or_service}. "
+            f"Clean, modern, vibrant style."
+        )
+    )
+
+    try:
+        response = await _openai.images.generate(
+            model="dall-e-3",
+            prompt=prompt,
+            size="1024x1024",
+            quality="standard",
+            n=1,
+        )
+        temp_url: str = response.data[0].url  # type: ignore
+    except Exception as exc:
+        raise HTTPException(503, f"Không thể tạo ảnh: {exc}")
+
+    # Download DALL-E image (URL expires in ~1h) and persist locally
+    os.makedirs(_UPLOAD_DIR, exist_ok=True)
+    filename = f"{campaign_id}_{int(datetime.now().timestamp())}.png"
+    filepath = os.path.join(_UPLOAD_DIR, filename)
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        img_resp = await client.get(temp_url)
+        with open(filepath, "wb") as f:
+            f.write(img_resp.content)
+
+    local_url = f"{_STATIC_BASE_URL}/{filename}"
+    await _save_campaign_image_url(campaign, local_url, db)
+
+    return {"image_url": local_url, "prompt_used": prompt}
+
+
+@router.post("/{campaign_id}/image/upload")
+async def upload_campaign_image(
+    campaign_id: uuid.UUID,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload an image from the user's device and attach it to the campaign."""
+    if not (file.content_type or "").startswith("image/"):
+        raise HTTPException(400, "Chỉ chấp nhận file ảnh (jpg, png, webp...)")
+
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.user_id == current_user.id)
+    )
+    campaign = result.scalar_one_or_none()
+    if not campaign:
+        raise HTTPException(404, "Không tìm thấy chiến dịch")
+
+    raw_name = file.filename or "upload"
+    ext = raw_name.rsplit(".", 1)[-1].lower() if "." in raw_name else "jpg"
+    allowed = {"jpg", "jpeg", "png", "webp", "gif"}
+    if ext not in allowed:
+        raise HTTPException(400, f"Định dạng không hỗ trợ: .{ext}")
+
+    os.makedirs(_UPLOAD_DIR, exist_ok=True)
+    filename = f"{campaign_id}_{int(datetime.now().timestamp())}.{ext}"
+    filepath = os.path.join(_UPLOAD_DIR, filename)
+
+    content = await file.read()
+    with open(filepath, "wb") as f:
+        f.write(content)
+
+    local_url = f"{_STATIC_BASE_URL}/{filename}"
+    await _save_campaign_image_url(campaign, local_url, db)
+
+    return {"image_url": local_url}

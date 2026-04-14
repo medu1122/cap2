@@ -76,23 +76,16 @@
 |---|---|---|
 | Nhận và lưu thông tin chiến dịch | `api/routers/campaigns.py` | ✅ Hoạt động |
 | Form nhập liệu trên giao diện | `web/app/(app)/campaigns/new/page.tsx` | ✅ Đủ các trường |
-| Kiểm tra deadline không được trong quá khứ | `api/routers/campaigns.py` | ❌ Chưa có |
-| Kiểm tra kênh nội dung hợp lệ | `api/schemas/campaign.py` | ❌ Chưa kiểm tra nghiêm |
+| Kiểm tra deadline không được trong quá khứ | `api/routers/campaigns.py` | ✅ Đã có |
+| Kiểm tra kênh nội dung hợp lệ | `api/routers/campaigns.py` | ✅ Đã có |
 | Cảnh báo nếu chưa thiết lập hồ sơ thương hiệu | Giao diện | ❌ Chưa có |
 
 **Rủi ro khi demo:**
-Người dùng có thể nhập deadline là ngày trong quá khứ hoặc kênh không hợp lệ mà không nhận được thông báo lỗi rõ ràng.
+Phần kiểm tra đầu vào chính đã có. Rủi ro còn lại là thông báo hướng dẫn trên giao diện chưa thật rõ khi lỗi xảy ra.
 
 **Cần thêm vào để hoàn thiện:**
-```python
-# api/routers/campaigns.py — thêm kiểm tra đầu vào
-from datetime import date
-if body.deadline < date.today():
-    raise HTTPException(400, "Ngày kết thúc không được là ngày trong quá khứ")
-cac_kenh_sai = [k for k in body.channels if k not in VALID_CHANNELS]
-if cac_kenh_sai:
-    raise HTTPException(400, f"Kênh không hợp lệ: {cac_kenh_sai}")
-```
+- Bổ sung validation song song ở `api/schemas/campaign.py` để thống nhất tầng kiểm tra.
+- Cải thiện thông điệp lỗi và hiển thị lỗi ngay tại form tạo đợt quảng bá.
 
 ---
 
@@ -108,12 +101,12 @@ if cac_kenh_sai:
 | AI Kiểm duyệt (Critic) | `agent/agents/critic.py` | ✅ Hoạt động |
 | Định tuyến mô hình thông minh | `agent/llm/router.py` | ✅ Qwen cho Writer, OpenAI cho Chiến lược/Kiểm duyệt |
 | Dự phòng Qwen → OpenAI khi timeout | `agent/llm/qwen_client.py` | ✅ Timeout 15 giây |
-| Thử lại khi AI trả kết quả sai định dạng | — | ❌ Chưa có — lỗi một lần là dừng ngay |
+| Thử lại khi AI trả kết quả sai định dạng | `agent/agents/strategist.py`, `agent/agents/writer.py`, `agent/agents/critic.py` | ✅ Đã có retry parse cơ bản |
 | Ghi lại số token đã dùng | `agent/agents/base.py` | ❌ Chưa ghi được trường `input_tokens`, `output_tokens` |
 | Liên kết nội dung với bước AI đã tạo | `agent/orchestrator.py` | ❌ Không truyền mã bước khi lưu nội dung |
 
 **Rủi ro khi demo:**
-Nếu AI trả về kết quả không đúng định dạng một lần → toàn bộ chiến dịch bị đánh dấu thất bại ngay lập tức. Không có cơ chế thử lại.
+Đã có retry parse cơ bản trong từng agent. Rủi ro còn lại là lỗi mạng/model ở mức request vẫn có thể làm chiến dịch thất bại.
 
 **Cần thêm vào để hoàn thiện:**
 ```python
@@ -218,38 +211,38 @@ if so_cho_duyet.scalar() == 0:
 | Truy vấn nội dung theo tháng | `api/routers/calendar.py` | ✅ Lọc đúng theo tháng/năm |
 | Giao diện xem theo tháng | `web/app/(app)/calendar/page.tsx` | ✅ Hiển thị theo ngày |
 | Đổi ngày đăng bài | `api/routers/calendar.py` | ✅ |
-| Xem theo tuần | Giao diện | ❌ Chỉ có chế độ xem tháng |
-| Lọc theo kênh hoặc trạng thái | Giao diện | ❌ Chưa có bộ lọc |
+| Xem theo tuần | Giao diện | ✅ Đã có toggle tháng/tuần |
+| Lọc theo kênh hoặc trạng thái | Giao diện | ✅ Đã có bộ lọc |
 | Click vào ngày mở panel chi tiết | Giao diện | ⚠️ Cần kiểm tra thêm — có thể chỉ chuyển sang trang chiến dịch |
 
 ---
 
 ### ⚠️ Tính năng 10 — Lịch tự động hoá công việc (Workflow)
 
-**Kết luận: Làm một phần — Máy chủ có đủ, giao diện không tồn tại**
+**Kết luận: Đã triển khai phần lớn — Có trigger thủ công và lịch chạy định kỳ**
 
 | Bộ phận | Vị trí trong mã nguồn | Tình trạng |
 |---|---|---|
-| Các endpoint quản lý lịch | `api/routers/workflow.py` | ✅ Tạo lịch, xem lịch, xem lịch sử chạy |
-| Cấu trúc dữ liệu | `api/models/workflow_job.py` | ✅ |
-| Trang giao diện Workflow | `web/app/(app)/workflow/` | ❌ **Không tồn tại** |
-| Đường dẫn trong thanh điều hướng | Thanh bên trái | ❌ Không có |
+| Các endpoint quản lý lịch | `api/routers/workflow.py` | ✅ Tạo/sửa/xóa/toggle schedule, xem lịch sử chạy |
+| Cấu trúc dữ liệu | `api/models/workflow_job.py`, `api/models/workflow_schedule.py` | ✅ |
+| Trang giao diện Workflow | `web/app/(app)/workflow/page.tsx` | ✅ Đã có |
+| Đường dẫn trong thanh điều hướng | `web/components/layout/Sidebar.tsx` | ✅ Đã có |
 
-**Rủi ro khi demo:** Toàn bộ tính năng Workflow không nhìn thấy được từ giao diện dù máy chủ đã sẵn sàng. Cần tạo trang `/workflow` tối thiểu để demo được.
+**Rủi ro khi demo:** Luồng cron đã có, nhưng cần thêm logging/monitoring để theo dõi khi chạy tải cao.
 
 ---
 
-### ❌ Tính năng 11 — Kích hoạt tự động theo lịch (Cron)
+### ⚠️ Tính năng 11 — Kích hoạt tự động theo lịch (Cron)
 
-**Kết luận: Chưa có — chỉ tồn tại trong tài liệu kế hoạch**
+**Kết luận: Làm một phần — Đã có worker định kỳ, cần hardening**
 
 | Bộ phận | Vị trí trong mã nguồn | Tình trạng |
 |---|---|---|
-| Dịch vụ chạy lịch định kỳ | — | ❌ Không tồn tại |
-| Tự động tạo chiến dịch theo lịch | — | ❌ Không có |
-| Tính toán lần chạy tiếp theo | `api/routers/workflow.py` | ⚠️ Trường `next_run_at` tồn tại nhưng không có tiến trình nào đọc và thực thi |
+| Dịch vụ chạy lịch định kỳ | `api/services/workflow_scheduler_service.py` | ✅ Có |
+| Tự động tạo chiến dịch theo lịch | `api/services/workflow_scheduler_service.py` | ✅ Có |
+| Tính toán lần chạy tiếp theo | `api/routers/workflow.py` + `api/services/workflow_scheduler_service.py` | ✅ Có |
 
-**Thực tế:** Người dùng có thể lưu cài đặt lịch, nhưng hệ thống không tự động kích hoạt gì cả. Cần tích hợp thêm thư viện lên lịch (APScheduler) vào dịch vụ máy chủ.
+**Thực tế:** Hệ thống đã tự quét `next_run_at` bằng APScheduler và tạo campaign tự động theo preset.
 
 **Cần làm tối thiểu để tính năng này hoạt động:**
 ```python
@@ -266,19 +259,19 @@ async def kiem_tra_va_chay_workflow():
 
 ---
 
-### ❌ Tính năng 12 — Upload danh sách khách hàng → Tự động tạo chiến dịch
+### ⚠️ Tính năng 12 — Upload danh sách khách hàng → Tự động tạo chiến dịch
 
-**Kết luận: Chưa có — chỉ tồn tại trong tài liệu kế hoạch**
+**Kết luận: Làm một phần (MVP) — Đã có upload/parse/tạo campaign, chưa có validation nâng cao**
 
 | Bộ phận | Vị trí trong mã nguồn | Tình trạng |
 |---|---|---|
-| Nhận và xử lý file CSV | — | ❌ Không tồn tại |
-| Cấu trúc dữ liệu danh sách khách hàng | — | ❌ Không có trong mã nguồn |
-| Lưu trữ file | — | ❌ Không có |
-| Tự động tạo chiến dịch sau khi upload | — | ❌ Không có |
-| Giao diện upload | — | ❌ Không tồn tại |
+| Nhận và xử lý file CSV | `api/routers/workflow.py` | ✅ Có |
+| Cấu trúc dữ liệu danh sách khách hàng | `api/models/customer_list.py`, `api/models/customer.py`, `api/models/file_upload.py` | ✅ Có |
+| Lưu trữ file | `api/routers/workflow.py` | ✅ Có |
+| Tự động tạo chiến dịch sau khi upload | `api/routers/workflow.py` | ✅ Có |
+| Giao diện upload | `web/app/(app)/customer-lists/page.tsx` | ✅ Có |
 
-**Thực tế:** Tính năng này hoàn toàn chưa được viết. Không có một dòng mã nguồn nào liên quan.
+**Thực tế:** Đã có luồng MVP phục vụ demo. Cần bổ sung validate định dạng CSV và báo cáo lỗi từng dòng.
 
 ---
 
@@ -288,11 +281,11 @@ async def kiem_tra_va_chay_workflow():
 |---|---|---|
 | Thử lại khi AI trả kết quả lỗi (T5) | Chiến dịch bị thất bại ngay khi AI trả định dạng sai một lần | 🔴 Phải sửa |
 | Tự động cập nhật chiến dịch khi tất cả đã duyệt (T8) | Chiến dịch mãi ở trạng thái "Chờ duyệt" dù đã duyệt hết | 🔴 Phải sửa |
-| Trang giao diện Workflow (T10) | Tính năng tự động hoá hoàn toàn vô hình với người xem | 🟡 Nên sửa |
-| Kiểm tra ngày kết thúc (T4) | Dữ liệu không hợp lệ có thể lọt vào | 🟡 Nên sửa |
+| Workflow chạy định kỳ tự động (T10/T11) | Người dùng vẫn cần bấm chạy thủ công, chưa có cron workflow thực thụ | 🟡 Nên sửa |
+| Kiểm tra ngày kết thúc (T4) | Đã có ở router; cần đồng bộ thêm ở schema/UI để chặt hơn | 🟢 Thấp |
 | Ghi số token AI đã dùng (T6) | Thiếu số liệu khi thuyết trình với hội đồng | 🟡 Nên sửa |
-| Kích hoạt theo lịch định kỳ (T11) | Tính năng "nên có" không chạy được | 🟠 Làm sau |
-| Upload danh sách khách hàng (T12) | Tính năng "nên có" chưa tồn tại | 🟠 Làm sau |
+| Kích hoạt theo lịch định kỳ (T11) | Đã có worker; rủi ro chính là monitoring và hardening khi tải cao | 🟡 Nên sửa |
+| Upload danh sách khách hàng (T12) | Đã có MVP; rủi ro chính là validation nâng cao và báo lỗi theo từng dòng | 🟡 Nên sửa |
 | Gửi email xác minh thật | Thông báo không đến tay người dùng | 🟢 Thấp — log ra terminal là đủ cho demo |
 
 ---
@@ -301,7 +294,7 @@ async def kiem_tra_va_chay_workflow():
 
 ### Ưu tiên 1 — Sửa ngay (ảnh hưởng đến chất lượng demo)
 
-1. Thêm logic thử lại khi AI trả kết quả sai định dạng trong cả 3 AI agents — khoảng 30 phút
+1. Thêm retry ở mức request model (không chỉ parse JSON) cho các lỗi tạm thời — khoảng 45 phút
 2. Tự động cập nhật trạng thái chiến dịch khi tất cả nội dung đã được duyệt — khoảng 20 phút
 3. Kiểm tra ngày kết thúc và kênh nội dung hợp lệ khi tạo chiến dịch — khoảng 15 phút
 
@@ -323,6 +316,31 @@ async def kiem_tra_va_chay_workflow():
 
 AIMAP hiện tại **đã đủ để demo được khoảng 80% tính năng cốt lõi**. Các tính năng "bắt buộc phải có" theo thiết kế ban đầu đều có mã nguồn và chạy được — nhưng một số có lỗ hổng nhỏ cần vá trước khi trình bày với hội đồng.
 
-Hai tính năng "nên có" là kích hoạt tự động theo lịch và upload danh sách khách hàng **hoàn toàn chưa được viết code**. Cần nêu rõ điều này trong báo cáo và xếp vào phần "định hướng phát triển tiếp theo".
+Hai tính năng "nên có" là kích hoạt tự động theo lịch và upload danh sách khách hàng **đã có code ở mức chạy được (MVP)**. Giai đoạn tiếp theo tập trung vào hardening, monitoring, và validation nâng cao.
 
 Chỉ cần hoàn thành các việc trong Ưu tiên 1 và Ưu tiên 2 (ước tính 5-6 giờ), dự án sẽ đạt mức trình bày hội đồng một cách tự tin.
+
+---
+
+## Cập nhật tài liệu mở rộng AI (2026-04-14)
+
+Da bo sung cum tai lieu cho huong phat trien "Insight Copilot" trong `docs/final/06-update/`:
+- `insight-copilot-readme.md`
+- `insight-copilot-plan.md`
+- `insight-copilot-ai-quality.md`
+
+Luu y: Day la tai lieu thiet ke va quality framework de mo rong he thong, khong phai khang dinh da co day du code production cho module moi.
+
+## Cập nhật coding Insight Copilot (2026-04-14, MVP)
+
+Da bo sung khung code ban dau cho Insight Copilot:
+- Backend:
+  - Models: `insight_data_sources`, `insight_raw_snapshots`, `insight_metrics_daily`, `insight_cards`, `insight_actions`, `insight_feedback`
+  - Migration: `api/alembic/versions/0005_insight_copilot_tables.py`
+  - API: `api/routers/insights.py` voi cac endpoint ingest/recompute/cards/actions/feedback
+- Frontend:
+  - `web/app/(app)/insights/page.tsx`
+  - `web/app/(app)/insights/actions/page.tsx`
+  - Sidebar da them menu `Insight Copilot`
+
+Trang thai hien tai: **MVP khung ky thuat da co**, can tiep tuc hardening (rule engine nang cao, Qwen reasoning layer day du, evaluation pipeline).

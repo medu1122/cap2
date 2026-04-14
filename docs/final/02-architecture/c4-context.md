@@ -10,8 +10,8 @@
 C4Context
     title System Context — AIMAP Platform
 
-    Person(owner, "Owner", "Chủ doanh nghiệp nhỏ. Toàn quyền hệ thống. Role: owner")
-    Person(user, "User", "Người dùng thứ cấp. Quyền hạn chế. Role: assistant")
+    Person(user, "User", "Người dùng doanh nghiệp. Role: user")
+    Person(admin, "Admin", "Quản trị hệ thống AIMAP. Role: admin")
     System(cron, "Cron Scheduler", "Tiến trình tự động chạy ngầm trong hệ thống")
 
     System(aimap, "AIMAP Platform", "Nền tảng AI tự động hóa marketing cho SMB — Web App, Backend API, Agent Service, PostgreSQL")
@@ -20,38 +20,28 @@ C4Context
     System_Ext(qwen, "Qwen VPS", "Qwen 2.5 7B self-hosted — Text Generation")
     System_Ext(smtp, "Email SMTP", "Dịch vụ gửi email giao dịch")
 
-    %% ── Owner → AIMAP ───────────────────────────────────────────────
-    Rel(owner, aimap, "Đăng ký tài khoản mới")
-    Rel(owner, aimap, "Đăng nhập / đổi mật khẩu / cập nhật hồ sơ")
-    Rel(owner, aimap, "Thiết lập & cập nhật Brand Vault")
-    Rel(owner, aimap, "Tạo Campaign Brief (tên, mục tiêu, kênh, deadline)")
-    Rel(owner, aimap, "Kích hoạt AI chạy lại nếu campaign bị lỗi")
-    Rel(owner, aimap, "Duyệt nội dung AI (Approve)")
-    Rel(owner, aimap, "Từ chối nội dung + ghi lý do (Reject)")
-    Rel(owner, aimap, "Chỉnh sửa trực tiếp nội dung (Edit → tạo phiên bản mới)")
-    Rel(owner, aimap, "Đổi ngày đăng bài trên Calendar")
-    Rel(owner, aimap, "Xem Dashboard & yêu cầu AI tóm tắt tuần")
-    Rel(owner, aimap, "Cài lịch Workflow tự động (cron schedule)")
-    Rel(owner, aimap, "Upload danh sách khách hàng CSV")
-
-    %% ── AIMAP → Owner ───────────────────────────────────────────────
-    Rel_Back(owner, aimap, "Trả về nội dung AI đã tạo xong (3 kênh)")
-    Rel_Back(owner, aimap, "Thông báo campaign hoàn thành, sẵn sàng duyệt")
-    Rel_Back(owner, aimap, "Stats dashboard: tổng campaign, nội dung, token dùng")
-    Rel_Back(owner, aimap, "AI Summary text: nhận xét hoạt động tuần")
-    Rel_Back(owner, aimap, "Nhật ký AI: từng bước agent, model, thời gian, token")
-    Rel_Back(owner, aimap, "Email xác minh tài khoản (qua SMTP)")
-    Rel_Back(owner, aimap, "Email đặt lại mật khẩu (qua SMTP)")
-
     %% ── User → AIMAP ─────────────────────────────────────────────────
+    Rel(user, aimap, "Đăng ký tài khoản mới")
     Rel(user, aimap, "Đăng nhập tài khoản")
+    Rel(user, aimap, "Cập nhật hồ sơ / Brand Vault")
     Rel(user, aimap, "Tạo Campaign Brief")
+    Rel(user, aimap, "Duyệt / từ chối / chỉnh sửa nội dung")
+    Rel(user, aimap, "Xem Dashboard và Calendar")
+    Rel(user, aimap, "Cài workflow và upload CSV")
     Rel(user, aimap, "Xem Lịch Marketing (chỉ xem, không chỉnh)")
     Rel(user, aimap, "Xem Nhật ký AI (theo dõi tiến trình)")
 
     %% ── AIMAP → User ─────────────────────────────────────────────────
     Rel_Back(user, aimap, "Danh sách campaign & nội dung")
     Rel_Back(user, aimap, "Lịch Marketing theo tháng")
+    Rel_Back(user, aimap, "Email xác minh tài khoản và đặt lại mật khẩu")
+    Rel_Back(user, aimap, "Nội dung AI và log xử lý")
+
+    %% ── Admin ↔ AIMAP ────────────────────────────────────────────────
+    Rel(admin, aimap, "Quản trị user (khóa/mở)")
+    Rel(admin, aimap, "Giám sát workflow jobs")
+    Rel(admin, aimap, "Theo dõi AI usage và audit logs")
+    Rel_Back(admin, aimap, "Báo cáo vận hành toàn hệ thống")
 
     %% ── Cron → AIMAP ─────────────────────────────────────────────────
     Rel(cron, aimap, "Kích hoạt workflow schedule (VD: Thứ Hai 8am)")
@@ -86,11 +76,11 @@ C4Context
 
 | Actor trong diagram | Role trong DB | Mô tả |
 |---|---|---|
-| **Owner** | `owner` | Chủ doanh nghiệp — tạo tài khoản đầu tiên, toàn quyền |
-| **User** | `assistant` | Người được Owner cho phép sử dụng, quyền hạn chế |
+| **User** | `user` | Người dùng doanh nghiệp — sử dụng toàn bộ luồng marketing |
+| **Admin** | `admin` | Quản trị hệ thống AIMAP: user ops, workflow ops, audit |
 | **Cron Scheduler** | *(system)* | Tiến trình tự động, không phải người dùng |
 
-> Không có role `admin` trong hệ thống. Owner là người dùng cao nhất. Không có tính năng quản trị hệ thống (user management, system config) trong MVP.
+> Cap nhat: he thong da bo sung role `admin` de van hanh o muc system-level.
 
 ## Fallback Logic (Qwen ↔ OpenAI)
 

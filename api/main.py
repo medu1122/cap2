@@ -1,8 +1,48 @@
+import os
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import auth, brands, campaigns, content, calendar, dashboard, workflow, internal
+from fastapi.staticfiles import StaticFiles
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+from routers import auth, brands, campaigns, content, calendar, dashboard, workflow, internal, insights
+from core.config import settings
+from services.calendar_reminder_service import send_today_calendar_reminders
+from services.workflow_scheduler_service import run_due_workflow_schedules
 
-app = FastAPI(title="AIMAP API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    scheduler = AsyncIOScheduler(timezone="Asia/Ho_Chi_Minh")
+    scheduler.add_job(
+        send_today_calendar_reminders,
+        CronTrigger(hour=settings.CALENDAR_REMINDER_HOUR, minute=0),
+        id="calendar-daily-reminder",
+        replace_existing=True,
+    )
+    if settings.WORKFLOW_SCHEDULER_ENABLED:
+        scheduler.add_job(
+            run_due_workflow_schedules,
+            "interval",
+            minutes=max(settings.WORKFLOW_SCHEDULER_INTERVAL_MINUTES, 1),
+            id="workflow-scheduler-runner",
+            replace_existing=True,
+        )
+    scheduler.start()
+    try:
+        yield
+    finally:
+        scheduler.shutdown(wait=False)
+
+
+app = FastAPI(title="AIMAP API", version="0.1.0", lifespan=lifespan)
+
+# Static file serving for uploaded/generated campaign images
+_DEFAULT_STATIC = os.path.join(os.path.dirname(__file__), "static")
+_STATIC_DIR = os.getenv("STATIC_DIR", _DEFAULT_STATIC)
+_UPLOAD_DIR = os.path.join(_STATIC_DIR, "uploads")
+os.makedirs(_UPLOAD_DIR, exist_ok=True)
+app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
 app.add_middleware(
     CORSMiddleware,
@@ -19,6 +59,7 @@ app.include_router(content.router, prefix="/content", tags=["content"])
 app.include_router(calendar.router, prefix="/calendar", tags=["calendar"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 app.include_router(workflow.router, prefix="/workflow", tags=["workflow"])
+app.include_router(insights.router, prefix="/insights", tags=["insights"])
 app.include_router(internal.router, prefix="/internal", tags=["internal"])
 
 

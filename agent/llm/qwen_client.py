@@ -13,13 +13,22 @@ client = AsyncOpenAI(
 
 
 async def complete(
-    system_prompt: str, user_prompt: str, temperature: float = 0.7
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float = 0.7,
+    json_mode: bool = True,
 ) -> tuple[str, str, int | None, int | None]:
+    final_system_prompt = system_prompt
+    if json_mode:
+        final_system_prompt = (
+            system_prompt + "\n\nYou MUST respond with valid JSON only. No explanation before or after."
+        )
+
     response = await asyncio.wait_for(
         client.chat.completions.create(
             model=QWEN_MODEL,
             messages=[
-                {"role": "system", "content": system_prompt + "\n\nYou MUST respond with valid JSON only. No explanation before or after."},
+                {"role": "system", "content": final_system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=temperature,

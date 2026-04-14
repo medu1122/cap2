@@ -1,10 +1,11 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Check, Loader2, Clock, AlertCircle } from "lucide-react";
+import { ChevronLeft, Check, Loader2, Clock, AlertCircle, ImagePlus, Upload, Wand2 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { STATUS_LABELS, STATUS_COLORS, CHANNEL_LABELS, formatDate, cn } from "@/lib/utils";
+import HelpDialogButton from "@/components/common/HelpDialogButton";
 
 interface AgentLog {
   id: string;
@@ -212,9 +213,12 @@ function AIPipelineProgress({ campaign }: { campaign: Campaign }) {
                 {step.label}
               </p>
               {step.status === "done" && (step.model || step.durationMs) && (
-                <div className="flex items-center gap-2 mt-0.5">
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                   {step.model && step.model !== "pending" && (
-                    <span className="text-xs text-gray-400">{step.model}</span>
+                    <span className={cn(
+                      "text-xs",
+                      step.model.includes("qwen") ? "text-emerald-600" : "text-gray-400"
+                    )}>{step.model}</span>
                   )}
                   {step.durationMs && (
                     <span className="text-xs text-gray-300 flex items-center gap-0.5">
@@ -316,7 +320,9 @@ function ContentCard({ item, onAction }: { item: ContentItem; onAction: () => vo
               <p className="text-sm text-gray-700 whitespace-pre-line">{c[k] as string}</p>
             </div>
           ))}
-          {c.duration_estimate && <p className="text-xs text-gray-400">Thời lượng ước tính: {c.duration_estimate as string}</p>}
+          {typeof c.duration_estimate === "string" && (
+            <p className="text-xs text-gray-400">Thời lượng ước tính: {c.duration_estimate}</p>
+          )}
         </div>
       )}
 
@@ -358,11 +364,24 @@ function AgentLogTimeline({ logs }: { logs: AgentLog[] }) {
           </div>
           <div className="flex-1 pb-3">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-sm font-medium capitalize text-gray-800">{log.agent_name}</span>
                 {log.channel && <span className="badge bg-gray-100 text-gray-500 text-xs">{CHANNEL_LABELS[log.channel] || log.channel}</span>}
                 {log.model_used && log.model_used !== "pending" && (
-                  <span className="badge bg-blue-50 text-blue-600 text-xs">{log.model_used}</span>
+                  <span className={cn(
+                    "badge text-xs",
+                    log.model_provider === "qwen" ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-600"
+                  )}>
+                    {log.model_used}
+                  </span>
+                )}
+                {log.model_provider === "qwen→gpt" && (
+                  <span className="badge bg-amber-50 text-amber-700 text-xs" title="Qwen không phản hồi, đã chuyển sang GPT">
+                    Qwen → GPT dự phòng
+                  </span>
+                )}
+                {log.model_provider === "qwen" && (
+                  <span className="badge bg-emerald-50 text-emerald-700 text-xs">Qwen</span>
                 )}
               </div>
               <div className="flex items-center gap-2 text-xs text-gray-400">
@@ -396,6 +415,495 @@ function AgentLogTimeline({ logs }: { logs: AgentLog[] }) {
         </div>
       ))}
     </div>
+  );
+}
+
+// ── PipelineOverlay (floating modal while AI runs) ────────────────────────────
+
+const PHASE_CONFIG = [
+  {
+    key: "strategist",
+    label: "Strategist",
+    sublabel: "Phân tích brief",
+    emoji: "🧠",
+    activeClasses: "bg-indigo-50 border-indigo-400 shadow-indigo-100",
+    textClass: "text-indigo-700",
+    shadowClass: "shadow-lg shadow-indigo-100",
+  },
+  {
+    key: "writer",
+    label: "Writer",
+    sublabel: "Soạn nội dung",
+    emoji: "✍️",
+    activeClasses: "bg-emerald-50 border-emerald-400 shadow-emerald-100",
+    textClass: "text-emerald-700",
+    shadowClass: "shadow-lg shadow-emerald-100",
+  },
+  {
+    key: "critic",
+    label: "Critic",
+    sublabel: "Kiểm tra chất lượng",
+    emoji: "⚖️",
+    activeClasses: "bg-amber-50 border-amber-400 shadow-amber-100",
+    textClass: "text-amber-700",
+    shadowClass: "shadow-lg shadow-amber-100",
+  },
+] as const;
+
+function PipelineOverlay({ campaign }: { campaign: Campaign }) {
+  const logs = campaign.agent_logs;
+
+  const phaseStatus = (name: string) => {
+    if (logs.some((l) => l.agent_name === name && l.status === "running")) return "running";
+    if (logs.some((l) => l.agent_name === name && l.status === "success")) return "done";
+    return "pending";
+  };
+
+  const runningLog = logs.find((l) => l.status === "running");
+  let statusLabel = "Đang khởi động AI Pipeline...";
+  if (runningLog) {
+    const ch = runningLog.channel ? ` ${CHANNEL_LABELS[runningLog.channel] || runningLog.channel}` : "";
+    if (runningLog.agent_name === "strategist") statusLabel = "Strategist đang phân tích brief & lập kế hoạch...";
+    else if (runningLog.agent_name === "writer") statusLabel = `Writer đang soạn nội dung${ch}...`;
+    else if (runningLog.agent_name === "critic") statusLabel = `Critic đang kiểm tra chất lượng${ch}...`;
+    else if (runningLog.agent_name === "image_prompt_qwen") statusLabel = "Qwen đang tạo prompt hình ảnh...";
+    else if (runningLog.agent_name === "image_prompt_refiner") statusLabel = "GPT đang tinh chỉnh prompt hình ảnh...";
+    else statusLabel = `${runningLog.agent_name} đang chạy...`;
+  }
+
+  const doneCount = logs.filter((l) => l.status === "success").length;
+  const allSteps = campaign.channels.length * 2 + 1; // strategist + writer*n + critic*n
+
+  const phases = PHASE_CONFIG.map((p) => ({
+    ...p,
+    status: phaseStatus(p.key) as "pending" | "running" | "done",
+  }));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-lg mx-4 space-y-7">
+        {/* Header */}
+        <div className="text-center space-y-1">
+          <p className="text-xs uppercase tracking-widest text-gray-400 font-medium">AI đang xử lý</p>
+          <h2 className="text-base font-semibold text-gray-800">{campaign.campaign_name}</h2>
+        </div>
+
+        {/* Phase blocks */}
+        <div className="flex items-center justify-center gap-3">
+          {phases.flatMap((phase, idx) => {
+            const block = (
+              <div
+                key={phase.key}
+                className={cn(
+                  "flex flex-col items-center justify-center rounded-xl w-28 h-24 border-2 transition-all duration-500",
+                  phase.status === "done" && "bg-green-50 border-green-300 shadow-md shadow-green-100",
+                  phase.status === "running" && cn("border-2 animate-pulse", phase.activeClasses, phase.shadowClass),
+                  phase.status === "pending" && "bg-gray-50 border-gray-200",
+                )}
+              >
+                <span className="text-2xl leading-none">
+                  {phase.status === "done" ? "✅" : phase.emoji}
+                </span>
+                <p
+                  className={cn(
+                    "text-xs font-semibold mt-2",
+                    phase.status === "done" && "text-green-700",
+                    phase.status === "running" && phase.textClass,
+                    phase.status === "pending" && "text-gray-400",
+                  )}
+                >
+                  {phase.label}
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5 text-center leading-tight px-1">
+                  {phase.sublabel}
+                </p>
+              </div>
+            );
+            const arrow = idx < phases.length - 1
+              ? (
+                <div key={`a${idx}`} className={cn(
+                  "text-xl font-light transition-colors duration-500",
+                  phases[idx].status === "done" ? "text-green-400" : "text-gray-200"
+                )}>
+                  →
+                </div>
+              )
+              : null;
+            return arrow ? [block, arrow] : [block];
+          })}
+        </div>
+
+        {/* Current step label */}
+        <div className="text-center">
+          <p className="text-sm text-gray-600 flex items-center justify-center gap-2">
+            <Loader2 size={14} className="animate-spin text-blue-400 shrink-0" />
+            <span>{statusLabel}</span>
+          </p>
+        </div>
+
+        {/* Progress dots */}
+        <div className="flex items-center justify-center gap-1.5">
+          {Array.from({ length: Math.max(allSteps, doneCount) }).map((_, i) => (
+            <span
+              key={i}
+              className={cn(
+                "w-1.5 h-1.5 rounded-full transition-all duration-300",
+                i < doneCount ? "bg-green-400 scale-110" : "bg-gray-200"
+              )}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── ImageGenerationOverlay (floating modal while DALL-E / upload runs) ────────
+
+const IMAGE_GEN_PHASES = [
+  {
+    key: "prompt",
+    label: "Prompt",
+    sublabel: "Chuẩn bị",
+    emoji: "📝",
+    activeClasses: "bg-violet-50 border-violet-400 shadow-violet-100",
+    textClass: "text-violet-700",
+    shadowClass: "shadow-lg shadow-violet-100",
+  },
+  {
+    key: "dalle",
+    label: "DALL-E 3",
+    sublabel: "Tạo ảnh",
+    emoji: "🎨",
+    activeClasses: "bg-sky-50 border-sky-400 shadow-sky-100",
+    textClass: "text-sky-700",
+    shadowClass: "shadow-lg shadow-sky-100",
+  },
+  {
+    key: "save",
+    label: "Lưu ảnh",
+    sublabel: "Tải & lưu",
+    emoji: "💾",
+    activeClasses: "bg-teal-50 border-teal-400 shadow-teal-100",
+    textClass: "text-teal-700",
+    shadowClass: "shadow-lg shadow-teal-100",
+  },
+] as const;
+
+const IMAGE_GEN_STATUS: Record<number, string> = {
+  0: "Đang chuẩn bị prompt hình ảnh...",
+  1: "DALL-E 3 đang tạo ảnh (thường 15–60 giây)...",
+  2: "Đang tải và lưu ảnh về máy chủ...",
+  3: "Hoàn tất!",
+};
+
+function phaseBlockStatus(phase: number, index: number): "pending" | "running" | "done" {
+  if (phase > index) return "done";
+  if (phase === index) return "running";
+  return "pending";
+}
+
+function ImageGenerationOverlay({
+  campaignName,
+  phase,
+}: {
+  campaignName: string;
+  phase: number;
+}) {
+  const phases = IMAGE_GEN_PHASES.map((p, idx) => ({
+    ...p,
+    status: phaseBlockStatus(phase, idx),
+  }));
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-lg mx-4 space-y-7">
+        <div className="text-center space-y-1">
+          <p className="text-xs uppercase tracking-widest text-gray-400 font-medium">Đang tạo ảnh AI</p>
+          <h2 className="text-base font-semibold text-gray-800">{campaignName}</h2>
+        </div>
+
+        <div className="flex items-center justify-center gap-3">
+          {phases.flatMap((stepCfg, idx) => {
+            const block = (
+              <div
+                key={stepCfg.key}
+                className={cn(
+                  "flex flex-col items-center justify-center rounded-xl w-28 h-24 border-2 transition-all duration-500",
+                  stepCfg.status === "done" && "bg-green-50 border-green-300 shadow-md shadow-green-100",
+                  stepCfg.status === "running" && cn("border-2 animate-pulse", stepCfg.activeClasses, stepCfg.shadowClass),
+                  stepCfg.status === "pending" && "bg-gray-50 border-gray-200",
+                )}
+              >
+                <span className="text-2xl leading-none">
+                  {stepCfg.status === "done" ? "✅" : stepCfg.emoji}
+                </span>
+                <p
+                  className={cn(
+                    "text-xs font-semibold mt-2",
+                    stepCfg.status === "done" && "text-green-700",
+                    stepCfg.status === "running" && stepCfg.textClass,
+                    stepCfg.status === "pending" && "text-gray-400",
+                  )}
+                >
+                  {stepCfg.label}
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5 text-center leading-tight px-1">
+                  {stepCfg.sublabel}
+                </p>
+              </div>
+            );
+            const arrow = idx < phases.length - 1
+              ? (
+                <div
+                  key={`img-a${idx}`}
+                  className={cn(
+                    "text-xl font-light transition-colors duration-500",
+                    phase > idx ? "text-green-400" : "text-gray-200",
+                  )}
+                >
+                  →
+                </div>
+              )
+              : null;
+            return arrow ? [block, arrow] : [block];
+          })}
+        </div>
+
+        <div className="text-center">
+          <p className="text-sm text-gray-600 flex items-center justify-center gap-2">
+            {phase < 3 && <Loader2 size={14} className="animate-spin text-violet-500 shrink-0" />}
+            <span>{IMAGE_GEN_STATUS[Math.min(phase, 3)] ?? IMAGE_GEN_STATUS[1]}</span>
+          </p>
+        </div>
+
+        <div className="flex items-center justify-center gap-1.5">
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              className={cn(
+                "w-1.5 h-1.5 rounded-full transition-all duration-300",
+                phase > i ? "bg-green-400 scale-110" : phase === i ? "bg-violet-400 animate-pulse" : "bg-gray-200",
+              )}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── ImageUploadOverlay (2-step: upload → save) ────────────────────────────────
+
+const UPLOAD_PHASES = [
+  { key: "up", label: "Tải lên", sublabel: "Gửi file", emoji: "⬆️", activeClasses: "bg-indigo-50 border-indigo-400", textClass: "text-indigo-700", shadowClass: "shadow-lg shadow-indigo-100" },
+  { key: "sv", label: "Lưu ảnh", sublabel: "Máy chủ", emoji: "💾", activeClasses: "bg-teal-50 border-teal-400", textClass: "text-teal-700", shadowClass: "shadow-lg shadow-teal-100" },
+] as const;
+
+function ImageUploadOverlay({ campaignName, phase }: { campaignName: string; phase: number }) {
+  const steps = UPLOAD_PHASES.map((p, idx) => ({
+    ...p,
+    status: phaseBlockStatus(phase, idx),
+  }));
+  const msg =
+    phase >= 2 ? "Hoàn tất!" : phase === 1 ? "Đang lưu vào chiến dịch..." : "Đang tải ảnh lên máy chủ...";
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md mx-4 space-y-7">
+        <div className="text-center space-y-1">
+          <p className="text-xs uppercase tracking-widest text-gray-400 font-medium">Đang upload ảnh</p>
+          <h2 className="text-base font-semibold text-gray-800">{campaignName}</h2>
+        </div>
+        <div className="flex items-center justify-center gap-4">
+          {steps.flatMap((s, idx) => {
+            const block = (
+              <div
+                key={s.key}
+                className={cn(
+                  "flex flex-col items-center justify-center rounded-xl w-28 h-24 border-2 transition-all duration-500",
+                  s.status === "done" && "bg-green-50 border-green-300",
+                  s.status === "running" && cn("border-2 animate-pulse", s.activeClasses, s.shadowClass),
+                  s.status === "pending" && "bg-gray-50 border-gray-200",
+                )}
+              >
+                <span className="text-2xl">{s.status === "done" ? "✅" : s.emoji}</span>
+                <p className={cn("text-xs font-semibold mt-2", s.status === "done" && "text-green-700", s.status === "running" && s.textClass, s.status === "pending" && "text-gray-400")}>{s.label}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{s.sublabel}</p>
+              </div>
+            );
+            const arrow = idx === 0 ? <div key="u-a" className={cn("text-xl", phase > 0 ? "text-green-400" : "text-gray-200")}>→</div> : null;
+            return idx === 0 ? [block, arrow] : [block];
+          })}
+        </div>
+        <p className="text-sm text-gray-600 text-center flex items-center justify-center gap-2">
+          {phase < 2 && <Loader2 size={14} className="animate-spin text-indigo-500 shrink-0" />}
+          {msg}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── CampaignImageCard ─────────────────────────────────────────────────────────
+
+function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpdated: () => void }) {
+  const [generating, setGenerating] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [imageGenPhase, setImageGenPhase] = useState(0);
+  const [uploadPhase, setUploadPhase] = useState(0);
+  const [error, setError] = useState("");
+  const [customPrompt, setCustomPrompt] = useState("");
+  const [showPromptInput, setShowPromptInput] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const plan = campaign.campaign_plan_json || {};
+  const imageUrl = plan.image_url as string | undefined;
+  const suggestedPrompt = (plan.image_prompt_final || plan.image_prompt_qwen) as string | undefined;
+
+  async function handleGenerate() {
+    setGenerating(true);
+    setImageGenPhase(0);
+    setError("");
+    const t1 = setTimeout(() => setImageGenPhase(1), 400);
+    try {
+      await api.post(`/campaigns/${campaign.id}/image/generate`, {
+        prompt: customPrompt || undefined,
+      });
+      setImageGenPhase(2);
+      await new Promise((r) => setTimeout(r, 450));
+      setImageGenPhase(3);
+      await new Promise((r) => setTimeout(r, 400));
+      onUpdated();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Tạo ảnh thất bại");
+    } finally {
+      clearTimeout(t1);
+      setGenerating(false);
+      setImageGenPhase(0);
+    }
+  }
+
+  async function handleUpload(file: File) {
+    setUploading(true);
+    setUploadPhase(0);
+    setError("");
+    const form = new FormData();
+    form.append("file", file);
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/campaigns/${campaign.id}/image/upload`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
+          body: form,
+        }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || "Upload thất bại");
+      }
+      setUploadPhase(1);
+      await new Promise((r) => setTimeout(r, 250));
+      setUploadPhase(2);
+      await new Promise((r) => setTimeout(r, 350));
+      onUpdated();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Upload thất bại");
+    } finally {
+      setUploading(false);
+      setUploadPhase(0);
+    }
+  }
+
+  return (
+    <>
+      {generating && (
+        <ImageGenerationOverlay campaignName={campaign.campaign_name} phase={imageGenPhase} />
+      )}
+      {uploading && (
+        <ImageUploadOverlay campaignName={campaign.campaign_name} phase={uploadPhase} />
+      )}
+    <div className="card space-y-3">
+      <div className="flex items-center gap-2">
+        <ImagePlus size={16} className="text-gray-500" />
+        <h2>Ảnh chiến dịch</h2>
+      </div>
+
+      {imageUrl ? (
+        <div className="space-y-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={imageUrl}
+            alt="Campaign image"
+            className="w-full rounded-md border border-gray-200 object-cover"
+            style={{ maxHeight: 280 }}
+          />
+          <p className="text-xs text-gray-400">Click "Tạo lại" để thay ảnh mới.</p>
+        </div>
+      ) : (
+        <div className="border-2 border-dashed border-gray-200 rounded-md py-8 flex flex-col items-center text-center gap-2">
+          <ImagePlus size={24} className="text-gray-300" />
+          <p className="text-sm text-gray-400">Chưa có ảnh. Tạo bằng AI hoặc upload từ thiết bị.</p>
+        </div>
+      )}
+
+      {suggestedPrompt && !showPromptInput && (
+        <div className="text-xs text-gray-500 bg-gray-50 rounded p-2 line-clamp-2" title={suggestedPrompt}>
+          <span className="font-medium">Prompt gợi ý:</span> {suggestedPrompt}
+        </div>
+      )}
+
+      {showPromptInput && (
+        <div className="space-y-1">
+          <p className="text-xs text-gray-500">Nhập prompt tuỳ chỉnh (để trống = dùng gợi ý)</p>
+          <textarea
+            className="input text-xs resize-none w-full"
+            rows={3}
+            placeholder={suggestedPrompt || "Mô tả hình ảnh bạn muốn..."}
+            value={customPrompt}
+            onChange={(e) => setCustomPrompt(e.target.value)}
+          />
+        </div>
+      )}
+
+      <div className="flex gap-2 flex-wrap">
+        <button
+          onClick={handleGenerate}
+          disabled={generating || uploading}
+          className="btn-primary text-xs py-1.5 flex items-center gap-1.5 flex-1 justify-center"
+        >
+          {generating ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />}
+          {imageUrl ? "Tạo lại bằng AI" : "Tạo bằng AI"}
+        </button>
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={generating || uploading}
+          className="btn-secondary text-xs py-1.5 flex items-center gap-1.5 flex-1 justify-center"
+        >
+          {uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+          Upload ảnh
+        </button>
+        <button
+          onClick={() => setShowPromptInput((v) => !v)}
+          className="btn-secondary text-xs py-1.5 px-2"
+          title="Tuỳ chỉnh prompt"
+        >
+          ✏️
+        </button>
+      </div>
+
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0])}
+      />
+
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </div>
+    </>
   );
 }
 
@@ -433,76 +941,92 @@ export default function CampaignDetailPage() {
   const isProcessing = campaign.status === "running" || campaign.status === "pending_agent";
 
   return (
-    <div className="p-6 max-w-6xl">
-      <div className="flex items-center gap-2 mb-6">
-        <Link href="/campaigns" className="text-gray-400 hover:text-gray-700"><ChevronLeft size={18} /></Link>
-        <h1 className="flex-1">{campaign.campaign_name}</h1>
-        <span className={cn("badge", STATUS_COLORS[campaign.status])}>{STATUS_LABELS[campaign.status]}</span>
-        {isProcessing && <Loader2 size={14} className="text-blue-400 animate-spin" />}
-      </div>
+    <>
+      {/* Floating pipeline modal — appears while AI is running */}
+      {isProcessing && <PipelineOverlay campaign={campaign} />}
 
-      <div className="grid grid-cols-5 gap-6">
-        <div className="col-span-3 space-y-5">
-
-          {/* Brief info */}
-          <div className="card">
-            <h2 className="mb-3">Brief</h2>
-            <dl className="space-y-2 text-sm">
-              <div className="flex gap-4">
-                <dt className="text-gray-500 w-32 shrink-0">Mục tiêu</dt>
-                <dd className="text-gray-800">{campaign.objective}</dd>
-              </div>
-              <div className="flex gap-4">
-                <dt className="text-gray-500 w-32 shrink-0">Sản phẩm</dt>
-                <dd className="text-gray-800">{campaign.product_or_service}</dd>
-              </div>
-              <div className="flex gap-4">
-                <dt className="text-gray-500 w-32 shrink-0">Deadline</dt>
-                <dd className="text-gray-800">{formatDate(campaign.deadline)}</dd>
-              </div>
-              <div className="flex gap-4">
-                <dt className="text-gray-500 w-32 shrink-0">Kênh</dt>
-                <dd className="flex gap-1">
-                  {campaign.channels.map((ch) => (
-                    <span key={ch} className="badge bg-gray-100 text-gray-600">{CHANNEL_LABELS[ch]}</span>
-                  ))}
-                </dd>
-              </div>
-            </dl>
-          </div>
-
-          {/* AI Pipeline Progress panel — shown while processing */}
-          {isProcessing && <AIPipelineProgress campaign={campaign} />}
-
-          {/* Content items */}
-          {campaign.content_items.length > 0 && (
-            <div>
-              <h2 className="mb-3">Nội dung ({campaign.content_items.length})</h2>
-              <div className="space-y-3">
-                {campaign.content_items.map((item) => (
-                  <ContentCard key={item.id} item={item} onAction={load} />
-                ))}
-              </div>
-            </div>
-          )}
+      <div className="p-6 max-w-6xl">
+        <div className="flex items-center gap-2 mb-6">
+          <Link href="/campaigns" className="text-gray-400 hover:text-gray-700"><ChevronLeft size={18} /></Link>
+          <h1 className="flex-1">{campaign.campaign_name}</h1>
+          <HelpDialogButton
+            title="Hướng dẫn chi tiết chiến dịch"
+            summary="Trang này là nơi bạn theo dõi toàn bộ đầu ra AI, duyệt nội dung và kiểm tra tiến trình."
+            steps={[
+              "Xem phần Brief để kiểm tra mục tiêu và kênh đã chọn.",
+              "Theo dõi Tiến trình AI Pipeline khi chiến dịch đang chạy.",
+              "Duyệt/chỉnh sửa nội dung trong danh sách Nội dung.",
+              "Sau khi duyệt, nội dung sẽ xuất hiện trong Lịch marketing.",
+            ]}
+            buttonClassName="btn-secondary text-xs"
+          />
+          <span className={cn("badge", STATUS_COLORS[campaign.status])}>{STATUS_LABELS[campaign.status]}</span>
+          {isProcessing && <Loader2 size={14} className="text-blue-400 animate-spin" />}
         </div>
 
-        {/* Right sidebar */}
-        <div className="col-span-2 space-y-4">
-          {/* Show progress panel in sidebar when completed (compact view) */}
-          {!isProcessing && campaign.agent_logs.length > 0 && (
+        <div className="grid grid-cols-5 gap-6">
+          <div className="col-span-3 space-y-5">
+
+            {/* Brief info */}
             <div className="card">
-              <h2 className="mb-3">Pipeline Summary</h2>
-              <AIPipelineProgress campaign={campaign} />
+              <h2 className="mb-3">Brief</h2>
+              <dl className="space-y-2 text-sm">
+                <div className="flex gap-4">
+                  <dt className="text-gray-500 w-32 shrink-0">Mục tiêu</dt>
+                  <dd className="text-gray-800">{campaign.objective}</dd>
+                </div>
+                <div className="flex gap-4">
+                  <dt className="text-gray-500 w-32 shrink-0">Sản phẩm</dt>
+                  <dd className="text-gray-800">{campaign.product_or_service}</dd>
+                </div>
+                <div className="flex gap-4">
+                  <dt className="text-gray-500 w-32 shrink-0">Deadline</dt>
+                  <dd className="text-gray-800">{formatDate(campaign.deadline)}</dd>
+                </div>
+                <div className="flex gap-4">
+                  <dt className="text-gray-500 w-32 shrink-0">Kênh</dt>
+                  <dd className="flex gap-1">
+                    {campaign.channels.map((ch) => (
+                      <span key={ch} className="badge bg-gray-100 text-gray-600">{CHANNEL_LABELS[ch]}</span>
+                    ))}
+                  </dd>
+                </div>
+              </dl>
             </div>
-          )}
 
-          <div className="card sticky top-6">
-            <h2 className="mb-4">Agent Activity Log</h2>
-            <AgentLogTimeline logs={campaign.agent_logs} />
+            {/* Content items */}
+            {campaign.content_items.length > 0 && (
+              <div>
+                <h2 className="mb-3">Nội dung ({campaign.content_items.length})</h2>
+                <div className="space-y-3">
+                  {campaign.content_items.map((item) => (
+                    <ContentCard key={item.id} item={item} onAction={load} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Image card — below content, always shown after brief */}
+            {!isProcessing && <CampaignImageCard campaign={campaign} onUpdated={load} />}
+          </div>
+
+          {/* Right sidebar */}
+          <div className="col-span-2 space-y-4">
+            {/* Pipeline summary when done */}
+            {!isProcessing && campaign.agent_logs.length > 0 && (
+              <div className="card">
+                <h2 className="mb-3">Pipeline Summary</h2>
+                <AIPipelineProgress campaign={campaign} />
+              </div>
+            )}
+
+            <div className="card sticky top-6">
+              <h2 className="mb-4">Agent Activity Log</h2>
+              <AgentLogTimeline logs={campaign.agent_logs} />
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

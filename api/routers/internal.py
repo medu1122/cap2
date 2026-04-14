@@ -62,7 +62,12 @@ async def get_campaign_detail_internal(
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Campaign not found")
 
-    brand_result = await db.execute(select(Brand).where(Brand.user_id == campaign.user_id))
+    brand_result = await db.execute(
+        select(Brand)
+        .where(Brand.user_id == campaign.user_id)
+        .order_by(Brand.updated_at.desc())
+        .limit(1)
+    )
     brand = brand_result.scalar_one_or_none()
 
     return {

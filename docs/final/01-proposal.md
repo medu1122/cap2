@@ -196,3 +196,16 @@ Chi tiết trong `02-architecture/`.
 | LLM output không đúng format | Trung bình | JSON schema validation + retry logic |
 | Docker port conflict | Thấp | Port mapping linh hoạt trong docker-compose |
 | DB migration conflict | Thấp | Alembic version control, rollback sẵn sàng |
+
+---
+
+## 9. Cap nhat de tai: bo sung vai tro Admin
+
+De tang tinh thuc te khi trien khai cho nhieu doanh nghiep, AIMAP bo sung vai tro `admin` voi pham vi:
+
+- Quan tri tai khoan nguoi dung (khoa/mo, xu ly su co).
+- Giam sat chi phi AI va token usage.
+- Theo doi, retry workflow jobs loi.
+- Audit hanh dong van hanh he thong.
+
+Cap nhat nay khong thay doi gia tri cot loi cua de tai, nhung tang tinh san sang van hanh thuc te.

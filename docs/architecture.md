@@ -278,3 +278,14 @@ QWEN_TIMEOUT=15
 # web/.env.local
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
+
+---
+
+## 9. Cap nhat kien truc cho Admin
+
+- Bo sung actor `Admin` trong context: quan tri he thong, khong thao tac campaign noi dung hang ngay nhu user.
+- Bo sung admin routes trong API layer (`/admin/*`) voi guard rieng.
+- Bo sung 2 thanh phan du lieu he thong:
+  - `admin_action_logs` (audit)
+  - `system_settings` (cau hinh van hanh)
+- Frontend tach khu vuc `/admin/*` voi sidebar rieng de tranh nham luong voi workspace user.

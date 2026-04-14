@@ -14,11 +14,11 @@ Form nhập liệu cho phép user mô tả mục tiêu marketing bằng ngôn ng
 
 | ID | Story | Acceptance Criteria | Points | Priority |
 |---|---|---|---|---|
-| US-14 | As an owner, I want to create a campaign brief | Required fields validated, campaign created, AI starts running | 5 | M |
-| US-15 | As an owner, I want to select content channels | channels array lưu đúng, AI chỉ tạo content cho channels đã chọn | 2 | M |
-| US-16 | As an owner, I want to set a campaign deadline | deadline trong tương lai, content scheduled_date = deadline | 2 | M |
-| US-17 | As an owner, I want to save a brief as template | content_template record được tạo với brief fields | 2 | S |
-| US-18 | As an owner, I want to create from template | Form tự điền từ template khi chọn | 2 | C |
+| US-14 | As a user, I want to create a campaign brief | Required fields validated, campaign created, AI starts running | 5 | M |
+| US-15 | As a user, I want to select content channels | channels array lưu đúng, AI chỉ tạo content cho channels đã chọn | 2 | M |
+| US-16 | As a user, I want to set a campaign deadline | deadline trong tương lai, content scheduled_date = deadline | 2 | M |
+| US-17 | As a user, I want to save a brief as template | content_template record được tạo với brief fields | 2 | S |
+| US-18 | As a user, I want to create from template | Form tự điền từ template khi chọn | 2 | C |
 
 ---
 

@@ -199,3 +199,20 @@ Web (campaignsPage)
                   → API Internal: PATCH /internal/campaigns/{id} status=pending_approval
   → Web: Poll GET /campaigns/{id} → hiển thị content khi xong
 ```
+
+---
+
+## Bo sung component cho Admin
+
+### API components (de xay dung)
+- `adminUsersComponent`: lock/unlock user, tim kiem user.
+- `adminUsageComponent`: tong hop token usage theo model/provider.
+- `adminWorkflowOpsComponent`: xem failed jobs, retry.
+- `adminAuditComponent`: doc `admin_action_logs`.
+
+### Web components (de xay dung)
+- `adminDashboardPage`
+- `adminUsersPage`
+- `adminUsagePage`
+- `adminWorkflowOpsPage`
+- `adminAuditLogsPage`

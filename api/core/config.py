@@ -15,6 +15,16 @@ class Settings(BaseSettings):
     QWEN_MODEL: str = "qwen2.5:7b"
     QWEN_TIMEOUT: int = 15
 
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+    CALENDAR_REMINDER_ENABLED: bool = False
+    CALENDAR_REMINDER_HOUR: int = 8
+    WORKFLOW_SCHEDULER_ENABLED: bool = True
+    WORKFLOW_SCHEDULER_INTERVAL_MINUTES: int = 5
+
     class Config:
         env_file = ".env"
 

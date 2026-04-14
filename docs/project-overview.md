@@ -443,3 +443,16 @@ AIMAP giải quyết một vấn đề **thực tế, cụ thể, và đang tồ
 - **Con người vẫn là trung tâm**: Approval flow đảm bảo AI hỗ trợ chứ không thay thế người dùng
 
 > AIMAP không phải là "AI làm marketing hộ bạn" — mà là "AI làm phần nặng nhọc để bạn tập trung vào phần quan trọng nhất: phán xét và quyết định."
+
+---
+
+## Cap nhat huong van hanh: bo sung Admin
+
+De phu hop voi trien khai thuc te, du an bo sung vai tro Admin voi 4 gia tri:
+
+- Quan tri tai khoan nguoi dung va xu ly su co.
+- Giam sat chi phi AI usage.
+- Van hanh workflow jobs va retry khi loi.
+- Audit hanh dong he thong de bao cao va truy vet.
+
+Nho co Admin, AIMAP chuyen tu demo feature sang mo hinh co kha nang van hanh on dinh o quy mo lon hon.

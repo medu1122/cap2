@@ -41,6 +41,26 @@
 
 ---
 
+## Cap nhat role va admin governance
+
+### Dinh nghia role (moi)
+
+- `admin`: van hanh va quan tri he thong.
+- `user`: nguoi dung su dung AIMAP de tao va duyet noi dung marketing.
+
+### Nhom bang bo sung cho admin
+
+1. `admin_action_logs` - audit hanh dong admin.
+2. `system_settings` - cau hinh van hanh toan he thong (rate limit, nguong canh bao usage, ...).
+
+### Loi ich thuc te
+
+- Truy vet su co nhanh (ai da khoa user, ai da retry workflow).
+- Kiem soat chi phi AI minh bach.
+- Chuan bi de mo rong da tenant o giai doan sau.
+
+---
+
 ## 2. ERD — Sơ đồ Quan hệ Thực thể
 
 ```mermaid
@@ -381,7 +401,7 @@ erDiagram
 | `business_type` | VARCHAR(100) | | Loại hình KD: cafe, shop, dịch vụ... |
 | `city` | VARCHAR(100) | | Thành phố để cá nhân hóa nội dung |
 | `website` | VARCHAR(512) | | Website của doanh nghiệp |
-| `role` | VARCHAR(20) | NOT NULL, DEFAULT 'owner' | 'owner' hoặc 'assistant' |
+| `role` | VARCHAR(20) | NOT NULL, DEFAULT 'user' | 'admin' hoặc 'user' |
 | `is_active` | BOOLEAN | NOT NULL, DEFAULT TRUE | Tài khoản có bị vô hiệu hóa không |
 | `email_verified` | BOOLEAN | NOT NULL, DEFAULT FALSE | Đã xác minh email chưa |
 | `created_at` | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Thời điểm tạo tài khoản |
@@ -398,7 +418,7 @@ CREATE TABLE users (
     business_type   VARCHAR(100),
     city            VARCHAR(100),
     website         VARCHAR(512),
-    role            VARCHAR(20) NOT NULL DEFAULT 'owner',
+    role            VARCHAR(20) NOT NULL DEFAULT 'user',
     is_active       BOOLEAN NOT NULL DEFAULT TRUE,
     email_verified  BOOLEAN NOT NULL DEFAULT FALSE,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),

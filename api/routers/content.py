@@ -94,6 +94,8 @@ async def approve_content(
     db: AsyncSession = Depends(get_db),
 ):
     item = await _get_content_item(content_id, current_user, db)
+    if item.status not in {"pending_approval", "rejected"}:
+        raise HTTPException(400, f"Không thể duyệt nội dung ở trạng thái {item.status}")
     item.status = "approved"
     await db.commit()
     await db.refresh(item)
@@ -124,6 +126,8 @@ async def reject_content(
     db: AsyncSession = Depends(get_db),
 ):
     item = await _get_content_item(content_id, current_user, db)
+    if item.status not in {"pending_approval", "approved"}:
+        raise HTTPException(400, f"Không thể từ chối nội dung ở trạng thái {item.status}")
     item.status = "rejected"
     item.rejection_note = payload.rejection_note
     await db.commit()

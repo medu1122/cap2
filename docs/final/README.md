@@ -25,6 +25,7 @@
 | [c4-container.md](02-architecture/c4-container.md) | C4 Level 2 — Containers: 3 Services + Database |
 | [c4-component.md](02-architecture/c4-component.md) | C4 Level 3 — Components bên trong mỗi service |
 | [sequence-diagrams.md](02-architecture/sequence-diagrams.md) | 10 Sequence Diagrams cho từng tính năng |
+| [database-overview.md](02-architecture/database-overview.md) | **Cơ sở dữ liệu:** danh sách 25 bảng, vai trò từng bảng, ERD Mermaid |
 
 ---
 
@@ -40,7 +41,7 @@
 
 ## 05 — Feature Documentation
 
-Mỗi tính năng có 3 file: **plan.md** (đặc tả), **coding.md** (hướng dẫn cài đặt), **test.md** (kế hoạch kiểm thử).
+Mỗi tính năng có 4 file: **README.md** (tổng quan + trạng thái thực tế), **plan.md** (đặc tả), **coding.md** (hướng dẫn cài đặt), **test.md** (kế hoạch kiểm thử).
 
 | Feature | Folder | Sprint |
 |---|---|---|
@@ -55,6 +56,8 @@ Mỗi tính năng có 3 file: **plan.md** (đặc tả), **coding.md** (hướng
 | F09 — Workflow Automation | [F09-workflow-automation/](05-features/F09-workflow-automation/) | Sprint 3 |
 | F10 — Notifications & Customer Lists | [F10-notifications/](05-features/F10-notifications/) | Sprint 3 |
 
+Bắt đầu đọc mỗi tính năng từ file `README.md` trong thư mục tương ứng, sau đó đi sâu vào `plan.md`, `coding.md`, `test.md`.
+
 ---
 
 ## Tech Stack Summary
@@ -64,7 +67,7 @@ Mỗi tính năng có 3 file: **plan.md** (đặc tả), **coding.md** (hướng
 | Frontend | Next.js 14 (App Router), TypeScript, Tailwind CSS, shadcn/ui |
 | Backend API | FastAPI (Python 3.11+), SQLAlchemy 2.x async, Pydantic v2 |
 | Agent Service | FastAPI, LangChain / CrewAI pattern, httpx |
-| Database | PostgreSQL 16 (JSONB, UUID, ARRAY) — 23 tables |
+| Database | PostgreSQL 16 (JSONB, UUID, ARRAY) — schema mo rong cho workflow schedule va customer list (xem [database-overview.md](02-architecture/database-overview.md)) |
 | AI Models | OpenAI GPT-4o-mini (Strategy/Critic), Qwen 2.5 7B self-hosted (Writer) |
 | Infrastructure | Docker Compose, Alembic migrations |
 
@@ -82,3 +85,19 @@ Mỗi tính năng có 3 file: **plan.md** (đặc tả), **coding.md** (hướng
 | [agent-orchestration.md](../agent-orchestration.md) | Chi tiết pipeline AI agents |
 | [ui-guidelines.md](../ui-guidelines.md) | Design system, color palette, components |
 | [project-overview.md](../project-overview.md) | Tổng quan thuyết phục hội đồng |
+| [insight-copilot-readme.md](06-update/insight-copilot-readme.md) | Bai toan SMB va gia tri thuc dung cua Insight Copilot |
+| [insight-copilot-plan.md](06-update/insight-copilot-plan.md) | Kien truc backend/frontend/database va roadmap trien khai |
+| [insight-copilot-ai-quality.md](06-update/insight-copilot-ai-quality.md) | Khung chat luong AI cho Qwen: prompt, guardrails, eval |
+
+---
+
+## Cap nhat Admin (2026-04)
+
+He thong duoc cap nhat mo hinh van hanh co vai tro `admin` ben canh user doanh nghiep.
+
+- Admin dung de quan tri he thong, giam sat AI usage, xu ly workflow loi, va audit hanh dong.
+- User workspace van giu quy trinh chinh: Brand Vault -> Campaign -> Approval -> Calendar.
+- Tai lieu bo sung:
+  - `docs/final/06-update/admin-overview-readme.md`
+  - `docs/final/06-update/admin-backend-readme.md`
+  - `docs/final/06-update/admin-frontend-readme.md`

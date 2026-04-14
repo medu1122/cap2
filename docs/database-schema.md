@@ -29,10 +29,36 @@ CREATE TABLE users (
     email       VARCHAR(255) NOT NULL UNIQUE,
     hashed_pw   VARCHAR(255) NOT NULL,
     full_name   VARCHAR(255),
-    role        VARCHAR(20) NOT NULL DEFAULT 'owner',  -- 'owner' | 'assistant'
+    role        VARCHAR(20) NOT NULL DEFAULT 'user',  -- 'admin' | 'user'
     is_active   BOOLEAN NOT NULL DEFAULT TRUE,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+### Admin scope (bo sung)
+
+- `admin`: van hanh he thong, quan tri user, giam sat workflow, xem usage.
+- `user`: nguoi dung su dung AIMAP de tao va duyet noi dung marketing.
+
+De phuc vu van hanh admin, bo sung 2 bang he thong:
+
+```sql
+CREATE TABLE admin_action_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    admin_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    action_type VARCHAR(100) NOT NULL,
+    target_type VARCHAR(100),
+    target_id UUID,
+    payload_json JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE system_settings (
+    key VARCHAR(100) PRIMARY KEY,
+    value_json JSONB NOT NULL,
+    updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
 

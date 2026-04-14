@@ -10,7 +10,7 @@ class Brand(Base):
     __tablename__ = "brands"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     brand_name: Mapped[str] = mapped_column(String(255), nullable=False)
     tagline: Mapped[str | None] = mapped_column(String(512))
     brand_description: Mapped[str] = mapped_column(Text, nullable=False)
@@ -26,4 +26,4 @@ class Brand(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
-    user: Mapped["User"] = relationship("User", back_populates="brand")
+    user: Mapped["User"] = relationship("User", back_populates="brands")

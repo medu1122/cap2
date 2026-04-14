@@ -1,7 +1,8 @@
 "use client";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Megaphone, CalendarDays, Shield, CheckSquare, Workflow, LogOut } from "lucide-react";
+import { LayoutDashboard, Megaphone, CalendarDays, Workflow, Users, LogOut, BrainCircuit } from "lucide-react";
 import { clearToken } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
@@ -9,9 +10,9 @@ const NAV = [
   { href: "/dashboard",   label: "Tổng quan",          icon: LayoutDashboard },
   { href: "/campaigns",   label: "Chiến dịch",          icon: Megaphone },
   { href: "/calendar",    label: "Lịch marketing",      icon: CalendarDays },
-  { href: "/brand-vault", label: "Hồ sơ thương hiệu",  icon: Shield },
-  { href: "/approve",     label: "Phê duyệt nội dung",  icon: CheckSquare },
   { href: "/workflow",    label: "Tự động hoá",         icon: Workflow },
+  { href: "/customer-lists", label: "Danh sách khách",  icon: Users },
+  { href: "/insights", label: "Trợ lý phân tích", icon: BrainCircuit },
 ];
 
 export default function Sidebar() {
@@ -24,9 +25,16 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-60 shrink-0 flex flex-col border-r border-gray-200 bg-surface min-h-screen">
+    <aside className="fixed inset-y-0 left-0 z-20 w-60 flex flex-col border-r border-gray-200 bg-surface">
       <div className="px-4 py-5 border-b border-gray-200">
-        <span className="text-base font-semibold text-gray-900 tracking-tight">AIMAP</span>
+        <Image
+          src="/images/logo/aimap-logo.png"
+          alt="AIMAP"
+          width={108}
+          height={46}
+          className="h-auto w-[108px]"
+          priority
+        />
         <p className="text-xs text-gray-400 mt-0.5">Tự động hoá Marketing</p>
       </div>
       <nav className="flex-1 px-2 py-4 space-y-0.5">

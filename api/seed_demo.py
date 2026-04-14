@@ -23,7 +23,7 @@ async def seed():
             email="demo@cafebohho.vn",
             hashed_pw=hash_password("demo1234"),
             full_name="Chủ quán Demo",
-            role="owner",
+            role="user",
         )
         db.add(user)
         await db.flush()

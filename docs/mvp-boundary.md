@@ -40,7 +40,7 @@ Danh sách này là **cứng** — không thêm dù có thời gian dư.
 | Auto-publish lên Facebook/Instagram/Email ESP | Rủi ro cao, cần API keys bên ngoài, không tăng điểm demo |
 | A/B content variants | Thêm độ phức tạp mà không tăng giá trị demo |
 | Real social analytics (likes, reach, click) | Cần OAuth với social platform, nằm ngoài scope |
-| Multi-user team với role phức tạp | Chỉ cần 1 user = owner là đủ cho demo |
+| Fine-grained RBAC với nhiều cấp quyền | Chỉ cần 2 role `admin` và `user` cho giai đoạn này |
 | Mobile app / responsive mobile | Desktop 1280px+ là đủ |
 | Dark mode | Không trong scope UI |
 | Google Calendar sync | Không cần, calendar nội bộ là đủ |
@@ -113,3 +113,14 @@ draft → pending_approval → approved
 | Auth | JWT (no OAuth) |
 | Deployment | Docker Compose (local/VPS) |
 | UI style | Tailwind CSS + shadcn/ui, monochrome, no animation |
+
+---
+
+## Cap nhat MVP boundary ve Admin
+
+- Trong phien ban cap nhat, Admin duoc dua vao **MVP+** (gan MVP) de tang tinh van hanh thuc te.
+- Pham vi admin toi thieu:
+  - Xem user list.
+  - Khoa/mo tai khoan.
+  - Xem workflow failed jobs.
+  - Xem AI usage tong hop.

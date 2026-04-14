@@ -1,8 +1,108 @@
 import httpx
 import os
+from datetime import date, timedelta
 from agents.strategist import StrategistAgent
 from agents.writer import WriterAgent
 from agents.critic import CriticAgent
+from agents.base import timed_agent_call
+
+
+_VN_FIXED_HOLIDAYS = {
+    (1, 1),   # New Year
+    (4, 30),  # Reunification Day
+    (5, 1),   # Labor Day
+    (9, 2),   # National Day
+}
+
+_CHANNEL_WEEKDAY_PREFERENCE = {
+    "facebook_post": {1, 3, 5},  # Tue/Thu/Sat
+    "email": {1, 3},             # Tue/Thu
+    "video_script": {2, 4, 5},   # Wed/Fri/Sat
+}
+
+
+def _is_vn_fixed_holiday(d: date) -> bool:
+    return (d.month, d.day) in _VN_FIXED_HOLIDAYS
+
+
+def _plan_publish_dates(deadline_str: str | None, channels: list[str]) -> list[str | None]:
+    """
+    Plan campaign publish dates with simple deterministic scoring:
+    - spread evenly in [today, deadline]
+    - prioritize channel-friendly weekdays
+    - avoid major fixed holidays and avoid weekend for email
+    """
+    num_channels = len(channels)
+    if not deadline_str or num_channels == 0:
+        return [deadline_str] * num_channels
+
+    try:
+        today = date.today()
+        deadline = date.fromisoformat(deadline_str)
+    except ValueError:
+        return [deadline_str] * num_channels
+
+    if deadline < today:
+        deadline = today
+
+    horizon_days = max((deadline - today).days, 0)
+    candidates = [today + timedelta(days=i) for i in range(horizon_days + 1)]
+    used_dates: set[date] = set()
+    planned: list[str | None] = []
+
+    for idx, channel in enumerate(channels):
+        preferred = _CHANNEL_WEEKDAY_PREFERENCE.get(channel, {1, 2, 3, 4, 5})
+        # target position for even spread across the available window
+        target_offset = round((idx + 1) * (horizon_days + 1) / (num_channels + 1)) - 1
+        target_offset = max(0, min(horizon_days, target_offset))
+        target_day = today + timedelta(days=target_offset)
+
+        def score(d: date) -> tuple[int, int, int, int]:
+            distance_penalty = abs((d - target_day).days)
+            weekday_penalty = 0 if d.weekday() in preferred else 2
+            holiday_penalty = 4 if _is_vn_fixed_holiday(d) else 0
+            weekend_penalty = 2 if channel == "email" and d.weekday() >= 5 else 0
+            return (
+                distance_penalty + weekday_penalty + holiday_penalty + weekend_penalty,
+                abs((deadline - d).days),
+                1 if d in used_dates else 0,
+                (d - today).days,
+            )
+
+        best = min(candidates, key=score)
+        used_dates.add(best)
+        planned.append(str(best))
+
+    return planned
+
+
+def _format_written_content(channel: str, content_json: dict) -> str:
+    """Format a single channel's written content for Qwen's context block."""
+    label = {
+        "facebook_post": "Facebook Post",
+        "email": "Email",
+        "video_script": "Video Script",
+    }.get(channel, channel)
+
+    lines = [f"[{label}]"]
+    if channel == "facebook_post":
+        copy_text = content_json.get("copy", "")
+        # Trim to avoid bloating the prompt — first 400 chars is enough for context
+        lines.append(f"Copy: {copy_text[:400]}")
+        hashtags = content_json.get("hashtags", [])
+        if hashtags:
+            lines.append(f"Hashtags: {' '.join(f'#{h}' for h in hashtags[:5])}")
+    elif channel == "email":
+        lines.append(f"Subject: {content_json.get('subject', '')}")
+        body = content_json.get("body", "")
+        lines.append(f"Body (excerpt): {body[:300]}")
+    elif channel == "video_script":
+        lines.append(f"Hook: {content_json.get('hook', '')}")
+        body = content_json.get("body", "")
+        lines.append(f"Body (excerpt): {body[:200]}")
+        lines.append(f"CTA: {content_json.get('cta', '')}")
+    return "\n".join(lines)
+
 
 API_BASE = os.getenv("INTERNAL_API_URL", "http://api:8000")
 
@@ -24,22 +124,31 @@ class CampaignOrchestrator:
                 brief = data["brief"]
                 brand_vault = data["brand_vault"]
                 channels = brief.get("channels", [])
+                additional_notes = (brief.get("additional_notes") or "").lower()
+                image_required = "[image_required]" in additional_notes
 
-                # Step 1: Strategist
+                # ── Step 1: Strategist ─────────────────────────────────────────
                 plan = await self.strategist.run(campaign_id, brief, brand_vault)
-
-                # Persist plan
                 await client.patch(
                     f"{API_BASE}/internal/campaigns/{campaign_id}",
                     json={"status": "running", "campaign_plan_json": plan},
                 )
 
-                # Step 2 + 3: Writer + Critic per channel
+                # ── Steps 2+: Writer + Critic per channel ──────────────────────
+                active_deliverables = [
+                    d for d in plan.get("deliverables", []) if d["channel"] in channels
+                ]
+                publish_dates = _plan_publish_dates(
+                    brief.get("deadline"),
+                    [d["channel"] for d in active_deliverables],
+                )
                 step = 2
-                for deliverable in plan.get("deliverables", []):
+
+                # Collect all final content so we can feed it to Qwen later
+                written_content: list[tuple[str, dict]] = []  # (channel, content_json)
+
+                for idx, deliverable in enumerate(active_deliverables):
                     channel = deliverable["channel"]
-                    if channel not in channels:
-                        continue
 
                     draft = await self.writer.run(campaign_id, deliverable, plan, brand_vault, step)
                     step += 1
@@ -47,8 +156,9 @@ class CampaignOrchestrator:
                     final = await self.critic.run(campaign_id, deliverable, draft, brand_vault, plan, step)
                     step += 1
 
-                    # Save final content item
-                    from datetime import date
+                    final_content = final["final_content"]
+                    written_content.append((channel, final_content))
+
                     await client.post(
                         f"{API_BASE}/internal/content",
                         json={
@@ -56,12 +166,112 @@ class CampaignOrchestrator:
                             "channel": channel,
                             "version": 1,
                             "status": "pending_approval",
-                            "content_json": final["final_content"],
-                            "scheduled_date": str(date.fromisoformat(brief["deadline"])) if brief.get("deadline") else None,
+                            "content_json": final_content,
+                            "scheduled_date": publish_dates[idx],
                         },
                     )
 
-                # Finalize
+                # ── Image prompt A2A (after writing, so Qwen sees full content) ─
+                if image_required:
+                    # Assemble the richest possible context for Qwen
+                    brand_name    = brand_vault.get("brand_name", "")
+                    brand_desc    = brand_vault.get("brand_description", "")
+                    tone          = brand_vault.get("tone_of_voice", "")
+                    preferred_cta = brand_vault.get("preferred_cta", "")
+                    key_products  = ", ".join(brand_vault.get("key_products") or [])
+                    target        = brief.get("target_audience") or brand_vault.get("target_audience", "")
+                    key_messages  = "\n".join(f"- {m}" for m in (plan.get("key_messages") or []))
+                    visual_dir    = plan.get("visual_direction", "")
+                    campaign_summary = plan.get("campaign_summary", "")
+
+                    content_blocks = "\n\n".join(
+                        _format_written_content(ch, cj) for ch, cj in written_content
+                    )
+
+                    qwen_user_prompt = (
+                        "=== THÔNG TIN THƯƠNG HIỆU ===\n"
+                        f"Tên thương hiệu: {brand_name}\n"
+                        f"Mô tả: {brand_desc}\n"
+                        f"Giọng văn / phong cách: {tone}\n"
+                        f"Sản phẩm/dịch vụ chính: {key_products}\n"
+                        f"Đối tượng khách hàng: {target}\n"
+                        f"CTA thường dùng: {preferred_cta}\n\n"
+                        "=== THÔNG TIN CHIẾN DỊCH ===\n"
+                        f"Tên chiến dịch: {brief.get('campaign_name', '')}\n"
+                        f"Mục tiêu: {brief.get('objective', '')}\n"
+                        f"Sản phẩm/Dịch vụ: {brief.get('product_or_service', '')}\n"
+                        f"Ưu đãi / Hook: {brief.get('offer_or_hook', '')}\n"
+                        f"Kênh: {', '.join(channels)}\n\n"
+                        "=== KẾT QUẢ PHÂN TÍCH TỪ AI STRATEGIST ===\n"
+                        f"Tóm tắt chiến lược: {campaign_summary}\n"
+                        f"Thông điệp chính:\n{key_messages}\n"
+                        f"Định hướng hình ảnh từ strategist: {visual_dir}\n\n"
+                        "=== NỘI DUNG ĐÃ ĐƯỢC AI VIẾT (tham khảo để ảnh khớp với copy) ===\n"
+                        f"{content_blocks}\n\n"
+                        "Dựa trên TẤT CẢ thông tin trên, hãy tạo một image generation prompt bằng tiếng Anh, "
+                        "chi tiết và giàu hình ảnh, phù hợp để tạo key visual cho chiến dịch này bằng DALL-E 3.\n"
+                        "Prompt phải mô tả: chủ thể chính, bối cảnh/nền, cảm xúc/bầu không khí, bảng màu, "
+                        "ánh sáng, phong cách nghệ thuật.\n"
+                        "Prompt phải phản ánh đúng thông điệp và phong cách thương hiệu.\n"
+                        "Chỉ trả về prompt text, không giải thích."
+                    )
+
+                    qwen_system = (
+                        "You are a world-class marketing visual director and AI image prompt engineer "
+                        "specializing in Vietnamese consumer market campaigns.\n"
+                        "Your task: given full brand, campaign, strategy, and written content context, "
+                        "create a vivid, detailed image generation prompt in English.\n"
+                        "The image must perfectly complement the written marketing copy and embody the brand's identity.\n"
+                        "Output: only the prompt text, no preamble."
+                    )
+
+                    qwen_raw, _ = await timed_agent_call(
+                        agent_name="image_prompt_qwen",
+                        channel="image_prompt",
+                        step_order=step,
+                        system_prompt=qwen_system,
+                        user_prompt=qwen_user_prompt,
+                        campaign_id=campaign_id,
+                        temperature=0.75,
+                    )
+                    step += 1
+
+                    # GPT refines Qwen's draft into production-ready DALL-E 3 prompt
+                    refined_raw, _ = await timed_agent_call(
+                        agent_name="image_prompt_refiner",
+                        channel="image_prompt",
+                        step_order=step,
+                        system_prompt=(
+                            "You are a senior prompt engineer specializing in DALL-E 3 for commercial marketing.\n"
+                            "Rules:\n"
+                            "- Preserve the core concept and brand intent from the draft\n"
+                            "- Add precise visual descriptors: camera angle, lens focal length, lighting technique, color grading\n"
+                            "- Ensure professional commercial quality, not AI-generic\n"
+                            "- Append quality suffix: photorealistic, commercial photography, 8K resolution, sharp focus, award-winning\n"
+                            "- Max 200 words\n"
+                            "- Return only the final prompt, no explanation."
+                        ),
+                        user_prompt=(
+                            f"Brand: {brand_name}\n"
+                            f"Product: {brief.get('product_or_service', '')}\n"
+                            f"Target audience: {target}\n"
+                            f"Tone: {tone}\n\n"
+                            f"Qwen draft prompt:\n{qwen_raw.strip()}\n\n"
+                            "Refine into a production-ready DALL-E 3 prompt."
+                        ),
+                        campaign_id=campaign_id,
+                        temperature=0.35,
+                    )
+                    step += 1
+
+                    plan["image_prompt_qwen"] = qwen_raw.strip()
+                    plan["image_prompt_final"] = refined_raw.strip()
+                    await client.patch(
+                        f"{API_BASE}/internal/campaigns/{campaign_id}",
+                        json={"status": "running", "campaign_plan_json": plan},
+                    )
+
+                # ── Finalize ───────────────────────────────────────────────────
                 await client.patch(
                     f"{API_BASE}/internal/campaigns/{campaign_id}",
                     json={"status": "pending_approval"},

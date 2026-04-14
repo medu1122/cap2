@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Plus } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { STATUS_LABELS, STATUS_COLORS, CHANNEL_LABELS, formatDate, cn } from "@/lib/utils";
+import HelpDialogButton from "@/components/common/HelpDialogButton";
 
 interface Campaign {
   id: string;
@@ -39,9 +40,20 @@ export default function CampaignsPage() {
     <div className="p-6 max-w-6xl space-y-5">
       <div className="flex items-center justify-between">
         <h1>Chiến dịch</h1>
-        <Link href="/campaigns/new" className="btn-primary">
-          <Plus size={15} /> Tạo chiến dịch
-        </Link>
+        <div className="flex items-center gap-2">
+          <HelpDialogButton
+            title="Hướng dẫn trang Chiến dịch"
+            summary="Đây là nơi theo dõi toàn bộ đợt quảng bá và trạng thái xử lý AI."
+            steps={[
+              "Dùng tab để lọc trạng thái (đang chạy, chờ duyệt, đã duyệt...).",
+              "Bấm 'Xem' để mở chi tiết từng chiến dịch.",
+              "Bấm 'Tạo chiến dịch' để tạo mới và chạy AI.",
+            ]}
+          />
+          <Link href="/campaigns/new" className="btn-primary">
+            <Plus size={15} /> Tạo chiến dịch
+          </Link>
+        </div>
       </div>
 
       <div className="flex gap-1 border-b border-gray-200">

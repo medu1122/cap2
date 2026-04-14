@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, date
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 VALID_CHANNELS = ["facebook_post", "email", "video_script"]
 VALID_STATUSES = ["pending_agent", "running", "pending_approval", "approved", "partially_approved", "failed"]
@@ -15,6 +15,21 @@ class CampaignCreate(BaseModel):
     deadline: date
     channels: list[str]
     additional_notes: str | None = None
+
+    @field_validator("deadline")
+    @classmethod
+    def validate_deadline(cls, value: date) -> date:
+        if value < date.today():
+            raise ValueError("Ngày kết thúc không được là ngày trong quá khứ")
+        return value
+
+    @field_validator("channels")
+    @classmethod
+    def validate_channels(cls, value: list[str]) -> list[str]:
+        invalid = [channel for channel in value if channel not in VALID_CHANNELS]
+        if invalid:
+            raise ValueError(f"Kênh không hợp lệ: {invalid}")
+        return value
 
 
 class CampaignListItem(BaseModel):

@@ -301,3 +301,22 @@ output_preview (first 200 chars), duration_ms, token_usage, timestamp, status
 **Fallback condition**: VPS unreachable or response timeout > 15s → fall back to OpenAI.
 
 **VPS API**: Qwen served as OpenAI-compatible API (via `ollama` or `vllm`) at `http://171.238.156.10:11434/v1` or similar endpoint.
+
+---
+
+## F11 - Admin Console (bo sung)
+
+**Mô tả**: Bo sung khu vuc admin de van hanh he thong.
+
+**Input**
+- Tai khoan co role `admin`.
+- Du lieu user, workflow jobs, token usage.
+
+**Process**
+1. Xem dashboard tong quan suc khoe he thong.
+2. Quan ly user (lock/unlock).
+3. Theo doi workflow loi va retry.
+4. Xem va loc audit logs.
+
+**Output**
+- Van hanh on dinh hon, co kha nang truy vet su co.

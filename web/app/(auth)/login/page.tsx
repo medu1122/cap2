@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { api, setToken } from "@/lib/api-client";
 
@@ -29,7 +30,14 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="w-full max-w-sm">
         <div className="mb-8">
-          <h1 className="text-xl font-semibold text-gray-900">AIMAP</h1>
+          <Image
+            src="/images/logo/aimap-logo.png"
+            alt="AIMAP"
+            width={180}
+            height={76}
+            className="h-auto w-[180px]"
+            priority
+          />
           <p className="text-sm text-gray-500 mt-1">AI-Powered Marketing Automation</p>
         </div>
         <div className="card">
@@ -42,7 +50,7 @@ export default function LoginPage() {
                 className="input"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="owner@shop.com"
+                placeholder="user@example.com"
                 required
               />
             </div>

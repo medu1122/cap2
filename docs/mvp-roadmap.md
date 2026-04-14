@@ -236,3 +236,16 @@ Nếu thời gian thiếu, đây là phần tối thiểu phải xong để demo
 4. ✅ Sprint 3 — Approval (có thể chỉ implement approve, bỏ reject + edit)
 5. Partial Sprint 4 — Calendar (chỉ cần month view, không cần drag-drop)
 6. Partial Sprint 5 — Dashboard (chỉ cần stat cards + AI summary text)
+
+---
+
+## Cap nhat roadmap: them Admin track
+
+### Sprint 3+ (bo sung)
+
+1. Admin Dashboard (system health + usage).
+2. User Management (lock/unlock + search/filter).
+3. Workflow Ops (failed jobs + retry).
+4. Audit Logs (timeline hanh dong admin).
+
+Muc tieu: tang kha nang van hanh he thong khi demo/production ma khong pha vo luong chinh cua user doanh nghiep.

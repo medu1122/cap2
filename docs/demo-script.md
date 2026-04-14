@@ -166,3 +166,17 @@ Vào trang **Calendar**.
 | OpenAI API rate limit | Chuẩn bị 1 campaign đã run sẵn với logs đầy đủ để show |
 | Docker service crash | Chuẩn bị video screen-recording 3 phút demo full flow |
 | Network chậm | Dùng campaign đã run xong từ trước, show lại UI và logs |
+
+---
+
+## Demo bo sung cho vai tro Admin
+
+1. Dang nhap bang tai khoan admin.
+2. Mo trang Admin Dashboard:
+   - Tong user, tong campaign running, failed jobs.
+3. Vao User Management:
+   - Khoa/mo mot tai khoan demo.
+4. Vao Workflow Operations:
+   - Loc cac job failed va thuc hien retry.
+5. Vao Audit Logs:
+   - Chung minh he thong co ghi nhan hanh dong admin.

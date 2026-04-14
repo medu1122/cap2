@@ -14,9 +14,9 @@ No auth required.
 **Request**
 ```json
 {
-  "email": "owner@shop.com",
+  "email": "admin@aimap.vn",
   "password": "password123",
-  "full_name": "Nguyen Van A"
+  "full_name": "System Admin"
 }
 ```
 
@@ -24,9 +24,9 @@ No auth required.
 ```json
 {
   "id": "uuid",
-  "email": "owner@shop.com",
-  "full_name": "Nguyen Van A",
-  "role": "owner"
+  "email": "admin@aimap.vn",
+  "full_name": "System Admin",
+  "role": "admin"
 }
 ```
 
@@ -40,7 +40,7 @@ No auth required.
 **Request**
 ```json
 {
-  "email": "owner@shop.com",
+  "email": "admin@aimap.vn",
   "password": "password123"
 }
 ```
@@ -52,9 +52,9 @@ No auth required.
   "token_type": "bearer",
   "user": {
     "id": "uuid",
-    "email": "owner@shop.com",
-    "full_name": "Nguyen Van A",
-    "role": "owner"
+    "email": "admin@aimap.vn",
+    "full_name": "System Admin",
+    "role": "admin"
   }
 }
 ```
@@ -69,12 +69,28 @@ No auth required.
 ```json
 {
   "id": "uuid",
-  "email": "owner@shop.com",
-  "full_name": "Nguyen Van A",
-  "role": "owner",
+  "email": "admin@aimap.vn",
+  "full_name": "System Admin",
+  "role": "admin",
   "created_at": "2024-01-01T00:00:00Z"
 }
 ```
+
+---
+
+## Admin API (bo sung)
+
+### GET `/admin/users`
+Danh sach tai khoan he thong (chi admin).
+
+### PATCH `/admin/users/{user_id}/status`
+Khoa/mo tai khoan user.
+
+### GET `/admin/usage/ai`
+Thong ke token usage theo model/provider.
+
+### GET `/admin/workflow/jobs`
+Xem toan bo workflow jobs va loc theo status.
 
 ---
 

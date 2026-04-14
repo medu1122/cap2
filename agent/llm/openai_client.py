@@ -6,16 +6,24 @@ client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 
 
 async def complete(
-    system_prompt: str, user_prompt: str, temperature: float = 0.7
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float = 0.7,
+    json_mode: bool = True,
 ) -> tuple[str, str, int | None, int | None]:
-    response = await client.chat.completions.create(
-        model=MODEL,
-        messages=[
+    request_payload = {
+        "model": MODEL,
+        "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        temperature=temperature,
-        response_format={"type": "json_object"},
+        "temperature": temperature,
+    }
+    if json_mode:
+        request_payload["response_format"] = {"type": "json_object"}
+
+    response = await client.chat.completions.create(
+        **request_payload,
     )
     usage = response.usage
     return (
