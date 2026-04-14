@@ -1,0 +1,28 @@
+import uuid
+from datetime import datetime
+from pydantic import BaseModel
+
+TONE_OPTIONS = ["playful", "professional", "warm", "bold", "informative"]
+
+
+class BrandUpsert(BaseModel):
+    brand_name: str
+    tagline: str | None = None
+    brand_description: str
+    tone_of_voice: str
+    logo_url: str | None = None
+    primary_color: str | None = None
+    target_audience: str
+    key_products: list[str] | None = None
+    forbidden_words: list[str] | None = None
+    preferred_cta: str | None = None
+    preferred_salutation: str | None = None
+    sample_post: str | None = None
+
+
+class BrandOut(BrandUpsert):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
