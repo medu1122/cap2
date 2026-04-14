@@ -1,0 +1,24 @@
+---
+description: Quy tắc dùng env và dọn source gọn
+alwaysApply: true
+---
+
+# Quy tắc env và tối giản source
+
+- Chỉ dùng biến môi trường từ file `.env` hiện có của từng service.
+- Không được tự ý sửa bất kỳ file `.env` nào của user (ví dụ: `api/.env`, `web/.env.local`) khi chưa có yêu cầu explicit từ user.
+- Không tự ý tạo thêm file config env mới (`.env.*`) nếu chưa có yêu cầu rõ ràng từ user.
+- Khi cần thêm biến môi trường mới cho backend, chỉ ghi chú key vào `api/.env.example` để user tự điền giá trị thật.
+- Không hardcode secrets/API key trong code.
+
+# Quy tắc hạn chế file thừa
+
+- Ưu tiên chỉnh sửa trên file/symbol đang có sẵn, không tách thêm file mới nếu không thật sự cần.
+- Sau khi hoàn tất task, rà soát và dọn code/file tạm hoặc file dư do quá trình triển khai.
+- Không để lại nhiều phiên bản chức năng cũ song song gây rối source.
+
+# Quy tắc chất lượng code
+
+- Ưu tiên code đơn giản, dễ đọc, tên biến/hàm rõ nghĩa.
+- Với đoạn logic khó, thêm comment ngắn bằng tiếng Việt để người đọc hiểu nhanh.
+- Tránh comment thừa, chỉ giải thích chỗ khó hoặc quyết định quan trọng.

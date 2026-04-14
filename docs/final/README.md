@@ -69,7 +69,7 @@ Bắt đầu đọc mỗi tính năng từ file `README.md` trong thư mục tư
 | Agent Service | FastAPI, LangChain / CrewAI pattern, httpx |
 | Database | PostgreSQL 16 (JSONB, UUID, ARRAY) — schema mo rong cho workflow schedule va customer list (xem [database-overview.md](02-architecture/database-overview.md)) |
 | AI Models | OpenAI GPT-4o-mini (Strategy/Critic), Qwen 2.5 7B self-hosted (Writer) |
-| Infrastructure | Docker Compose, Alembic migrations |
+| Infrastructure | Docker Compose, Alembic migrations, Cloudinary (campaign image storage) |
 
 ---
 
@@ -108,3 +108,9 @@ He thong duoc cap nhat mo hinh van hanh co vai tro `admin` ben canh user doanh n
   - `docs/final/06-update/admin-overview-readme.md`
   - `docs/final/06-update/admin-backend-readme.md`
   - `docs/final/06-update/admin-frontend-readme.md`
+
+## Cap nhat media storage (2026-04)
+
+- Campaign image flow (`/campaigns/{id}/image/generate`, `/campaigns/{id}/image/upload`) da uu tien Cloudinary.
+- Neu chua cau hinh `CLOUDINARY_*`, backend fallback local qua `STATIC_DIR` + `STATIC_BASE_URL`.
+- Thay doi nay khong yeu cau migration DB vi image URL duoc luu trong `campaign_plan_json.image_url`.

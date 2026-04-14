@@ -216,3 +216,14 @@ Web (campaignsPage)
 - `adminUsagePage`
 - `adminWorkflowOpsPage`
 - `adminAuditLogsPage`
+
+## Bo sung component cho Insight A2A (2026-04-14)
+
+- API:
+  - `insightsA2aRouter`: endpoint deep analysis.
+  - `schemaMapper`: map cot CSV ve canonical schema.
+  - `a2aRunTraceService`: luu trace DeepSeek/Qwen/GPT.
+- Web:
+  - `insightsUploadForm`: upload 1-sheet CSV.
+  - `insightsPipelineTimeline`: hien step + model dang chay.
+  - `insightsResultPanel`: KPI + insights + action plan 30/60/90.

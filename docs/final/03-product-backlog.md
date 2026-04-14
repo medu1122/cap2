@@ -217,3 +217,12 @@
 | User Management (lock/unlock) | Sprint 3 | 5 | Must |
 | Workflow Ops (view failed/retry) | Sprint 3 | 4 | Should |
 | Audit Logs cho thao tac admin | Sprint 3 | 3 | Should |
+
+## Bo sung backlog Insight A2A (2026-04-14)
+
+| ID | User Story | Points | Priority |
+|---|---|---:|---|
+| US-48 | As a user, I want to upload 1-sheet CSV for deep analysis | 5 | Must |
+| US-49 | As a user, I want to see A2A pipeline and model currently running | 5 | Must |
+| US-50 | As a user, I want actionable 30/60/90 plan from report data | 5 | Must |
+| US-51 | As an operator, I want fallback reasons logged for each run | 3 | Should |

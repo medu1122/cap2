@@ -2,6 +2,7 @@ import uuid
 import os
 import asyncio
 import json
+import io
 from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +10,11 @@ from sqlalchemy import select, func
 from pydantic import BaseModel
 from openai import AsyncOpenAI
 import httpx
+try:
+    import cloudinary
+    import cloudinary.uploader
+except Exception:  # pragma: no cover - optional dependency
+    cloudinary = None
 from core.database import get_db
 from core.deps import get_current_user
 from models.user import User
@@ -25,6 +31,25 @@ router = APIRouter()
 _STATIC_DIR = os.getenv("STATIC_DIR", os.path.join(os.path.dirname(__file__), "..", "static"))
 _UPLOAD_DIR = os.path.join(_STATIC_DIR, "uploads")
 _STATIC_BASE_URL = os.getenv("STATIC_BASE_URL", "http://localhost:8000/static/uploads")
+_CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME", "")
+_CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY", "")
+_CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET", "")
+_CLOUDINARY_FOLDER = os.getenv("CLOUDINARY_FOLDER", "aimap/campaigns")
+
+_CLOUDINARY_ENABLED = bool(
+    cloudinary
+    and _CLOUDINARY_CLOUD_NAME
+    and _CLOUDINARY_API_KEY
+    and _CLOUDINARY_API_SECRET
+)
+
+if _CLOUDINARY_ENABLED:
+    cloudinary.config(
+        cloud_name=_CLOUDINARY_CLOUD_NAME,
+        api_key=_CLOUDINARY_API_KEY,
+        api_secret=_CLOUDINARY_API_SECRET,
+        secure=True,
+    )
 
 _qwen = AsyncOpenAI(
     base_url=os.getenv("QWEN_BASE_URL", "http://171.238.156.10:11434/v1"),
@@ -243,6 +268,37 @@ async def _save_campaign_image_url(campaign: Campaign, url: str, db: AsyncSessio
     await db.commit()
 
 
+async def _upload_to_cloudinary(content: bytes, public_id: str, filename: str) -> str:
+    if not _CLOUDINARY_ENABLED:
+        raise RuntimeError("Cloudinary is not configured")
+
+    def _do_upload() -> dict:
+        file_obj = io.BytesIO(content)
+        file_obj.name = filename
+        return cloudinary.uploader.upload(  # type: ignore[union-attr]
+            file_obj,
+            folder=_CLOUDINARY_FOLDER,
+            public_id=public_id,
+            overwrite=True,
+            resource_type="image",
+        )
+
+    result = await asyncio.to_thread(_do_upload)
+    secure_url = result.get("secure_url") or result.get("url")
+    if not secure_url:
+        raise RuntimeError("Cloudinary upload did not return URL")
+    return str(secure_url)
+
+
+async def _save_local_image(campaign_id: uuid.UUID, content: bytes, extension: str) -> str:
+    os.makedirs(_UPLOAD_DIR, exist_ok=True)
+    filename = f"{campaign_id}_{int(datetime.now().timestamp())}.{extension}"
+    filepath = os.path.join(_UPLOAD_DIR, filename)
+    with open(filepath, "wb") as f:
+        f.write(content)
+    return f"{_STATIC_BASE_URL}/{filename}"
+
+
 class GenerateImagePayload(BaseModel):
     prompt: str | None = None
 
@@ -254,7 +310,7 @@ async def generate_campaign_image(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate a campaign image with DALL-E 3 and save it locally."""
+    """Generate campaign image and persist on Cloudinary/local storage."""
     result = await db.execute(
         select(Campaign).where(Campaign.id == campaign_id, Campaign.user_id == current_user.id)
     )
@@ -287,20 +343,23 @@ async def generate_campaign_image(
     except Exception as exc:
         raise HTTPException(503, f"Không thể tạo ảnh: {exc}")
 
-    # Download DALL-E image (URL expires in ~1h) and persist locally
-    os.makedirs(_UPLOAD_DIR, exist_ok=True)
-    filename = f"{campaign_id}_{int(datetime.now().timestamp())}.png"
-    filepath = os.path.join(_UPLOAD_DIR, filename)
-
     async with httpx.AsyncClient(timeout=30) as client:
         img_resp = await client.get(temp_url)
-        with open(filepath, "wb") as f:
-            f.write(img_resp.content)
+        image_bytes = img_resp.content
 
-    local_url = f"{_STATIC_BASE_URL}/{filename}"
-    await _save_campaign_image_url(campaign, local_url, db)
+    public_id = f"{campaign_id}_{int(datetime.now().timestamp())}"
+    if _CLOUDINARY_ENABLED:
+        image_url = await _upload_to_cloudinary(
+            image_bytes,
+            public_id=public_id,
+            filename=f"{public_id}.png",
+        )
+    else:
+        image_url = await _save_local_image(campaign_id, image_bytes, "png")
 
-    return {"image_url": local_url, "prompt_used": prompt}
+    await _save_campaign_image_url(campaign, image_url, db)
+    storage = "cloudinary" if _CLOUDINARY_ENABLED else "local"
+    return {"image_url": image_url, "prompt_used": prompt, "storage": storage}
 
 
 @router.post("/{campaign_id}/image/upload")
@@ -327,15 +386,17 @@ async def upload_campaign_image(
     if ext not in allowed:
         raise HTTPException(400, f"Định dạng không hỗ trợ: .{ext}")
 
-    os.makedirs(_UPLOAD_DIR, exist_ok=True)
-    filename = f"{campaign_id}_{int(datetime.now().timestamp())}.{ext}"
-    filepath = os.path.join(_UPLOAD_DIR, filename)
-
     content = await file.read()
-    with open(filepath, "wb") as f:
-        f.write(content)
+    public_id = f"{campaign_id}_{int(datetime.now().timestamp())}"
+    if _CLOUDINARY_ENABLED:
+        image_url = await _upload_to_cloudinary(
+            content,
+            public_id=public_id,
+            filename=f"{public_id}.{ext}",
+        )
+    else:
+        image_url = await _save_local_image(campaign_id, content, ext)
 
-    local_url = f"{_STATIC_BASE_URL}/{filename}"
-    await _save_campaign_image_url(campaign, local_url, db)
-
-    return {"image_url": local_url}
+    await _save_campaign_image_url(campaign, image_url, db)
+    storage = "cloudinary" if _CLOUDINARY_ENABLED else "local"
+    return {"image_url": image_url, "storage": storage}

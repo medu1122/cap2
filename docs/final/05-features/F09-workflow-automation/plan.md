@@ -72,7 +72,7 @@ error_message TEXT
 | PATCH | `/workflow/schedules/{id}` | Enable/disable schedule |
 | DELETE | `/workflow/schedules/{id}` | Xóa schedule |
 | GET | `/workflow/jobs` | Workflow job history |
-| POST | `/files/upload` | Upload file (CSV, image) |
+| POST | `/files/upload` | Upload file CSV (customer list cho workflow trigger) |
 | GET | `/customer-lists` | Danh sách customer lists |
 | GET | `/customer-lists/{id}/customers` | Customers trong list |
 

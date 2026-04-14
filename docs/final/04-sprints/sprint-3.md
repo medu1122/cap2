@@ -64,7 +64,7 @@
 | Ngày 50 | Workflow schedules API: GET/POST/PATCH /workflow/schedules | Schedule CRUD |
 | Ngày 51 | Cron job logic: check next_run_at, create workflow_job | Cron simulation test |
 | Ngày 52 | Schedule trigger: tạo campaign từ template + run orchestrator | Auto campaign test |
-| Ngày 53 | File upload API: POST /files/upload (CSV, image) | File upload test |
+| Ngày 53 | File upload API: POST /files/upload (CSV) + campaign image endpoints o /campaigns/{id}/image/* | File upload test |
 | Ngày 54 | CSV parsing: import customers into customer_lists + customers | Import 100 rows test |
 | Ngày 55 | Upload trigger: CSV → auto create email campaign | End-to-end upload test |
 | Ngày 56 | Workflow UI: schedule list + create form + history | Workflow UI complete |
@@ -106,6 +106,8 @@
 - [ ] API `/health` → 200
 - [ ] Qwen VPS accessible (ping 171.238.156.10)
 - [ ] OpenAI API key hợp lệ
+- [ ] Cloudinary credentials hop le (`CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`)
+- [ ] Neu khong dung Cloudinary, da cau hinh local fallback (`STATIC_DIR`, `STATIC_BASE_URL`) va truy cap duoc `/static/uploads/*`
 
 ### Demo Flow (< 5 phút)
 
@@ -190,3 +192,12 @@
 - Email sending không có (requires SMTP/SendGrid)
 - Single user per brand vault
 - Mobile app chưa có
+
+## Sprint 3 update - Insight A2A reset scope (2026-04-14)
+
+- Scope `/insights` duoc lam lai theo flow moi:
+  - upload 1-sheet CSV,
+  - deep analysis A2A,
+  - show pipeline + model badges,
+  - luu run trace/fallback.
+- Tinh nang cards/actions cu tren `/insights` duoc thu gon de tranh loạn source.

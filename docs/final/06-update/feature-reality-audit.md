@@ -349,3 +349,13 @@ Da bo sung khung code ban dau cho Insight Copilot:
   - `docs/final/06-update/insight-copilot-data-template-readme.md`
 
 Trang thai hien tai: **MVP khung ky thuat da co**, can tiep tuc hardening (rule engine nang cao, Qwen reasoning layer day du, evaluation pipeline).
+
+## Cap nhat DeepSeek A2A flow moi (2026-04-14 toi)
+
+- `/insights` da doi sang huong "bao cao CSV -> deep analysis A2A".
+- Backend bo sung run-trace tables cho audit model usage.
+- Luong model:
+  - DeepSeek Coder 6.7B cho classify/map/plan.
+  - Qwen cho narrative.
+  - GPT fallback khi khong dat quality gate.
+- Cac docs thiet ke/van hanh da duoc bo sung trong `docs/final/06-update/*`.

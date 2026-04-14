@@ -31,6 +31,16 @@ DEEPSEEK_MODEL=deepseek-coder:6.7b
 QWEN_BASE_URL=http://<vps-ip>:11434/v1
 QWEN_MODEL=qwen2.5:7b
 OPENAI_API_KEY=...
+
+# Campaign image storage (recommended)
+CLOUDINARY_CLOUD_NAME=...
+CLOUDINARY_API_KEY=...
+CLOUDINARY_API_SECRET=...
+CLOUDINARY_FOLDER=aimap/campaigns
+
+# Local fallback (optional khi chua cau hinh Cloudinary)
+STATIC_DIR=api/static
+STATIC_BASE_URL=http://localhost:8000/static/uploads
 ```
 
 ## 4) Bao mat co ban

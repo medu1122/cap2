@@ -21,6 +21,7 @@ C4Container
 
     System_Ext(openai, "OpenAI API", "GPT-4o-mini")
     System_Ext(qwen, "Qwen VPS", "Qwen 2.5 7B")
+    System_Ext(cloudinary, "Cloudinary", "Media storage cho campaign images")
 
     System_Boundary(aimap, "AIMAP Platform") {
         Container(web, "Web Application", "Next.js 14, TypeScript, Tailwind CSS", "Cung cấp UI cho tất cả tính năng. Server-side rendering, client-side interactions. Port 3000.")
@@ -37,6 +38,7 @@ C4Container
     Rel(agent, api, "Callback: lưu kết quả", "HTTP POST /internal/* — port 8000")
     Rel(agent, openai, "Gọi LLM", "HTTPS REST")
     Rel(agent, qwen, "Gọi LLM", "HTTP REST (OpenAI-compatible)")
+    Rel(api, cloudinary, "Upload campaign image", "HTTPS API")
 ```
 
 ---
@@ -90,6 +92,8 @@ C4Container
 - Web → API: Nhận request, trả JSON response
 - API → DB: Queries qua SQLAlchemy async
 - API → Agent: `POST http://agent:8001/run` để dispatch AI job
+- API → Cloudinary: upload anh cho `POST /campaigns/{id}/image/generate` va `POST /campaigns/{id}/image/upload`
+- Fallback local storage van ton tai khi chua cau hinh `CLOUDINARY_*`
 
 ---
 
@@ -167,6 +171,7 @@ Tất cả containers giao tiếp qua Docker internal network `aimap_network`. C
 | Agent | API | HTTP | JSON | Internal (no auth) |
 | Agent | OpenAI | HTTPS | JSON | API Key |
 | Agent | Qwen VPS | HTTP | JSON (OpenAI-compat) | None |
+| API | Cloudinary | HTTPS | multipart/form-data | API Key/Secret |
 | API | DB | TCP | SQL binary | Password |
 
 ---
@@ -179,3 +184,12 @@ Tất cả containers giao tiếp qua Docker internal network `aimap_network`. C
   - Giam sat AI usage.
   - Van hanh workflow jobs.
   - Truy vet audit logs.
+
+## Bo sung Insight A2A (2026-04-14)
+
+- `Backend API` bo sung pipeline A2A cho `/insights/a2a/deep-analysis`.
+- Kien truc model:
+  - DeepSeek Coder 6.7B: classify/map/plan.
+  - Qwen 2.5 7B: narrative insight.
+  - GPT API: fallback khi quality gate fail.
+- Database bo sung bang run-trace de audit model usage va fallback reason.

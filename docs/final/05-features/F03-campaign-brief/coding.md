@@ -40,6 +40,24 @@ async def list_campaigns(
     return result.all()
 ```
 
+### Campaign image storage (`api/routers/campaigns.py`)
+
+```python
+# Cloudinary first, local fallback
+_CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME", "")
+_CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY", "")
+_CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET", "")
+_CLOUDINARY_FOLDER = os.getenv("CLOUDINARY_FOLDER", "aimap/campaigns")
+
+@router.post("/{campaign_id}/image/generate")
+@router.post("/{campaign_id}/image/upload")
+```
+
+Behavior:
+- Neu cau hinh du `CLOUDINARY_*`: anh duoc upload len Cloudinary va luu `secure_url` vao `campaign_plan_json.image_url`.
+- Neu chua cau hinh Cloudinary: he thong fallback sang local storage (`STATIC_DIR` + `STATIC_BASE_URL`).
+- Khong can doi schema DB, vi URL anh van duoc luu trong `campaign_plan_json`.
+
 ### `api/schemas/campaign.py`
 
 ```python
@@ -68,6 +86,20 @@ class CampaignCreate(BaseModel):
             if ch not in allowed:
                 raise ValueError(f"Channel không hợp lệ: {ch}")
         return v
+```
+
+### Environment variables can thiet cho image storage
+
+```env
+# Cloudinary (recommended for deploy)
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
+CLOUDINARY_FOLDER=aimap/campaigns
+
+# Local fallback (optional)
+STATIC_DIR=api/static
+STATIC_BASE_URL=http://localhost:8000/static/uploads
 ```
 
 ### `api/services/agent_dispatcher.py`

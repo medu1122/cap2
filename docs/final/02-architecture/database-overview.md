@@ -396,6 +396,11 @@ erDiagram
 | purpose | VARCHAR(50) | NULL |
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT `NOW()` |
 
+Ghi chu:
+- `file_uploads` dung cho luong upload tep workflow/customer-list.
+- Campaign image khong luu trong bang nay.
+- Campaign image URL duoc luu trong `campaigns.campaign_plan_json.image_url`.
+
 #### `brands`
 | Cột | Kiểu | Ràng buộc |
 |---|---|---|
@@ -447,6 +452,11 @@ erDiagram
 | campaign_plan_json | JSONB | NULL |
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT `NOW()` |
 | updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT `NOW()` |
+
+Ghi chu image storage:
+- Truong `campaign_plan_json` co the chua `image_url`.
+- Runtime hien tai uu tien luu image len Cloudinary, fallback local neu chua cau hinh `CLOUDINARY_*`.
+- Chuyen local -> Cloudinary khong can migration schema DB.
 
 #### `campaign_tags`
 | Cột | Kiểu | Ràng buộc |
@@ -701,3 +711,10 @@ erDiagram
 - `api/alembic` hiện mới cover một tập con bảng, nên khi đối chiếu implementation cần phân biệt:
   - schema DB đầy đủ (tài liệu này)
   - schema đã migration trong backend hiện tại.
+
+## 5) Bo sung bang Insight A2A (MVP moi)
+
+- `insight_report_runs`: metadata cua moi lan phan tich sau upload CSV.
+- `insight_report_schema_maps`: mapping cot goc -> canonical key.
+- `insight_agent_traces`: trace tung step va model da dung.
+- `insight_result_snapshots`: snapshot ket qua JSON tra ve cho UI.

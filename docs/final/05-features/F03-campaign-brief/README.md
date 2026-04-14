@@ -22,11 +22,13 @@ SMB thuong mo ta campaign bang cach roi rac (chat, ghi chu, file). Tinh nang nay
 | Validate channels hop le | done | Router kiem tra theo danh sach cho phep |
 | Validate deadline khong qua khu | done | Da check o luong tao |
 | Kich AI ngay sau khi tao | partial | Co luong run/background, can harden xu ly loi |
+| Tao/upload anh campaign | done | Uu tien Cloudinary; fallback local neu chua cau hinh |
 | UX thong bao loi cho user | partial | Can thong diep de hieu hon o form |
 
 ## 5) Gap / risk hien tai
 - Loi dispatch AI de roi vao trang thai khong ro nguyen nhan voi user.
 - Validation can giu dong bo giua schema, router va UI de tranh lech hanh vi.
+- Neu deploy ma thieu `CLOUDINARY_*`, he thong se fallback local storage.
 
 ## 6) Next steps de hoan thien
 - Chuan hoa bo message loi theo nhom (validation, dispatch, external model).

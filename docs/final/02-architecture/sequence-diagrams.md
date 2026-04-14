@@ -382,3 +382,33 @@ sequenceDiagram
         Owner->>Web: Vào trang Phê duyệt để xem và duyệt nội dung
     end
 ```
+
+---
+
+## SD-09: Insight A2A Deep Analysis (DeepSeek -> Qwen -> GPT fallback)
+
+```mermaid
+sequenceDiagram
+    actor Owner as Chủ doanh nghiệp
+    participant Web as Giao diện Web
+    participant API as Backend API
+    participant DS as DeepSeek Coder 6.7B
+    participant QW as Qwen 2.5 7B
+    participant GPT as GPT Fallback
+    participant DB as PostgreSQL
+
+    Owner->>Web: Upload 1 sheet CSV báo cáo
+    Web->>API: POST /insights/a2a/deep-analysis
+    API->>DS: Classify loại báo cáo + map cột + lập plan
+    DS-->>API: report_type + schema_map + analysis_plan
+    API->>API: Tính KPI deterministic (python/pandas)
+    API->>QW: Viết insight + action theo business language
+    QW-->>API: insight_json
+    alt quality gate fail hoặc timeout
+        API->>GPT: fallback reasoning
+        GPT-->>API: fallback_insight_json
+    end
+    API->>DB: Lưu run trace + result snapshot + fallback reason
+    API-->>Web: Trả kết quả pipeline + model badges + action 30/60/90
+    Web-->>Owner: Hiển thị luồng A2A và khuyến nghị hành động
+```

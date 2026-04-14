@@ -161,3 +161,10 @@ async def process_csv_and_trigger(list_id: str, csv_content: bytes):
 
     await agent_dispatcher.dispatch(str(campaign.id))
 ```
+
+Luu y:
+- Endpoint `/files/upload` trong workflow dung cho upload CSV customer list.
+- Luong anh campaign (AI generate + user upload) nam o `api/routers/campaigns.py`:
+  - `POST /campaigns/{id}/image/generate`
+  - `POST /campaigns/{id}/image/upload`
+- Image storage cua campaign uu tien Cloudinary (`CLOUDINARY_*`), fallback local khi chua cau hinh.
