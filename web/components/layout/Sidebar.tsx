@@ -32,7 +32,8 @@ export default function Sidebar() {
           alt="AIMAP"
           width={108}
           height={46}
-          className="h-auto w-[108px]"
+          className="w-auto max-w-full object-contain"
+          style={{ height: "auto" }}
           priority
         />
         <p className="text-xs text-gray-400 mt-0.5">Tự động hoá Marketing</p>

@@ -15,6 +15,25 @@ interface InsightAction {
   created_at: string;
 }
 
+const OWNER_LABELS: Record<string, string> = {
+  marketing: "Marketing",
+  content: "Nội dung",
+  sales: "Bán hàng",
+  ops: "Vận hành",
+};
+
+const IMPACT_LABELS: Record<string, string> = {
+  high: "Cao",
+  medium: "Vừa",
+  low: "Thấp",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  open: "Đang mở",
+  done: "Đã hoàn tất",
+  dismissed: "Bỏ qua",
+};
+
 export default function InsightActionsPage() {
   const [actions, setActions] = useState<InsightAction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,15 +60,18 @@ export default function InsightActionsPage() {
 
   return (
     <div className="p-6 max-w-5xl space-y-5">
+      <div className="rounded border border-green-100 bg-green-50 px-3 py-2 text-sm text-green-700">
+        Bước 3 - Hành động: Đây là danh sách việc cần triển khai sau khi hệ thống phân tích dữ liệu ở trang Trợ lý phân tích.
+      </div>
       <div className="flex items-center justify-between">
         <div>
-          <h1>Hành động từ Insight</h1>
-          <p className="text-sm text-gray-500 mt-1">Danh sách việc cần làm do Insight Copilot đề xuất.</p>
+          <h1>Hàng đợi hành động</h1>
+          <p className="text-sm text-gray-500 mt-1">Danh sách việc cần làm được đề xuất từ Trợ lý phân tích.</p>
         </div>
         <div className="flex items-center gap-2">
           <HelpDialogButton
             title="Hướng dẫn Hàng đợi hành động"
-            summary="Trang này giúp bạn biến phân tích thành việc làm cụ thể, có người phụ trách và mức tác động rõ ràng."
+            summary="Trang này giúp bạn biến kết quả phân tích thành công việc cụ thể để đội vận hành triển khai ngay."
             steps={[
               "Bước 1 - Chọn Trạng thái để lọc các việc đang mở, đã hoàn tất hoặc bỏ qua.",
               "Bước 2 - Đọc nội dung hành động và xác định người phụ trách phù hợp.",
@@ -61,7 +83,7 @@ export default function InsightActionsPage() {
               "Nên rà soát lại danh sách sau mỗi lần bạn bấm Phân tích lại ở trang Trợ lý phân tích.",
             ]}
           />
-          <Link href="/insights" className="btn-secondary">Quay lại trang insight</Link>
+          <Link href="/insights" className="btn-secondary">Quay lại Trợ lý phân tích</Link>
         </div>
       </div>
 
@@ -100,11 +122,11 @@ export default function InsightActionsPage() {
                 <div>
                   <p className="font-medium text-gray-900">{action.action_text}</p>
                   <p className="text-xs text-gray-500 mt-1">
-                    Phụ trách: {action.owner} - Mức tác động: {action.impact_estimate}
+                    Phụ trách: {OWNER_LABELS[action.owner] || action.owner} - Mức tác động: {IMPACT_LABELS[action.impact_estimate] || action.impact_estimate}
                   </p>
                 </div>
                 <span className="inline-flex rounded border border-gray-200 px-2 py-1 text-xs text-gray-600">
-                  {action.status}
+                  {STATUS_LABELS[action.status] || action.status}
                 </span>
               </div>
               <p className="text-xs text-gray-400 mt-2">{new Date(action.created_at).toLocaleString("vi-VN")}</p>

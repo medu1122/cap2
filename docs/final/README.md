@@ -88,6 +88,7 @@ Bắt đầu đọc mỗi tính năng từ file `README.md` trong thư mục tư
 | [insight-copilot-readme.md](06-update/insight-copilot-readme.md) | Bai toan SMB va gia tri thuc dung cua Insight Copilot |
 | [insight-copilot-plan.md](06-update/insight-copilot-plan.md) | Kien truc backend/frontend/database va roadmap trien khai |
 | [insight-copilot-ai-quality.md](06-update/insight-copilot-ai-quality.md) | Khung chat luong AI cho Qwen: prompt, guardrails, eval |
+| [insight-copilot-data-template-readme.md](06-update/insight-copilot-data-template-readme.md) | Huong dan CSV mau tieng Viet de nap du lieu cho Tro ly phan tich |
 
 ---
 

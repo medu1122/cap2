@@ -22,7 +22,6 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://aimap:aimap@db:5432/aimap
       AGENT_SERVICE_URL: http://agent:8001
     env_file:
       - ./api/.env

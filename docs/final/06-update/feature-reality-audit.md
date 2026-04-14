@@ -342,5 +342,10 @@ Da bo sung khung code ban dau cho Insight Copilot:
   - `web/app/(app)/insights/page.tsx`
   - `web/app/(app)/insights/actions/page.tsx`
   - Sidebar da them menu `Insight Copilot`
+  - Bo sung nut `Nạp dữ liệu từ CSV` + link `Tải file CSV mẫu` cho luong user thuc te
+
+- Du lieu mau va huong dan:
+  - `web/public/mau-du-lieu-tro-ly-phan-tich.csv`
+  - `docs/final/06-update/insight-copilot-data-template-readme.md`
 
 Trang thai hien tai: **MVP khung ky thuat da co**, can tiep tuc hardening (rule engine nang cao, Qwen reasoning layer day du, evaluation pipeline).
