@@ -226,3 +226,6 @@
 | US-49 | As a user, I want to see A2A pipeline and model currently running | 5 | Must |
 | US-50 | As a user, I want actionable 30/60/90 plan from report data | 5 | Must |
 | US-51 | As an operator, I want fallback reasons logged for each run | 3 | Should |
+| US-52 | As a user, I want to upload Excel (.xlsx/.xls) besides CSV | 3 | Must |
+| US-53 | As a user, I want to preview the uploaded sheet as a table before/after analysis | 3 | Must |
+| US-54 | As a user, I want to open previous result and reanalyze from saved run | 3 | Should |

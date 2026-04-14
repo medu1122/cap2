@@ -13,3 +13,13 @@
 
 ## Ghi chu
 - Cac tai lieu nay la baseline chot cho giai doan coding MVP A2A.
+
+## Cap nhat bo sung sau coding (2026-04-14 toi)
+
+- Dong bo lai cac tai lieu kien truc/backlog/sprint/feature theo runtime moi cua `/insights`.
+- Bo sung thong tin ho tro file Excel (`.xlsx/.xls`) ben canh CSV.
+- Bo sung mo ta UI moi:
+  - bang preview sheet da nap,
+  - bang ket qua da luu,
+  - mo lai ket qua cu va phan tich lai run cu.
+- Cap nhat sequence SD-09 de phan anh luong du lieu va luu ket qua moi.

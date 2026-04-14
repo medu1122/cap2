@@ -21,8 +21,10 @@ Tinh nang nay tong hop so lieu dot quang ba va noi dung, giup nguoi dung theo do
 | Tong hop noi dung theo kenh | Da | Co man hinh chi tiet channel insights |
 | Quan sat nhanh Brand Vault tren dashboard | Da | Co bang brand va nut tao brand moi |
 | AI summary ngay tren dashboard chinh | Chua | Da bo khoi nay khoi UI chinh |
+| Danh sach ket qua phan tich duoc luu va xem lai | Da (di chuyen sang Insights) | Theo flow moi, run history nam trong `/insights` |
 
 ## Viec tiep theo
 - Neu can cho bao cao, dua AI summary thanh trang rieng hoac widget tu chon.
 - Them bieu do truc quan hon cho xu huong theo thoi gian.
 - Bo sung cache ngan cho endpoint thong ke de giam tai.
+- Tach ro vai tro: dashboard cho tong quan marketing, insights cho phan tich bao cao da nap.

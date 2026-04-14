@@ -24,7 +24,7 @@
 | [c4-context.md](02-architecture/c4-context.md) | C4 Level 1 — System Context: Actors & External Systems |
 | [c4-container.md](02-architecture/c4-container.md) | C4 Level 2 — Containers: 3 Services + Database |
 | [c4-component.md](02-architecture/c4-component.md) | C4 Level 3 — Components bên trong mỗi service |
-| [sequence-diagrams.md](02-architecture/sequence-diagrams.md) | 10 Sequence Diagrams cho từng tính năng |
+| [sequence-diagrams.md](02-architecture/sequence-diagrams.md) | 11 Sequence Diagrams (bo sung luong Insight A2A) |
 | [database-overview.md](02-architecture/database-overview.md) | **Cơ sở dữ liệu:** danh sách 25 bảng, vai trò từng bảng, ERD Mermaid |
 
 ---
@@ -114,3 +114,12 @@ He thong duoc cap nhat mo hinh van hanh co vai tro `admin` ben canh user doanh n
 - Campaign image flow (`/campaigns/{id}/image/generate`, `/campaigns/{id}/image/upload`) da uu tien Cloudinary.
 - Neu chua cau hinh `CLOUDINARY_*`, backend fallback local qua `STATIC_DIR` + `STATIC_BASE_URL`.
 - Thay doi nay khong yeu cau migration DB vi image URL duoc luu trong `campaign_plan_json.image_url`.
+
+## Cap nhat Insight UI/flow (2026-04)
+
+- `/insights` ho tro nap file `.csv`, `.xlsx`, `.xls` (sheet 1).
+- UI bo sung bang preview toan bo du lieu da nap.
+- UI bo sung bang "Ket qua da luu" voi thao tac xem ket qua va phan tich lai.
+- API bo sung:
+  - `GET /insights/a2a/runs/{run_id}/result`
+  - `POST /insights/a2a/runs/{run_id}/reanalyze`

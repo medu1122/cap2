@@ -47,11 +47,12 @@ export default function InsightsPage() {
   const [deepAnalyzing, setDeepAnalyzing] = useState(false);
   const [deepResult, setDeepResult] = useState<DeepAnalysisResult | null>(null);
   const [deepRows, setDeepRows] = useState<Array<Record<string, string | number>>>([]);
-  const [businessName, setBusinessName] = useState("Doanh nghiệp mẫu");
-  const [industry, setIndustry] = useState("Bán lẻ tiêu dùng");
+  const [businessName] = useState("Doanh nghiệp");
+  const [industry] = useState("Tổng hợp");
   const [sourceFilename, setSourceFilename] = useState<string | undefined>(undefined);
   const [runs, setRuns] = useState<AnalysisRun[]>([]);
   const [activeStepIndex, setActiveStepIndex] = useState(0);
+  const [previewLimit, setPreviewLimit] = useState(50);
 
   useEffect(() => {
     void loadRuns();
@@ -97,17 +98,66 @@ export default function InsightsPage() {
     return parsedRows;
   }
 
+  function normalizeRowsFromHeaderAndBody(
+    headers: Array<string | number | null | undefined>,
+    bodyRows: Array<Array<string | number | null | undefined>>,
+  ): Array<Record<string, string | number>> {
+    const normalizedHeaders = headers.map((h) => String(h ?? "").trim());
+    if (normalizedHeaders.filter(Boolean).length === 0) {
+      throw new Error("Sheet không có dòng tiêu đề hợp lệ.");
+    }
+    const records: Array<Record<string, string | number>> = [];
+    for (const row of bodyRows) {
+      const record: Record<string, string | number> = {};
+      let hasValue = false;
+      normalizedHeaders.forEach((header, idx) => {
+        if (!header) return;
+        const cell = row[idx] ?? "";
+        const cellString = String(cell).trim();
+        if (cellString !== "") hasValue = true;
+        record[header] = cellString;
+      });
+      if (hasValue) records.push(record);
+    }
+    return records;
+  }
+
+  async function parseSpreadsheetFile(file: File): Promise<Array<Record<string, string | number>>> {
+    const lowerName = file.name.toLowerCase();
+    if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
+      const XLSX = await import("xlsx");
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: "array" });
+      const firstSheetName = workbook.SheetNames[0];
+      if (!firstSheetName) {
+        throw new Error("File Excel không có sheet hợp lệ.");
+      }
+      const sheet = workbook.Sheets[firstSheetName];
+      const rows = XLSX.utils.sheet_to_json<Array<string | number | null>>(sheet, {
+        header: 1,
+        defval: "",
+        raw: false,
+      });
+      if (rows.length < 2) {
+        throw new Error("Sheet Excel không đủ dữ liệu để phân tích.");
+      }
+      return normalizeRowsFromHeaderAndBody(rows[0] ?? [], rows.slice(1));
+    }
+
+    const text = await file.text();
+    return parseCsvText(text);
+  }
+
   async function handleCsvUpload(file: File) {
     setUploadingCsv(true);
     setError(null);
     try {
-      const text = await file.text();
-      const uploadedRows = parseCsvText(text);
+      const uploadedRows = await parseSpreadsheetFile(file);
       setDeepRows(uploadedRows);
       setSourceFilename(file.name);
       setDeepResult(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Không thể nạp dữ liệu CSV.");
+      setError(e instanceof Error ? e.message : "Không thể nạp dữ liệu từ file.");
     } finally {
       setUploadingCsv(false);
     }
@@ -188,7 +238,7 @@ export default function InsightsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1>Trợ lý phân tích</h1>
-          <p className="text-sm text-gray-500 mt-1">Phân tích sâu báo cáo CSV bằng luồng A2A: DeepSeek -> Qwen -> GPT fallback.</p>
+          <p className="text-sm text-gray-500 mt-1">Phân tích sâu báo cáo CSV bằng luồng A2A: DeepSeek {"->"} Qwen {"->"} GPT fallback.</p>
         </div>
         <HelpDialogButton
           title="Hướng dẫn Trợ lý phân tích"
@@ -224,7 +274,7 @@ export default function InsightsPage() {
               {uploadingCsv ? "Đang nạp CSV..." : "Nạp dữ liệu từ CSV"}
               <input
                 type="file"
-                accept=".csv,text/csv"
+                accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                 className="hidden"
                 disabled={uploadingCsv}
                 onChange={(e) => {
@@ -235,18 +285,8 @@ export default function InsightsPage() {
               />
             </label>
             <button className="btn-secondary" onClick={handleUseSampleData} disabled={uploadingCsv}>
-              Dùng dữ liệu mẫu ngay
+              Tải dữ liệu mẫu
             </button>
-          </div>
-          <p className="text-xs text-gray-500">
-            Cần file để chỉnh tay trước khi nạp?{" "}
-            <a href="/mau-du-lieu-tro-ly-phan-tich.csv" className="underline">
-              Tải file CSV mẫu
-            </a>
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            <input className="input" value={businessName} onChange={(e) => setBusinessName(e.target.value)} placeholder="Tên doanh nghiệp" />
-            <input className="input" value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="Ngành hàng" />
           </div>
           <div className="text-xs text-gray-500">
             {deepRows.length === 0 ? "Chưa có dữ liệu CSV." : `Đã nạp ${deepRows.length} dòng từ file ${sourceFilename}.`}
@@ -258,6 +298,61 @@ export default function InsightsPage() {
       </div>
 
       {error && <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+
+      {deepRows.length > 0 && (
+        <div className="card space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2>Xem lại dữ liệu CSV đã nạp</h2>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-gray-500">
+                {sourceFilename ? `File: ${sourceFilename}` : "Dữ liệu đã nạp"}
+              </span>
+              <label className="text-gray-600">Hiển thị:</label>
+              <select
+                className="select w-[110px]"
+                value={previewLimit}
+                onChange={(e) => setPreviewLimit(Number(e.target.value))}
+              >
+                <option value={20}>20 dòng</option>
+                <option value={50}>50 dòng</option>
+                <option value={100}>100 dòng</option>
+                <option value={1000}>Tất cả</option>
+              </select>
+            </div>
+          </div>
+          <div className="overflow-x-auto border border-gray-200">
+            <table className="min-w-full text-xs">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="border-b border-gray-200 px-2 py-2 text-left font-medium text-gray-700">#</th>
+                  {Object.keys(deepRows[0] ?? {}).map((header) => (
+                    <th key={header} className="border-b border-gray-200 px-2 py-2 text-left font-medium text-gray-700">
+                      {header}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {deepRows.slice(0, previewLimit).map((row, rowIdx) => (
+                  <tr key={rowIdx} className={rowIdx % 2 === 0 ? "bg-white" : "bg-gray-50/50"}>
+                    <td className="border-b border-gray-100 px-2 py-2 text-gray-500">{rowIdx + 1}</td>
+                    {Object.keys(deepRows[0] ?? {}).map((header) => (
+                      <td key={`${rowIdx}-${header}`} className="border-b border-gray-100 px-2 py-2 text-gray-700">
+                        {String(row[header] ?? "")}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {deepRows.length > previewLimit && (
+            <p className="text-xs text-gray-500">
+              Đang hiển thị {previewLimit}/{deepRows.length} dòng. Đổi mục "Hiển thị" để xem thêm.
+            </p>
+          )}
+        </div>
+      )}
 
       {deepResult && (
         <div className="card space-y-3">
@@ -339,30 +434,48 @@ export default function InsightsPage() {
         {runs.length === 0 ? (
           <p className="text-sm text-gray-500">Chưa có kết quả cũ.</p>
         ) : (
-          <div className="space-y-2">
-            {runs.map((run) => (
-              <div key={run.id} className="rounded border border-gray-200 p-3 text-sm">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="font-medium text-gray-800">
-                    {run.business_name} - {run.report_type} {run.source_filename ? `(${run.source_filename})` : ""}
-                  </p>
-                  <p className="text-xs text-gray-500">{new Date(run.created_at).toLocaleString("vi-VN")}</p>
-                </div>
-                {run.fallback_provider && (
-                  <p className="mt-1 text-xs text-amber-700">
-                    Fallback: {run.fallback_provider} - {run.fallback_reason}
-                  </p>
-                )}
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <button className="btn-secondary" onClick={() => void handleLoadRunResult(run.id)}>
-                    Xem kết quả
-                  </button>
-                  <button className="btn-primary" onClick={() => void handleReanalyzeRun(run.id)}>
-                    Phân tích lại
-                  </button>
-                </div>
-              </div>
-            ))}
+          <div className="overflow-x-auto border border-gray-200">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="border-b border-gray-200 px-2 py-2 text-left font-medium text-gray-700">Thời gian</th>
+                  <th className="border-b border-gray-200 px-2 py-2 text-left font-medium text-gray-700">Doanh nghiệp</th>
+                  <th className="border-b border-gray-200 px-2 py-2 text-left font-medium text-gray-700">Loại báo cáo</th>
+                  <th className="border-b border-gray-200 px-2 py-2 text-left font-medium text-gray-700">File nguồn</th>
+                  <th className="border-b border-gray-200 px-2 py-2 text-left font-medium text-gray-700">Fallback</th>
+                  <th className="border-b border-gray-200 px-2 py-2 text-left font-medium text-gray-700">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runs.map((run, idx) => (
+                  <tr key={run.id} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50/50"}>
+                    <td className="border-b border-gray-100 px-2 py-2 text-xs text-gray-600">
+                      {new Date(run.created_at).toLocaleString("vi-VN")}
+                    </td>
+                    <td className="border-b border-gray-100 px-2 py-2 text-gray-800">{run.business_name}</td>
+                    <td className="border-b border-gray-100 px-2 py-2 text-gray-700">{run.report_type}</td>
+                    <td className="border-b border-gray-100 px-2 py-2 text-xs text-gray-600">{run.source_filename || "-"}</td>
+                    <td className="border-b border-gray-100 px-2 py-2 text-xs">
+                      {run.fallback_provider ? (
+                        <span className="text-amber-700">{run.fallback_provider}: {run.fallback_reason || "Không rõ lý do"}</span>
+                      ) : (
+                        <span className="text-green-700">Không</span>
+                      )}
+                    </td>
+                    <td className="border-b border-gray-100 px-2 py-2">
+                      <div className="flex flex-wrap gap-2">
+                        <button className="btn-secondary" onClick={() => void handleLoadRunResult(run.id)}>
+                          Xem
+                        </button>
+                        <button className="btn-primary" onClick={() => void handleReanalyzeRun(run.id)}>
+                          Phân tích lại
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

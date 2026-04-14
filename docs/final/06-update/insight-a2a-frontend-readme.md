@@ -1,18 +1,22 @@
 # Insight A2A Frontend README
 
 ## UX flow moi
-1. Upload 1-sheet CSV
-2. Xem pipeline status theo buoc
-3. Xem ket qua phan tich + action queue
+1. Upload 1-sheet CSV/Excel (`.csv/.xlsx/.xls`)
+2. Xem preview toan bo sheet dang table
+3. Bam Phan tich va theo doi overlay model dang chay
+4. Xem ket qua phan tich + bang ket qua da luu
+5. Open/reanalyze run cu
 
 ## Thanh phan UI chinh
 - Upload box (drag/drop + template download)
+- Sheet preview table (show header + rows)
 - Pipeline timeline:
   - Dang cho
   - Dang chay
   - Hoan tat
   - Fallback
 - Model badges: DeepSeek/Qwen/GPT theo tung buoc
+- Saved runs table: time, report type, source file, fallback, actions
 - Ket qua:
   - KPI cards
   - Insight cards

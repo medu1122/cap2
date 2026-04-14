@@ -223,7 +223,10 @@ Web (campaignsPage)
   - `insightsA2aRouter`: endpoint deep analysis.
   - `schemaMapper`: map cot CSV ve canonical schema.
   - `a2aRunTraceService`: luu trace DeepSeek/Qwen/GPT.
+  - `runReplayService`: xem lai result snapshot va phan tich lai run cu.
 - Web:
-  - `insightsUploadForm`: upload 1-sheet CSV.
+  - `insightsUploadForm`: upload 1-sheet CSV/Excel.
+  - `insightsSheetPreviewTable`: xem toan bo du lieu sheet da nap.
+  - `insightsSavedRunsTable`: xem danh sach run da luu, open/reanalyze.
   - `insightsPipelineTimeline`: hien step + model dang chay.
   - `insightsResultPanel`: KPI + insights + action plan 30/60/90.

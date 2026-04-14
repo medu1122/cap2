@@ -14,6 +14,7 @@ SMB can duoc nhac viec dung luc (campaign loi, sap den lich, can review) va tan 
 - Customer list APIs: `api/routers/workflow.py`
 - Customer list UI: `web/app/(app)/customer-lists/page.tsx`
 - Sample CSV: `web/public/maucsv.csv`
+- Insight sample files: `web/public/mau-du-lieu-tro-ly-phan-tich.csv`, `web/public/dulieumauPhantich.xlsx`
 
 ## 4) Actual status (2026-04)
 | Hang muc | Status | Ghi chu |
@@ -24,6 +25,7 @@ SMB can duoc nhac viec dung luc (campaign loi, sap den lich, can review) va tan 
 | Upload CSV customer list | done (MVP) | Co parse va luu du lieu |
 | Auto tao campaign tu customer list | done (MVP) | Da co luong tao campaign email |
 | Validation CSV nang cao | partial | Can report loi tung dong va rules chat che hon |
+| Insight upload CSV/Excel preview table | done (MVP) | Nam o `/insights`, co bang xem lai du lieu da nap |
 
 ## 5) Gap / risk hien tai
 - Notification layer chua thong voi workflow/approval events nen user bo lo su kien quan trong.

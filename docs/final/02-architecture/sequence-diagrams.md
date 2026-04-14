@@ -385,7 +385,7 @@ sequenceDiagram
 
 ---
 
-## SD-09: Insight A2A Deep Analysis (DeepSeek -> Qwen -> GPT fallback)
+## SD-09: Insight A2A Deep Analysis (CSV/Excel -> DeepSeek -> Qwen -> GPT fallback)
 
 ```mermaid
 sequenceDiagram
@@ -397,7 +397,7 @@ sequenceDiagram
     participant GPT as GPT Fallback
     participant DB as PostgreSQL
 
-    Owner->>Web: Upload 1 sheet CSV báo cáo
+    Owner->>Web: Upload 1 sheet CSV/Excel báo cáo
     Web->>API: POST /insights/a2a/deep-analysis
     API->>DS: Classify loại báo cáo + map cột + lập plan
     DS-->>API: report_type + schema_map + analysis_plan
@@ -408,7 +408,7 @@ sequenceDiagram
         API->>GPT: fallback reasoning
         GPT-->>API: fallback_insight_json
     end
-    API->>DB: Lưu run trace + result snapshot + fallback reason
+    API->>DB: Lưu run trace + schema mapping confidence + result snapshot + fallback reason
     API-->>Web: Trả kết quả pipeline + model badges + action 30/60/90
-    Web-->>Owner: Hiển thị luồng A2A và khuyến nghị hành động
+    Web-->>Owner: Hiển thị luồng A2A + bảng dữ liệu đã nạp + bảng kết quả đã lưu
 ```

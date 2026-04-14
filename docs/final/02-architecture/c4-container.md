@@ -193,3 +193,4 @@ Tất cả containers giao tiếp qua Docker internal network `aimap_network`. C
   - Qwen 2.5 7B: narrative insight.
   - GPT API: fallback khi quality gate fail.
 - Database bo sung bang run-trace de audit model usage va fallback reason.
+- Frontend parse duoc ca `csv/xlsx/xls` truoc khi gui du lieu da chuan hoa sang API.

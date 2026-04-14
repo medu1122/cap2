@@ -196,8 +196,10 @@
 ## Sprint 3 update - Insight A2A reset scope (2026-04-14)
 
 - Scope `/insights` duoc lam lai theo flow moi:
-  - upload 1-sheet CSV,
+  - upload 1-sheet CSV/Excel,
   - deep analysis A2A,
   - show pipeline + model badges,
-  - luu run trace/fallback.
+  - luu run trace/fallback,
+  - preview sheet dang bang table,
+  - open/reanalyze run cu.
 - Tinh nang cards/actions cu tren `/insights` duoc thu gon de tranh loạn source.

@@ -359,3 +359,15 @@ Trang thai hien tai: **MVP khung ky thuat da co**, can tiep tuc hardening (rule 
   - Qwen cho narrative.
   - GPT fallback khi khong dat quality gate.
 - Cac docs thiet ke/van hanh da duoc bo sung trong `docs/final/06-update/*`.
+
+## Cap nhat runtime moi nhat (2026-04-14 dem)
+
+- Frontend `/insights`:
+  - Ho tro upload `csv/xlsx/xls`.
+  - Co bang preview toan bo sheet da nap.
+  - Co overlay hien model dang chay trong luc phan tich.
+  - Co bang "Ket qua da luu" + thao tac xem ket qua/phân tich lai.
+- Backend `/insights`:
+  - Bo sung endpoint xem lai ket qua run cu.
+  - Bo sung endpoint reanalyze run cu.
+  - Bo sung mapping confidence + data warnings de tang an toan cho file tieng Viet.
