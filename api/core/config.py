@@ -30,8 +30,9 @@ class Settings(BaseSettings):
     CLOUDINARY_API_KEY: str = ""
     CLOUDINARY_API_SECRET: str = ""
     CLOUDINARY_FOLDER: str = "aimap/campaigns"
-    STATIC_DIR: str = "static/uploads"
+    STATIC_DIR: str = ""
     STATIC_BASE_URL: str = "http://localhost:8000/static/uploads"
+    CORS_ORIGINS: str = "http://localhost:3000"
 
     class Config:
         env_file = ".env"

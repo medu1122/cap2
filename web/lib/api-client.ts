@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+export const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
 
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -30,7 +30,8 @@ async function request<T>(
     }
   }
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const url = API_BASE ? `${API_BASE}${path}` : path;
+  const res = await fetch(url, { ...options, headers });
 
   if (res.status === 401) {
     clearToken();

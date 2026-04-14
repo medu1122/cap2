@@ -16,6 +16,6 @@ async def dispatch_campaign(campaign_id: str):
         except Exception as e:
             # Mark campaign as failed if agent service is unreachable
             await client.patch(
-                f"http://localhost:8000/internal/campaigns/{campaign_id}",
+                f"{settings.INTERNAL_API_URL}/internal/campaigns/{campaign_id}",
                 json={"status": "failed", "error_message": f"Agent service unreachable: {str(e)}"},
             )

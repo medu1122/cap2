@@ -39,14 +39,16 @@ app = FastAPI(title="AIMAP API", version="0.1.0", lifespan=lifespan)
 
 # Static file serving for uploaded/generated campaign images
 _DEFAULT_STATIC = os.path.join(os.path.dirname(__file__), "static")
-_STATIC_DIR = os.getenv("STATIC_DIR", _DEFAULT_STATIC)
+_STATIC_DIR = settings.STATIC_DIR or _DEFAULT_STATIC
 _UPLOAD_DIR = os.path.join(_STATIC_DIR, "uploads")
 os.makedirs(_UPLOAD_DIR, exist_ok=True)
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
+_CORS_ORIGINS = [origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

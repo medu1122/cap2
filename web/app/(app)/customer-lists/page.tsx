@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api-client";
+import { API_BASE, api } from "@/lib/api-client";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
 
 interface CustomerList {
@@ -42,8 +42,8 @@ export default function CustomerListsPage() {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("list_name", file.name.replace(".csv", ""));
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const response = await fetch(`${baseUrl}/workflow/customer-lists/upload`, {
+      const uploadUrl = API_BASE ? `${API_BASE}/workflow/customer-lists/upload` : "/workflow/customer-lists/upload";
+      const response = await fetch(uploadUrl, {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,

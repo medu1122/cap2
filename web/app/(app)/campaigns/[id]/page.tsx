@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft, Check, Loader2, Clock, AlertCircle, ImagePlus, Upload, Wand2 } from "lucide-react";
-import { api } from "@/lib/api-client";
+import { API_BASE, api } from "@/lib/api-client";
 import { STATUS_LABELS, STATUS_COLORS, CHANNEL_LABELS, formatDate, cn } from "@/lib/utils";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
 
@@ -791,11 +791,14 @@ function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpda
     const form = new FormData();
     form.append("file", file);
     try {
+      const uploadUrl = API_BASE
+        ? `${API_BASE}/campaigns/${campaign.id}/image/upload`
+        : `/campaigns/${campaign.id}/image/upload`;
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/campaigns/${campaign.id}/image/upload`,
+        uploadUrl,
         {
           method: "POST",
-          headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
+          headers: { Authorization: `Bearer ${localStorage.getItem("aimap_token") || ""}` },
           body: form,
         }
       );
