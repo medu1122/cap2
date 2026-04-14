@@ -53,7 +53,7 @@ export default function ApprovePage() {
     <div className="p-6 max-w-5xl space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h1>Approval Queue</h1>
+          <h1>Hàng chờ phê duyệt</h1>
           <p className="text-sm text-gray-500 mt-1">{items.length} nội dung chờ duyệt</p>
         </div>
       </div>

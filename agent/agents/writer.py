@@ -97,6 +97,13 @@ class WriterAgent:
         return self._parse(raw)
 
     def _parse(self, raw: str) -> dict:
-        raw = re.sub(r"```json\s*", "", raw)
-        raw = re.sub(r"```\s*", "", raw)
-        return json.loads(raw.strip())
+        for attempt in range(2):
+            try:
+                cleaned = re.sub(r"```json\s*|```\s*", "", raw).strip()
+                return json.loads(cleaned)
+            except json.JSONDecodeError:
+                if attempt == 0:
+                    last_brace = raw.rfind("}")
+                    if last_brace != -1:
+                        raw = raw[: last_brace + 1]
+        raise ValueError(f"Không parse được JSON từ AI: {raw[:200]}")

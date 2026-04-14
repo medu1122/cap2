@@ -1,16 +1,17 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Megaphone, CalendarDays, Shield, CheckSquare, LogOut } from "lucide-react";
+import { LayoutDashboard, Megaphone, CalendarDays, Shield, CheckSquare, Workflow, LogOut } from "lucide-react";
 import { clearToken } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
 const NAV = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/campaigns", label: "Campaigns", icon: Megaphone },
-  { href: "/calendar", label: "Calendar", icon: CalendarDays },
-  { href: "/brand-vault", label: "Brand Vault", icon: Shield },
-  { href: "/approve", label: "Approve", icon: CheckSquare },
+  { href: "/dashboard",   label: "Tổng quan",          icon: LayoutDashboard },
+  { href: "/campaigns",   label: "Chiến dịch",          icon: Megaphone },
+  { href: "/calendar",    label: "Lịch marketing",      icon: CalendarDays },
+  { href: "/brand-vault", label: "Hồ sơ thương hiệu",  icon: Shield },
+  { href: "/approve",     label: "Phê duyệt nội dung",  icon: CheckSquare },
+  { href: "/workflow",    label: "Tự động hoá",         icon: Workflow },
 ];
 
 export default function Sidebar() {
@@ -26,7 +27,7 @@ export default function Sidebar() {
     <aside className="w-60 shrink-0 flex flex-col border-r border-gray-200 bg-surface min-h-screen">
       <div className="px-4 py-5 border-b border-gray-200">
         <span className="text-base font-semibold text-gray-900 tracking-tight">AIMAP</span>
-        <p className="text-xs text-gray-400 mt-0.5">Marketing Automation</p>
+        <p className="text-xs text-gray-400 mt-0.5">Tự động hoá Marketing</p>
       </div>
       <nav className="flex-1 px-2 py-4 space-y-0.5">
         {NAV.map(({ href, label, icon: Icon }) => (

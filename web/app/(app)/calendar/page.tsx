@@ -56,7 +56,7 @@ export default function CalendarPage() {
   return (
     <div className="p-6 max-w-6xl">
       <div className="flex items-center justify-between mb-6">
-        <h1>Marketing Calendar</h1>
+        <h1>Lịch marketing</h1>
         <div className="flex items-center gap-3">
           <button onClick={prevMonth} className="btn-secondary p-1.5"><ChevronLeft size={16} /></button>
           <span className="text-sm font-medium w-36 text-center">

@@ -81,7 +81,7 @@ export default function BrandVaultPage() {
     <div className="p-6 max-w-3xl">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1>Brand Vault</h1>
+          <h1>Hồ sơ thương hiệu</h1>
           <p className="text-sm text-gray-500 mt-1">Cấu hình thương hiệu — AI agent sẽ dùng thông tin này cho mọi chiến dịch.</p>
         </div>
         <button form="brand-form" type="submit" className="btn-primary" disabled={saving}>

@@ -6,9 +6,9 @@ import { ChevronLeft } from "lucide-react";
 import { api } from "@/lib/api-client";
 
 const CHANNELS = [
-  { value: "facebook_post", label: "Facebook Post" },
+  { value: "facebook_post", label: "Bài đăng Facebook" },
   { value: "email", label: "Email" },
-  { value: "video_script", label: "Video Script" },
+  { value: "video_script", label: "Kịch bản video" },
 ];
 
 const today = new Date().toISOString().split("T")[0];
@@ -61,7 +61,7 @@ export default function NewCampaignPage() {
         <Link href="/campaigns" className="text-gray-400 hover:text-gray-700">
           <ChevronLeft size={18} />
         </Link>
-        <h1>New Campaign</h1>
+        <h1>Tạo chiến dịch mới</h1>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">
@@ -92,7 +92,7 @@ export default function NewCampaignPage() {
         </div>
 
         <div>
-          <label className="label">Deadline *</label>
+          <label className="label">Ngày kết thúc *</label>
           <input type="date" className="input" value={form.deadline} onChange={(e) => update("deadline", e.target.value)} min={today} required />
         </div>
 

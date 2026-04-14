@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -9,7 +10,7 @@ from models.brand import Brand
 from models.campaign import Campaign
 from models.content_item import ContentItem
 from models.agent_run_log import AgentRunLog
-from schemas.campaign import CampaignCreate, CampaignListItem, CampaignDetail, ContentItemOut, AgentLogOut
+from schemas.campaign import CampaignCreate, CampaignListItem, CampaignDetail, ContentItemOut, AgentLogOut, VALID_CHANNELS
 from services.agent_dispatcher import dispatch_campaign
 
 router = APIRouter()
@@ -49,6 +50,14 @@ async def create_campaign(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    if not payload.channels:
+        raise HTTPException(400, "Phải chọn ít nhất 1 kênh nội dung")
+    invalid = [c for c in payload.channels if c not in VALID_CHANNELS]
+    if invalid:
+        raise HTTPException(400, f"Kênh không hợp lệ: {invalid}")
+    if payload.deadline < date.today():
+        raise HTTPException(400, "Ngày kết thúc không được là ngày trong quá khứ")
+
     campaign = Campaign(user_id=current_user.id, **payload.model_dump())
     db.add(campaign)
     await db.commit()

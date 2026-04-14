@@ -2,7 +2,7 @@ import uuid
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func, update as sql_update
 from core.database import get_db
 from core.deps import get_current_user
 from models.user import User
@@ -97,6 +97,22 @@ async def approve_content(
     item.status = "approved"
     await db.commit()
     await db.refresh(item)
+
+    # Nếu tất cả nội dung của chiến dịch đã được duyệt → tự động cập nhật trạng thái chiến dịch
+    pending_count_result = await db.execute(
+        select(func.count()).where(
+            ContentItem.campaign_id == item.campaign_id,
+            ContentItem.status == "pending_approval",
+        )
+    )
+    if pending_count_result.scalar() == 0:
+        await db.execute(
+            sql_update(Campaign)
+            .where(Campaign.id == item.campaign_id)
+            .values(status="approved")
+        )
+        await db.commit()
+
     return item
 
 

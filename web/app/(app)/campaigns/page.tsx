@@ -38,9 +38,9 @@ export default function CampaignsPage() {
   return (
     <div className="p-6 max-w-6xl space-y-5">
       <div className="flex items-center justify-between">
-        <h1>Campaigns</h1>
+        <h1>Chiến dịch</h1>
         <Link href="/campaigns/new" className="btn-primary">
-          <Plus size={15} /> New Campaign
+          <Plus size={15} /> Tạo chiến dịch
         </Link>
       </div>
 

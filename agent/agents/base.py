@@ -21,6 +21,15 @@ def build_brand_context_block(brand: dict) -> str:
     )
 
 
+async def _post_log(payload: dict) -> None:
+    """Fire-and-forget log post to internal API."""
+    async with httpx.AsyncClient(timeout=5) as client:
+        try:
+            await client.post(f"{API_BASE}/internal/logs", json=payload)
+        except Exception:
+            pass
+
+
 async def timed_agent_call(
     agent_name: str,
     channel: str | None,
@@ -30,8 +39,19 @@ async def timed_agent_call(
     campaign_id: str,
     temperature: float = 0.7,
 ) -> tuple[str, dict]:
+    # Emit "running" signal so frontend can show the active step in realtime
+    await _post_log({
+        "campaign_id": campaign_id,
+        "agent_name": agent_name,
+        "step_order": step_order,
+        "channel": channel,
+        "model_used": "pending",
+        "model_provider": "pending",
+        "status": "running",
+    })
+
     start = time.monotonic()
-    raw, model, provider = await call_llm(agent_name, system_prompt, user_prompt, temperature)
+    raw, model, provider, in_tokens, out_tokens = await call_llm(agent_name, system_prompt, user_prompt, temperature)
     duration_ms = int((time.monotonic() - start) * 1000)
 
     log_entry = {
@@ -44,13 +64,10 @@ async def timed_agent_call(
         "prompt_preview": user_prompt[:300],
         "output_preview": raw[:300],
         "duration_ms": duration_ms,
+        "input_tokens": in_tokens,
+        "output_tokens": out_tokens,
         "status": "success",
     }
-
-    async with httpx.AsyncClient(timeout=10) as client:
-        try:
-            await client.post(f"{API_BASE}/internal/logs", json=log_entry)
-        except Exception:
-            pass
+    await _post_log(log_entry)
 
     return raw, log_entry

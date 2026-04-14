@@ -52,7 +52,7 @@ export default function DashboardPage() {
   return (
     <div className="p-6 max-w-6xl space-y-6">
       <div className="flex items-center justify-between">
-        <h1>Dashboard</h1>
+        <h1>Tổng quan</h1>
       </div>
 
       <div className="grid grid-cols-4 gap-4">
@@ -111,7 +111,7 @@ export default function DashboardPage() {
       {summary && (
         <div className="card border-gray-200">
           <div className="flex items-center justify-between mb-2">
-            <h2>AI Insight</h2>
+            <h2>Nhận định từ AI</h2>
             <span className="text-xs text-gray-400">Tự động phân tích</span>
           </div>
           <p className="text-sm text-gray-700 leading-relaxed">{summary}</p>

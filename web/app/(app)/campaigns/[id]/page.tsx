@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, RefreshCw } from "lucide-react";
+import { ChevronLeft, Check, Loader2, Clock, AlertCircle } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { STATUS_LABELS, STATUS_COLORS, CHANNEL_LABELS, formatDate, cn } from "@/lib/utils";
 
@@ -47,6 +47,204 @@ interface Campaign {
   agent_logs: AgentLog[];
   created_at: string;
 }
+
+// ── Progress model ────────────────────────────────────────────────────────────
+
+type StepStatus = "pending" | "running" | "done" | "failed";
+
+interface PipelineStep {
+  key: string;
+  label: string;
+  agentName: string;
+  channel: string | null;
+  status: StepStatus;
+  model?: string;
+  durationMs?: number | null;
+}
+
+const AGENT_LABELS: Record<string, string> = {
+  strategist: "Strategist",
+  writer: "Writer",
+  critic: "Critic",
+};
+
+function buildPipelineSteps(campaign: Campaign): PipelineStep[] {
+  const channels = campaign.channels;
+
+  const expected: { key: string; label: string; agentName: string; channel: string | null }[] = [
+    {
+      key: "strategist",
+      label: "Strategist — Phân tích brief & lên kế hoạch",
+      agentName: "strategist",
+      channel: null,
+    },
+    ...channels.flatMap((ch) => [
+      {
+        key: `writer_${ch}`,
+        label: `Writer — ${CHANNEL_LABELS[ch] ?? ch}`,
+        agentName: "writer",
+        channel: ch,
+      },
+      {
+        key: `critic_${ch}`,
+        label: `Critic — ${CHANNEL_LABELS[ch] ?? ch}`,
+        agentName: "critic",
+        channel: ch,
+      },
+    ]),
+  ];
+
+  return expected.map((exp) => {
+    const successLog = campaign.agent_logs.find(
+      (l) => l.agent_name === exp.agentName && l.channel === exp.channel && l.status === "success"
+    );
+    const runningLog = campaign.agent_logs.find(
+      (l) => l.agent_name === exp.agentName && l.channel === exp.channel && l.status === "running"
+    );
+    const failedLog = campaign.agent_logs.find(
+      (l) => l.agent_name === exp.agentName && l.channel === exp.channel && l.status === "failed"
+    );
+
+    let status: StepStatus = "pending";
+    if (failedLog) status = "failed";
+    else if (successLog) status = "done";
+    else if (runningLog) status = "running";
+
+    return {
+      ...exp,
+      status,
+      model: successLog?.model_used,
+      durationMs: successLog?.duration_ms,
+    };
+  });
+}
+
+// ── AIPipelineProgress component ──────────────────────────────────────────────
+
+function StepIcon({ status }: { status: StepStatus }) {
+  if (status === "done")
+    return <Check size={13} className="text-green-600" />;
+  if (status === "running")
+    return <Loader2 size={13} className="text-blue-500 animate-spin" />;
+  if (status === "failed")
+    return <AlertCircle size={13} className="text-red-500" />;
+  return <span className="w-3 h-3 rounded-full border border-gray-300 inline-block" />;
+}
+
+function AIPipelineProgress({ campaign }: { campaign: Campaign }) {
+  const steps = buildPipelineSteps(campaign);
+  const doneCount = steps.filter((s) => s.status === "done").length;
+  const totalCount = steps.length;
+  const percent = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+  const currentStep = steps.find((s) => s.status === "running");
+  const isActive = campaign.status === "running" || campaign.status === "pending_agent";
+
+  return (
+    <div className="card border-blue-100 space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-gray-700">Tiến trình AI Pipeline</h2>
+        <span className="text-xs text-gray-400 tabular-nums">
+          {doneCount}/{totalCount} bước
+        </span>
+      </div>
+
+      {/* Progress bar */}
+      <div className="relative h-1.5 bg-gray-100 rounded-full overflow-hidden">
+        <div
+          className={cn(
+            "absolute left-0 top-0 h-full rounded-full transition-all duration-500",
+            isActive ? "bg-blue-500" : percent === 100 ? "bg-green-500" : "bg-gray-400"
+          )}
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+
+      {/* Current step label */}
+      {currentStep && (
+        <p className="text-xs text-blue-600 flex items-center gap-1.5">
+          <Loader2 size={11} className="animate-spin shrink-0" />
+          <span>
+            <strong>{AGENT_LABELS[currentStep.agentName] ?? currentStep.agentName}</strong>
+            {currentStep.channel ? ` đang xử lý ${CHANNEL_LABELS[currentStep.channel] ?? currentStep.channel}` : " đang phân tích brief"}
+            <span className="animate-pulse">...</span>
+          </span>
+        </p>
+      )}
+
+      {campaign.status === "pending_agent" && !currentStep && (
+        <p className="text-xs text-gray-400 flex items-center gap-1.5">
+          <Loader2 size={11} className="animate-spin shrink-0" />
+          Đang khởi động AI Pipeline...
+        </p>
+      )}
+
+      {/* Step list */}
+      <div className="space-y-0">
+        {steps.map((step, idx) => (
+          <div key={step.key} className="flex items-start gap-3 py-2">
+            {/* Icon + connector */}
+            <div className="flex flex-col items-center shrink-0 mt-0.5">
+              <div className={cn(
+                "w-5 h-5 rounded-full flex items-center justify-center",
+                step.status === "done" ? "bg-green-50" :
+                step.status === "running" ? "bg-blue-50" :
+                step.status === "failed" ? "bg-red-50" : "bg-gray-50"
+              )}>
+                <StepIcon status={step.status} />
+              </div>
+              {idx < steps.length - 1 && (
+                <div className={cn(
+                  "w-px flex-1 mt-1",
+                  step.status === "done" ? "bg-green-200" : "bg-gray-100"
+                )} style={{ minHeight: 12 }} />
+              )}
+            </div>
+
+            {/* Label + meta */}
+            <div className="flex-1 min-w-0 pb-1">
+              <p className={cn(
+                "text-xs font-medium leading-5",
+                step.status === "done" ? "text-gray-700" :
+                step.status === "running" ? "text-blue-700" :
+                step.status === "failed" ? "text-red-600" : "text-gray-400"
+              )}>
+                {step.label}
+              </p>
+              {step.status === "done" && (step.model || step.durationMs) && (
+                <div className="flex items-center gap-2 mt-0.5">
+                  {step.model && step.model !== "pending" && (
+                    <span className="text-xs text-gray-400">{step.model}</span>
+                  )}
+                  {step.durationMs && (
+                    <span className="text-xs text-gray-300 flex items-center gap-0.5">
+                      <Clock size={9} />
+                      {step.durationMs < 1000
+                        ? `${step.durationMs}ms`
+                        : `${(step.durationMs / 1000).toFixed(1)}s`}
+                    </span>
+                  )}
+                </div>
+              )}
+              {step.status === "running" && (
+                <p className="text-xs text-blue-400 mt-0.5">Đang gọi LLM...</p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {campaign.status === "failed" && campaign.error_message && (
+        <div className="rounded-md bg-red-50 border border-red-100 p-2.5">
+          <p className="text-xs text-red-600 font-medium mb-0.5">Pipeline thất bại</p>
+          <p className="text-xs text-red-500 break-words">{campaign.error_message}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── ContentCard ───────────────────────────────────────────────────────────────
 
 function ContentCard({ item, onAction }: { item: ContentItem; onAction: () => void }) {
   const [rejectNote, setRejectNote] = useState("");
@@ -138,15 +336,24 @@ function ContentCard({ item, onAction }: { item: ContentItem; onAction: () => vo
   );
 }
 
+// ── AgentLogTimeline (completed steps only) ───────────────────────────────────
+
 function AgentLogTimeline({ logs }: { logs: AgentLog[] }) {
   const [expanded, setExpanded] = useState<string | null>(null);
+  const completedLogs = logs.filter((l) => l.status === "success" || l.status === "failed");
+
+  if (completedLogs.length === 0)
+    return <p className="text-sm text-gray-400">Chưa có hoạt động.</p>;
 
   return (
     <div className="space-y-3">
-      {logs.map((log) => (
+      {completedLogs.map((log) => (
         <div key={log.id} className="flex gap-3">
           <div className="flex flex-col items-center">
-            <span className={cn("w-2.5 h-2.5 rounded-full mt-1", log.status === "success" ? "bg-green-500" : "bg-red-500")} />
+            <span className={cn(
+              "w-2.5 h-2.5 rounded-full mt-1",
+              log.status === "success" ? "bg-green-500" : "bg-red-500"
+            )} />
             <div className="flex-1 w-px bg-gray-200 mt-1" />
           </div>
           <div className="flex-1 pb-3">
@@ -154,7 +361,9 @@ function AgentLogTimeline({ logs }: { logs: AgentLog[] }) {
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium capitalize text-gray-800">{log.agent_name}</span>
                 {log.channel && <span className="badge bg-gray-100 text-gray-500 text-xs">{CHANNEL_LABELS[log.channel] || log.channel}</span>}
-                <span className="badge bg-blue-50 text-blue-600 text-xs">{log.model_used}</span>
+                {log.model_used && log.model_used !== "pending" && (
+                  <span className="badge bg-blue-50 text-blue-600 text-xs">{log.model_used}</span>
+                )}
               </div>
               <div className="flex items-center gap-2 text-xs text-gray-400">
                 {log.duration_ms && <span>{log.duration_ms}ms</span>}
@@ -190,6 +399,8 @@ function AgentLogTimeline({ logs }: { logs: AgentLog[] }) {
   );
 }
 
+// ── Main Page ─────────────────────────────────────────────────────────────────
+
 export default function CampaignDetailPage() {
   const { id } = useParams();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -203,18 +414,14 @@ export default function CampaignDetailPage() {
 
   useEffect(() => {
     load();
-    let interval: NodeJS.Timeout | null = null;
-    if (campaign?.status === "running") {
-      interval = setInterval(load, 5000);
-    }
-    return () => { if (interval) clearInterval(interval); };
-  }, [load, campaign?.status]);
+  }, [load]);
 
+  // Poll every 3s while AI is processing
   useEffect(() => {
-    if (campaign?.status === "running") {
-      const interval = setInterval(load, 5000);
-      return () => clearInterval(interval);
-    }
+    const isProcessing = campaign?.status === "running" || campaign?.status === "pending_agent";
+    if (!isProcessing) return;
+    const interval = setInterval(load, 3000);
+    return () => clearInterval(interval);
   }, [campaign?.status, load]);
 
   if (loading && !campaign) {
@@ -223,19 +430,21 @@ export default function CampaignDetailPage() {
 
   if (!campaign) return <div className="p-6 text-sm text-gray-400">Không tìm thấy chiến dịch.</div>;
 
+  const isProcessing = campaign.status === "running" || campaign.status === "pending_agent";
+
   return (
     <div className="p-6 max-w-6xl">
       <div className="flex items-center gap-2 mb-6">
         <Link href="/campaigns" className="text-gray-400 hover:text-gray-700"><ChevronLeft size={18} /></Link>
         <h1 className="flex-1">{campaign.campaign_name}</h1>
         <span className={cn("badge", STATUS_COLORS[campaign.status])}>{STATUS_LABELS[campaign.status]}</span>
-        {campaign.status === "running" && (
-          <RefreshCw size={14} className="text-gray-400 animate-spin" />
-        )}
+        {isProcessing && <Loader2 size={14} className="text-blue-400 animate-spin" />}
       </div>
 
       <div className="grid grid-cols-5 gap-6">
         <div className="col-span-3 space-y-5">
+
+          {/* Brief info */}
           <div className="card">
             <h2 className="mb-3">Brief</h2>
             <dl className="space-y-2 text-sm">
@@ -262,18 +471,10 @@ export default function CampaignDetailPage() {
             </dl>
           </div>
 
-          {campaign.status === "running" && (
-            <div className="card border-blue-200 bg-blue-50">
-              <p className="text-sm text-blue-700">AI đang soạn nội dung... Trang sẽ tự cập nhật.</p>
-            </div>
-          )}
+          {/* AI Pipeline Progress panel — shown while processing */}
+          {isProcessing && <AIPipelineProgress campaign={campaign} />}
 
-          {campaign.error_message && (
-            <div className="card border-red-200 bg-red-50">
-              <p className="text-sm text-red-700">Lỗi: {campaign.error_message}</p>
-            </div>
-          )}
-
+          {/* Content items */}
           {campaign.content_items.length > 0 && (
             <div>
               <h2 className="mb-3">Nội dung ({campaign.content_items.length})</h2>
@@ -286,14 +487,19 @@ export default function CampaignDetailPage() {
           )}
         </div>
 
-        <div className="col-span-2">
+        {/* Right sidebar */}
+        <div className="col-span-2 space-y-4">
+          {/* Show progress panel in sidebar when completed (compact view) */}
+          {!isProcessing && campaign.agent_logs.length > 0 && (
+            <div className="card">
+              <h2 className="mb-3">Pipeline Summary</h2>
+              <AIPipelineProgress campaign={campaign} />
+            </div>
+          )}
+
           <div className="card sticky top-6">
-            <h2 className="mb-4">Agent Activity</h2>
-            {campaign.agent_logs.length === 0 ? (
-              <p className="text-sm text-gray-400">Chưa có hoạt động.</p>
-            ) : (
-              <AgentLogTimeline logs={campaign.agent_logs} />
-            )}
+            <h2 className="mb-4">Agent Activity Log</h2>
+            <AgentLogTimeline logs={campaign.agent_logs} />
           </div>
         </div>
       </div>

@@ -14,17 +14,17 @@ async def call_llm(
     system_prompt: str,
     user_prompt: str,
     temperature: float = 0.7,
-) -> tuple[str, str, str]:
-    """Returns (raw_text, model_name, provider_name)"""
+) -> tuple[str, str, str, int | None, int | None]:
+    """Returns (raw_text, model_name, provider_name, input_tokens, output_tokens)"""
     provider = ROUTING_TABLE.get(agent_name, "openai")
 
     if provider == "qwen":
         try:
-            raw, model = await qwen_complete(system_prompt, user_prompt, temperature)
-            return raw, model, "qwen"
+            raw, model, in_tok, out_tok = await qwen_complete(system_prompt, user_prompt, temperature)
+            return raw, model, "qwen", in_tok, out_tok
         except Exception:
-            raw, model = await openai_complete(system_prompt, user_prompt, temperature)
-            return raw, model, "openai"
+            raw, model, in_tok, out_tok = await openai_complete(system_prompt, user_prompt, temperature)
+            return raw, model, "openai", in_tok, out_tok
     else:
-        raw, model = await openai_complete(system_prompt, user_prompt, temperature)
-        return raw, model, "openai"
+        raw, model, in_tok, out_tok = await openai_complete(system_prompt, user_prompt, temperature)
+        return raw, model, "openai", in_tok, out_tok

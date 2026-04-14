@@ -12,7 +12,9 @@ client = AsyncOpenAI(
 )
 
 
-async def complete(system_prompt: str, user_prompt: str, temperature: float = 0.7) -> tuple[str, str]:
+async def complete(
+    system_prompt: str, user_prompt: str, temperature: float = 0.7
+) -> tuple[str, str, int | None, int | None]:
     response = await asyncio.wait_for(
         client.chat.completions.create(
             model=QWEN_MODEL,
@@ -24,4 +26,10 @@ async def complete(system_prompt: str, user_prompt: str, temperature: float = 0.
         ),
         timeout=QWEN_TIMEOUT,
     )
-    return response.choices[0].message.content, QWEN_MODEL
+    usage = response.usage
+    return (
+        response.choices[0].message.content,
+        QWEN_MODEL,
+        usage.prompt_tokens if usage else None,
+        usage.completion_tokens if usage else None,
+    )

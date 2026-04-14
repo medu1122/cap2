@@ -34,8 +34,9 @@ async function request<T>(
 
   if (res.status === 401) {
     clearToken();
-    window.location.href = "/login";
-    throw new Error("Unauthorized");
+    window.location.replace("/login");
+    // Return a never-resolving promise so callers silently wait during redirect
+    return new Promise<never>(() => {});
   }
 
   if (!res.ok) {
