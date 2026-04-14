@@ -12,7 +12,7 @@
 | Loại dự án | Ứng dụng web fullstack tích hợp AI đa tác nhân (Multi-Agent AI System) |
 | Đối tượng hướng đến | Doanh nghiệp nhỏ và vừa (SMB) tại Việt Nam |
 | Thời gian thực hiện | 9 tuần (3 sprints × 3 tuần) |
-| Công nghệ chính | Next.js 14, FastAPI, PostgreSQL, OpenAI API, Qwen 2.5 7B |
+| Công nghệ chính | Next.js 14, FastAPI, PostgreSQL, OpenAI API, Qwen 2.5 7B, DeepSeek Coder 6.7B |
 
 ---
 
@@ -91,6 +91,8 @@ Xây dựng nền tảng AIMAP cho phép chủ doanh nghiệp nhỏ:
 | F08 | Dashboard & AI Summary | Must-have |
 | F09 | Workflow Automation (Schedule + CSV Upload Trigger) | Should-have |
 | F10 | In-app Notifications & Customer Lists | Should-have |
+| F11 | Insight Copilot A2A (CSV/Excel Deep Analysis) | Must-have |
+| F12 | Admin Operations (User/Ops/Audit) | Should-have |
 
 ### 3.2 Ngoài phạm vi (Out of Scope)
 
@@ -159,7 +161,7 @@ Chi tiết trong `02-architecture/`.
 |---|---|---|
 | Sprint 1 — Foundation | 1–3 | Infra setup, Auth, Brand Vault |
 | Sprint 2 — Core AI | 4–6 | Agent Orchestrator, Content, Calendar, Approval |
-| Sprint 3 — Advanced + Polish | 7–9 | Dashboard, Workflow, Notifications, Demo prep |
+| Sprint 3 — Advanced + Polish | 7–9 | Dashboard, Workflow, Insight Copilot A2A, Admin Ops, Demo prep |
 
 ---
 
@@ -175,6 +177,7 @@ Chi tiết trong `02-architecture/`.
 | Calendar hiển thị | Ít nhất 5 content items trên lịch |
 | Dashboard stats | Reflect dữ liệu thực từ database |
 | Approval flow | Approve/Reject hoạt động, cập nhật status ngay |
+| Insight Copilot | Upload CSV/Excel 1-sheet, trả KPI + insight + data quality score |
 
 ### 7.2 Tiêu chí sản phẩm
 
@@ -191,6 +194,7 @@ Chi tiết trong `02-architecture/`.
 
 | Rủi ro | Xác suất | Giải pháp |
 |---|---|---|
+| DeepSeek VPS không phản hồi | Trung bình | Retry + fallback heuristic/gpt, theo dõi health endpoint |
 | Qwen VPS không ổn định | Trung bình | Fallback sang OpenAI nếu timeout > 15s |
 | OpenAI API quota hết | Thấp | Fallback sang Qwen cho task phù hợp |
 | LLM output không đúng format | Trung bình | JSON schema validation + retry logic |

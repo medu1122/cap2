@@ -16,8 +16,9 @@ C4Context
 
     System(aimap, "AIMAP Platform", "Nền tảng AI tự động hóa marketing cho SMB — Web App, Backend API, Agent Service, PostgreSQL")
 
-    System_Ext(openai, "OpenAI API", "GPT-4o-mini — Reasoning & Quality Gate")
-    System_Ext(qwen, "Qwen VPS", "Qwen 2.5 7B self-hosted — Text Generation")
+    System_Ext(openai, "OpenAI API", "GPT-4o-mini — Fallback Reasoning")
+    System_Ext(qwen, "Qwen VPS", "Qwen 2.5 7B self-hosted — Narrative")
+    System_Ext(deepseek, "DeepSeek VPS", "DeepSeek Coder 6.7B — Classify/Map/Plan")
     System_Ext(smtp, "Email SMTP", "Dịch vụ gửi email giao dịch")
 
     %% ── User → AIMAP ─────────────────────────────────────────────────
@@ -28,7 +29,8 @@ C4Context
     Rel(user, aimap, "Duyệt / từ chối / chỉnh sửa nội dung")
     Rel(user, aimap, "Xem Dashboard và Calendar")
     Rel(user, aimap, "Cài workflow và upload CSV")
-    Rel(user, aimap, "Xem Lịch Marketing (chỉ xem, không chỉnh)")
+    Rel(user, aimap, "Nạp CSV/Excel vào Insight Copilot và xem kết quả AI phân tích")
+    Rel(user, aimap, "Xem Lịch Marketing")
     Rel(user, aimap, "Xem Nhật ký AI (theo dõi tiến trình)")
 
     %% ── AIMAP → User ─────────────────────────────────────────────────
@@ -59,8 +61,12 @@ C4Context
     %% ── AIMAP ↔ Qwen ─────────────────────────────────────────────────
     Rel(aimap, qwen, "Writer Agent: gửi deliverable spec + brand → yêu cầu viết nội dung")
     Rel(aimap, qwen, "Dashboard AI: gửi stats context → yêu cầu tóm tắt tiếng Việt")
+    Rel(aimap, qwen, "Insight Copilot: diễn giải KPI thành business insights")
     Rel_Back(aimap, qwen, "Trả về content JSON (FB copy/hashtags, email subject/body, video script)")
     Rel_Back(aimap, qwen, "Trả về đoạn tóm tắt 2-3 câu + gợi ý hành động")
+
+    Rel(aimap, deepseek, "Insight Copilot: phân loại báo cáo, map cột, lập kế hoạch phân tích")
+    Rel_Back(aimap, deepseek, "Trả về report_type, schema_map, trace")
 
     %% ── AIMAP → SMTP ─────────────────────────────────────────────────
     Rel(aimap, smtp, "Gửi email xác minh tài khoản (link hết hạn 24h)")

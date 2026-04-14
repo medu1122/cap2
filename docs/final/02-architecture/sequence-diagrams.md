@@ -1,6 +1,6 @@
 # Sequence Diagrams — AIMAP
 
-**Luồng tương tác cho 8 tính năng chính của hệ thống**
+**Luồng tương tác cho 9 tính năng chính của hệ thống**
 
 > **Chú giải:**
 > - **Người dùng** — Chủ doanh nghiệp/Marketing Assistant dùng trình duyệt
@@ -385,7 +385,7 @@ sequenceDiagram
 
 ---
 
-## SD-09: Insight A2A Deep Analysis (CSV/Excel -> DeepSeek -> Qwen -> GPT fallback)
+## SD-09: Insight Copilot Deep Analysis (CSV/Excel -> DeepSeek -> Qwen -> GPT fallback)
 
 ```mermaid
 sequenceDiagram
@@ -409,6 +409,6 @@ sequenceDiagram
         GPT-->>API: fallback_insight_json
     end
     API->>DB: Lưu run trace + schema mapping confidence + result snapshot + fallback reason
-    API-->>Web: Trả kết quả pipeline + model badges + action 30/60/90
-    Web-->>Owner: Hiển thị luồng A2A + bảng dữ liệu đã nạp + bảng kết quả đã lưu
+    API-->>Web: Trả KPI + data quality score + limitations + friendly model trace
+    Web-->>Owner: Hiển thị luồng pipeline + biểu đồ chất lượng dữ liệu + bảng kết quả đã lưu
 ```

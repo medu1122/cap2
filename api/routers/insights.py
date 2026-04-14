@@ -6,6 +6,7 @@ import re
 import time
 import uuid
 import unicodedata
+import asyncio
 from typing import Any
 
 import httpx
@@ -88,6 +89,10 @@ def _safe_div(numerator: float, denominator: float) -> float:
     return numerator / denominator if denominator > 0 else 0.0
 
 
+def _clamp(value: float, minimum: float, maximum: float) -> float:
+    return max(minimum, min(maximum, value))
+
+
 def _heuristic_map_columns(columns: list[str]) -> tuple[dict[str, str | None], dict[str, float]]:
     normalized_columns = {col: _normalize_text(col) for col in columns}
     mapping: dict[str, str | None] = {}
@@ -158,6 +163,83 @@ async def _chat_completion(
     return data["choices"][0]["message"]["content"]
 
 
+async def _chat_completion_with_retry(
+    *,
+    base_url: str,
+    model: str,
+    messages: list[dict[str, str]],
+    timeout_seconds: int = 45,
+    api_key: str | None = None,
+    max_attempts: int = 2,
+) -> str:
+    last_error: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return await _chat_completion(
+                base_url=base_url,
+                model=model,
+                messages=messages,
+                timeout_seconds=timeout_seconds,
+                api_key=api_key,
+            )
+        except (httpx.TimeoutException, httpx.HTTPStatusError) as exc:
+            last_error = exc
+            retryable = True
+            if isinstance(exc, httpx.HTTPStatusError):
+                retryable = exc.response.status_code >= 500
+            if (not retryable) or attempt >= max_attempts:
+                break
+            await asyncio.sleep(0.8 * attempt)
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            break
+    raise last_error or RuntimeError("LLM completion failed")
+
+
+def _report_type_vi(report_type: str) -> str:
+    mapping = {
+        "sales_report": "Báo cáo bán hàng",
+        "expense_report": "Báo cáo chi phí",
+        "payroll_report": "Báo cáo lương",
+        "generic_report": "Báo cáo tổng hợp",
+    }
+    return mapping.get(report_type, "Báo cáo tổng hợp")
+
+
+def _build_data_quality(
+    *,
+    row_count: int,
+    mapping_confidence: dict[str, float],
+    data_warnings: list[str],
+) -> tuple[float, dict[str, float]]:
+    required_keys = ("revenue", "orders", "leads")
+    required_score = sum(mapping_confidence.get(k, 0.0) for k in required_keys) / len(required_keys)
+    optional_keys = ("ad_spend", "repeat_orders")
+    optional_score = sum(mapping_confidence.get(k, 0.0) for k in optional_keys) / len(optional_keys)
+    mapping_score = _clamp(required_score * 0.8 + optional_score * 0.2, 0.0, 1.0)
+    row_score = _clamp(row_count / 50.0, 0.0, 1.0)
+    warning_penalty = min(0.35, 0.08 * len(data_warnings))
+    validity_score = _clamp(1.0 - warning_penalty, 0.0, 1.0)
+    overall = _clamp(mapping_score * 0.5 + row_score * 0.25 + validity_score * 0.25, 0.0, 1.0)
+    breakdown = {
+        "do_day_du_cot": round(mapping_score, 4),
+        "do_day_du_so_dong": round(row_score, 4),
+        "do_hop_le_du_lieu": round(validity_score, 4),
+    }
+    return round(overall, 4), breakdown
+
+
+def _sanitize_fallback_reason(reason: str | None) -> str | None:
+    if not reason:
+        return None
+    lowered = reason.lower()
+    if "qwen failed" in lowered or "500" in lowered or "server error" in lowered:
+        return "Mô hình diễn giải tạm thời quá tải, hệ thống đã dùng phương án dự phòng để đảm bảo có kết quả."
+    if "timeout" in lowered:
+        return "Mô hình diễn giải phản hồi chậm, hệ thống đã chuyển sang phương án dự phòng."
+    return "Hệ thống đã dùng mô hình dự phòng để đảm bảo kết quả ổn định."
+
+
 def _to_float(value: object) -> float:
     if value is None:
         return 0.0
@@ -208,11 +290,12 @@ async def deep_analysis_a2a(
             '{"report_type":"sales_report|expense_report|payroll_report|generic_report","reason":"..."}.\n'
             f"Columns: {columns}\nSample rows: {sample_rows}"
         )
-        classify_text = await _chat_completion(
+        classify_text = await _chat_completion_with_retry(
             base_url=settings.DEEPSEEK_BASE_URL,
             model=settings.DEEPSEEK_MODEL,
             messages=[{"role": "user", "content": classify_prompt}],
             timeout_seconds=45,
+            max_attempts=2,
         )
         classify_json = _extract_json_block(classify_text) or {}
         report_type = str(classify_json.get("report_type") or "generic_report")
@@ -257,11 +340,12 @@ async def deep_analysis_a2a(
             '{"revenue":"column_or_null","ad_spend":"column_or_null","orders":"column_or_null","leads":"column_or_null","repeat_orders":"column_or_null"}.\n'
             f"Columns: {columns}\nReport type: {report_type}"
         )
-        mapping_text = await _chat_completion(
+        mapping_text = await _chat_completion_with_retry(
             base_url=settings.DEEPSEEK_BASE_URL,
             model=settings.DEEPSEEK_MODEL,
             messages=[{"role": "user", "content": mapping_prompt}],
             timeout_seconds=45,
+            max_attempts=2,
         )
         mapping_json = _extract_json_block(mapping_text) or {}
         for key in mapping.keys():
@@ -342,15 +426,31 @@ async def deep_analysis_a2a(
     aov = _safe_div(revenue, orders)
     data_warnings: list[str] = []
     if mapping.get("revenue") is None:
-        data_warnings.append("Khong tim thay cot doanh thu. Mot so phan tich co the khong chinh xac.")
+        data_warnings.append("Không tìm thấy cột doanh thu. Một số phân tích có thể thiếu chính xác.")
     if mapping.get("orders") is None:
-        data_warnings.append("Khong tim thay cot don hang. He thong se han che khuyen nghi chuyen doi.")
+        data_warnings.append("Không tìm thấy cột đơn hàng. Hệ thống sẽ hạn chế các phân tích chuyển đổi.")
     if len(payload.report_rows) < 20:
-        data_warnings.append("So dong du lieu < 20, do tin cay insight co the thap.")
+        data_warnings.append("Số dòng dữ liệu dưới 20, độ tin cậy phân tích có thể thấp.")
     if leads <= 0:
-        data_warnings.append("Khong co du lieu lead hop le, conversion rate se duoc tinh 0.")
+        data_warnings.append("Không có dữ liệu lead hợp lệ, tỷ lệ chuyển đổi được tính bằng 0.")
     if all(score < 0.7 for score in mapping_confidence.values()):
-        data_warnings.append("Mapping cot dang thap, nen doi ten cot sat file mau tieng Viet.")
+        data_warnings.append("Khớp cột còn thấp, nên đặt lại tiêu đề cột gần với file mẫu tiếng Việt.")
+
+    limitations: list[str] = []
+    if not orders_col:
+        limitations.append("Chưa thể đánh giá chính xác tỷ lệ chuyển đổi do thiếu cột đơn hàng.")
+    if not ad_spend_col:
+        limitations.append("Chưa thể đánh giá hiệu quả quảng cáo đầy đủ do thiếu cột chi phí quảng cáo.")
+    if not repeat_col:
+        limitations.append("Chưa thể đánh giá hành vi khách quay lại do thiếu cột đơn hàng lặp lại.")
+    if not revenue_col:
+        limitations.append("Thiếu cột doanh thu nên các chỉ số giá trị đơn hàng chỉ mang tính tham khảo.")
+
+    data_quality_score, data_quality_breakdown = _build_data_quality(
+        row_count=len(payload.report_rows),
+        mapping_confidence=mapping_confidence,
+        data_warnings=data_warnings,
+    )
 
     traces.append(
         (
@@ -404,16 +504,16 @@ async def deep_analysis_a2a(
 
     insights = [
         {
-            "title": "Hieu qua quang cao can toi uu",
-            "severity": "Cao" if roas < 2 else "Vua",
+            "title": "Hiệu quả quảng cáo cần tối ưu",
+            "severity": "Cao" if roas < 2 else "Vừa",
             "evidence": {"roas": round(roas, 2), "baseline": 2.0},
-            "recommendation": "Cat nhom ads ROAS thap, doi ngan sach qua kenh co ty le chuyen doi tot hon.",
+            "recommendation": "Cắt nhóm quảng cáo có ROAS thấp, dồn ngân sách sang kênh có tỷ lệ chuyển đổi tốt hơn.",
         },
         {
-            "title": "Chat luong dau vao va chot don",
-            "severity": "Cao" if conversion_rate < 0.1 else "Thap",
+            "title": "Chất lượng đầu vào và chốt đơn",
+            "severity": "Cao" if conversion_rate < 0.1 else "Thấp",
             "evidence": {"conversion_rate": round(conversion_rate, 4), "baseline": 0.1},
-            "recommendation": "A/B test 2 uu dai va 2 CTA trong 7 ngay de nang conversion.",
+            "recommendation": "A/B test 2 ưu đãi và 2 CTA trong 7 ngày để nâng tỷ lệ chuyển đổi.",
         },
     ]
     action_plan = {
@@ -442,15 +542,16 @@ async def deep_analysis_a2a(
     try:
         narrative_prompt = (
             "Ban la NarratorAgent cho SMB. Tra ve JSON schema: "
-            '{"insights":[{"title":"...","severity":"Cao|Vua|Thap","evidence":{"metric":1},"recommendation":"..."}],'
+            '{"insights":[{"title":"...","severity":"Cao|Vừa|Thấp","evidence":{"metric":1},"recommendation":"..."}],'
             '"action_plan_30_60_90":{"day_30":["..."],"day_60":["..."],"day_90":["..."]}}.\n'
             f"Input: {json.dumps(narrative_payload, ensure_ascii=False)}"
         )
-        qwen_text = await _chat_completion(
+        qwen_text = await _chat_completion_with_retry(
             base_url=settings.QWEN_BASE_URL,
             model=settings.QWEN_MODEL,
             messages=[{"role": "user", "content": narrative_prompt}],
             timeout_seconds=max(30, settings.QWEN_TIMEOUT + 15),
+            max_attempts=2,
         )
         qwen_json = _extract_json_block(qwen_text) or {}
         if isinstance(qwen_json.get("insights"), list):
@@ -485,12 +586,13 @@ async def deep_analysis_a2a(
         if settings.OPENAI_API_KEY:
             gpt_started = time.perf_counter()
             try:
-                gpt_text = await _chat_completion(
+                gpt_text = await _chat_completion_with_retry(
                     base_url="https://api.openai.com/v1",
                     model="gpt-4o-mini",
                     messages=[{"role": "user", "content": narrative_prompt}],
                     timeout_seconds=45,
                     api_key=settings.OPENAI_API_KEY,
+                    max_attempts=2,
                 )
                 gpt_json = _extract_json_block(gpt_text) or {}
                 if isinstance(gpt_json.get("insights"), list):
@@ -531,6 +633,77 @@ async def deep_analysis_a2a(
             fallback_provider = "deterministic"
             fallback_reason = f"qwen failed and OPENAI_API_KEY is empty: {qwen_exc}"
 
+    # Buoc 6: Agent hau xu ly de chuan hoa ket qua cho nguoi dung Viet.
+    polish_started = time.perf_counter()
+    polish_prompt = (
+        "Ban la ResultPolisherAgent. Nhiem vu: viet lai ket qua de de hieu cho chu doanh nghiep, "
+        "giu nguyen y nghia, khong them so lieu moi. Tra ve JSON schema: "
+        '{"insights":[{"title":"...","severity":"Cao|Vừa|Thấp","recommendation":"..."}],'
+        '"limitations":["..."]}.\n'
+        f"Input: {json.dumps({'insights': insights, 'limitations': limitations}, ensure_ascii=False)}"
+    )
+    try:
+        polish_text = await _chat_completion_with_retry(
+            base_url=settings.DEEPSEEK_BASE_URL,
+            model=settings.DEEPSEEK_MODEL,
+            messages=[{"role": "user", "content": polish_prompt}],
+            timeout_seconds=35,
+            max_attempts=2,
+        )
+        polish_json = _extract_json_block(polish_text) or {}
+        if isinstance(polish_json.get("insights"), list):
+            polished_insights: list[dict[str, Any]] = []
+            for item in polish_json["insights"]:
+                if isinstance(item, dict):
+                    polished_insights.append(
+                        {
+                            "title": str(item.get("title") or "").strip() or "Nhận định dữ liệu",
+                            "severity": str(item.get("severity") or "Vừa").strip() or "Vừa",
+                            "evidence": item.get("evidence") if isinstance(item.get("evidence"), dict) else {},
+                            "recommendation": str(item.get("recommendation") or "").strip() or "Cần theo dõi thêm dữ liệu trước khi đề xuất hành động.",
+                        }
+                    )
+            if polished_insights:
+                insights = polished_insights
+        if isinstance(polish_json.get("limitations"), list):
+            limitations = [str(item) for item in polish_json["limitations"] if str(item).strip()]
+        traces.append(
+            (
+                step_order + 1,
+                "polish_result",
+                "ResultPolisherAgent",
+                "deepseek",
+                settings.DEEPSEEK_MODEL,
+                "success",
+                int((time.perf_counter() - polish_started) * 1000),
+                {"strategy": "llm_polisher"},
+            )
+        )
+    except Exception as polish_exc:
+        traces.append(
+            (
+                step_order + 1,
+                "polish_result",
+                "ResultPolisherAgent",
+                "deepseek",
+                settings.DEEPSEEK_MODEL,
+                "failed",
+                int((time.perf_counter() - polish_started) * 1000),
+                {"error": str(polish_exc)},
+            )
+        )
+        limitations = limitations or ["Dữ liệu hiện tại chưa đủ để mở rộng toàn bộ phân tích nâng cao."]
+
+    friendly_trace_name = {
+        "classify_report": "Phân loại báo cáo",
+        "map_schema": "Ánh xạ cột dữ liệu",
+        "plan_analysis": "Lập kế hoạch phân tích",
+        "compute_metrics": "Tính toán chỉ số",
+        "narrative": "Diễn giải kết quả",
+        "fallback_reasoning": "Suy luận dự phòng",
+        "polish_result": "Chuẩn hóa ngôn ngữ kết quả",
+    }
+
     for order, step_name, agent_name, provider, model_name, status, duration_ms, detail in traces:
         db.add(
             InsightAgentTrace(
@@ -551,8 +724,18 @@ async def deep_analysis_a2a(
         "business_name": payload.business_name,
         "industry": payload.industry,
         "report_type": report_type,
+        "report_type_vi": _report_type_vi(report_type),
         "model_trace": [
             {"step": s[1], "agent": s[2], "provider": s[3], "model": s[4], "status": s[5]}
+            for s in traces
+        ],
+        "friendly_model_trace": [
+            {
+                "step": friendly_trace_name.get(s[1], s[1]),
+                "model": s[4],
+                "provider": s[3],
+                "status": "Thành công" if s[5] == "success" else "Thất bại",
+            }
             for s in traces
         ],
         "kpis": {
@@ -571,7 +754,14 @@ async def deep_analysis_a2a(
         "issues": issues,
         "action_plan_30_60_90": action_plan,
         "data_warnings": data_warnings,
-        "fallback": {"provider": fallback_provider, "reason": fallback_reason},
+        "data_quality_score": data_quality_score,
+        "data_quality_breakdown": data_quality_breakdown,
+        "limitations": limitations,
+        "fallback": {
+            "provider": fallback_provider,
+            "reason": fallback_reason,
+            "user_message": _sanitize_fallback_reason(fallback_reason),
+        },
         "generated_for_user_id": str(current_user.id),
     }
 

@@ -27,7 +27,7 @@ C4Component
         Component(campaignsPage, "Campaigns Pages", "React components", "List campaigns, tạo mới (form), xem chi tiết + agent log timeline.")
         Component(calendarPage, "Calendar Page", "React Client Component", "Month/week view. Render content items theo scheduled_date. Drag-and-drop date.")
         Component(brandVaultPage, "Brand Vault Page", "React Client Component", "Form 2-column cấu hình brand. Lưu qua apiClient.")
-        Component(approvePage, "Approve Page", "React Client Component", "Queue nội dung pending_approval. Approve/Reject với note.")
+        Component(insightsPage, "Insights Page", "React Client Component", "Upload CSV/Excel, chay deep analysis, hien data quality + run history.")
         Component(calendarGrid, "CalendarGrid", "Reusable component", "Logic hiển thị lịch tháng/tuần, render content items.")
         Component(agentLogPanel, "AgentLogPanel", "Reusable component", "Timeline hiển thị agent steps với model, tokens, duration.")
     }
@@ -43,7 +43,7 @@ C4Component
     Rel(campaignsPage, apiClient, "GET/POST /campaigns/*")
     Rel(calendarPage, apiClient, "GET /calendar/*")
     Rel(brandVaultPage, apiClient, "GET/PUT /brands/me")
-    Rel(approvePage, apiClient, "GET/PATCH /content/*")
+    Rel(insightsPage, apiClient, "POST/GET /insights/a2a/*")
     Rel(calendarPage, calendarGrid, "Render")
     Rel(campaignsPage, agentLogPanel, "Render logs")
     Rel(apiClient, api, "HTTP REST", "JSON + Bearer JWT")
@@ -79,6 +79,7 @@ C4Component
         Component(calendarRouter, "Calendar Router", "FastAPI router (routers/calendar.py)", "GET /calendar?month=&year=, PATCH /content/{id}/schedule-date")
         Component(dashboardRouter, "Dashboard Router", "FastAPI router (routers/dashboard.py)", "GET /dashboard/stats, GET /dashboard/ai-summary")
         Component(workflowRouter, "Workflow Router", "FastAPI router (routers/workflow.py)", "GET/POST /workflow/schedules, GET /workflow/jobs")
+        Component(insightsRouter, "Insights Router", "FastAPI router (routers/insights.py)", "POST /insights/a2a/deep-analysis, GET /insights/a2a/runs, GET result snapshot, POST reanalyze")
         Component(internalRouter, "Internal Router", "FastAPI router (routers/internal.py)", "POST /internal/content, PATCH /internal/campaigns/{id}, GET /internal/campaigns/{id}/detail")
         Component(security, "Security Module", "core/security.py", "JWT create/decode, bcrypt hash/verify, get_current_user dependency")
         Component(database, "Database Module", "core/database.py", "Async engine, SessionLocal, get_db dependency")
@@ -95,6 +96,7 @@ C4Component
     Rel(web, calendarRouter, "Calendar requests")
     Rel(web, dashboardRouter, "Dashboard requests")
     Rel(web, workflowRouter, "Workflow requests")
+    Rel(web, insightsRouter, "Insight Copilot requests")
     Rel(agent, internalRouter, "Callback: lưu kết quả AI")
     Rel(authRouter, security, "Verify/create tokens")
     Rel(authRouter, models, "CRUD users")
@@ -228,5 +230,5 @@ Web (campaignsPage)
   - `insightsUploadForm`: upload 1-sheet CSV/Excel.
   - `insightsSheetPreviewTable`: xem toan bo du lieu sheet da nap.
   - `insightsSavedRunsTable`: xem danh sach run da luu, open/reanalyze.
-  - `insightsPipelineTimeline`: hien step + model dang chay.
-  - `insightsResultPanel`: KPI + insights + action plan 30/60/90.
+  - `insightsPipelineTimeline`: hien step + model dang chay theo o vuong + %.
+  - `insightsResultPanel`: KPI + data quality score + limitations + fallback thong diep than thien.

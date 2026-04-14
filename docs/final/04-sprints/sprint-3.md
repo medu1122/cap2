@@ -1,18 +1,18 @@
 # Sprint 3 — Advanced Features + Polish
 
-**Tuần 7–9 | Goal: Dashboard, Workflow, Notifications + Demo-ready**
+**Tuần 7–9 | Goal: Dashboard, Workflow, Insight Copilot A2A + Demo-ready**
 
 ---
 
 ## Sprint Goal
 
-> "Platform hoàn chỉnh, demo được cho hội đồng: Dashboard với AI summary, Workflow tự động, Notifications, và toàn bộ trải nghiệm người dùng được polish."
+> "Platform hoàn chỉnh, demo được cho hội đồng: Dashboard với AI summary, Workflow tự động, Insight Copilot A2A, và toàn bộ trải nghiệm người dùng được polish."
 
 **Done when:**
 - Dashboard hiển thị đúng stats từ database + AI summary từ Qwen
 - Workflow schedule: tạo lịch → đến giờ → tự tạo campaign → chạy AI
 - Upload CSV customer list → auto-tạo email campaign
-- Notification center: bell icon + unread count + mark as read
+- Insight Copilot: upload CSV/Excel -> deep analysis -> data quality score -> run history/reanalyze
 - Seed data chạy được: 1 user demo + brand vault + 2 campaigns + content
 - Full demo flow < 5 phút không có lỗi
 
@@ -34,18 +34,29 @@
 | US-44 | Mark as read | 1 | Dev | To Do |
 | US-46 | Customer lists view | 2 | Dev | Done (MVP) |
 | US-47 | Customers in list view | 1 | Dev | Done (MVP) |
+| US-48 | Upload CSV 1-sheet cho Insight Copilot | 5 | Dev | Done |
+| US-49 | Overlay pipeline model status | 5 | Dev | Done |
+| US-50 | Actionable output tu report data | 5 | Dev | Partial (dang harden) |
+| US-51 | Luu fallback reason cho tung run | 3 | Dev | Done |
+| US-52 | Upload Excel (.xlsx/.xls) | 3 | Dev | Done |
+| US-53 | Preview sheet table + pagination | 3 | Dev | Done |
+| US-54 | Saved runs + reanalyze | 3 | Dev | Done |
+| US-55 | Admin dashboard (usage/health) | 3 | Dev | Backlog |
+| US-56 | Admin lock/unlock user | 3 | Dev | Backlog |
+| US-57 | Admin retry workflow jobs | 3 | Dev | Backlog |
+| US-58 | Admin audit logs | 2 | Dev | Backlog |
 | **POLISH-01** | Seed demo data script hoàn chỉnh | 3 | Dev | To Do |
 | **POLISH-02** | Error handling + loading states toàn app | 3 | Dev | To Do |
 | **POLISH-03** | Responsive design check (tablet) | 2 | Dev | To Do |
 | **POLISH-04** | Performance: lazy load agent logs | 2 | Dev | To Do |
 | **DEMO-01** | Full demo rehearsal + timing | 2 | Dev | To Do |
-| **Total** | | **55** | | |
+| **Total** | | **82** | | |
 
 ---
 
 ## Timeline Chi tiết
 
-### Tuần 7 — Dashboard + Notifications
+### Tuần 7 — Dashboard + Insight Copilot foundation
 
 | Ngày | Task | Output |
 |---|---|---|
@@ -53,11 +64,11 @@
 | Ngày 44 | Dashboard API: GET /dashboard/ai-summary (call Qwen) | AI summary generation test |
 | Ngày 45 | Dashboard page: 4 widgets + channel chart | Stats hiển thị đúng |
 | Ngày 46 | Dashboard AI summary card với loading state | Summary card render |
-| Ngày 47 | Notifications API: GET /notifications, PATCH read | Notification CRUD |
-| Ngày 48 | Notification center UI: dropdown + unread badge | Bell icon + count |
+| Ngày 47 | Insight API: deep-analysis contract + run trace tables | API deep-analysis ready |
+| Ngày 48 | Insights UI: upload CSV/Excel + pipeline overlay + preview table | UI flow end-to-end |
 | Ngày 49 | AI usage stats tracking (update ai_usage_stats sau mỗi agent call) | Token tracking |
 
-### Tuần 8 — Workflow Automation + Customer Lists
+### Tuần 8 — Workflow + Customer Lists + Insight run history
 
 | Ngày | Task | Output |
 |---|---|---|
@@ -67,9 +78,9 @@
 | Ngày 53 | File upload API: POST /files/upload (CSV) + campaign image endpoints o /campaigns/{id}/image/* | File upload test |
 | Ngày 54 | CSV parsing: import customers into customer_lists + customers | Import 100 rows test |
 | Ngày 55 | Upload trigger: CSV → auto create email campaign | End-to-end upload test |
-| Ngày 56 | Workflow UI: schedule list + create form + history | Workflow UI complete |
+| Ngày 56 | Insights run history: xem ket qua cu + reanalyze | Saved runs flow complete |
 
-### Tuần 9 — Polish + Demo Prep
+### Tuần 9 — Polish + Demo Prep + Admin scope review
 
 | Ngày | Task | Output |
 |---|---|---|
@@ -80,6 +91,7 @@
 | Ngày 61 | Performance: lazy loading, optimize heavy queries | Dashboard load < 2s |
 | Ngày 62 | Full demo rehearsal — time entire flow | Flow < 5 phút |
 | Ngày 63 | Bug fixes từ rehearsal | Clean demo |
+| Ngày 63 | Chot admin scope: dua vao backlog v2 sau capstone | Scope freeze |
 
 ---
 
@@ -92,6 +104,7 @@
 - [ ] AI summary tạo được (không phải hardcoded)
 - [x] Workflow tự động hoạt động (manual + schedule trigger)
 - [ ] Notification bell có unread count sau khi campaign hoàn thành
+- [x] Insight Copilot upload CSV/Excel + deep analysis + run history hoạt động
 - [ ] Không có unhandled 500 errors trong happy path
 - [ ] README có hướng dẫn setup và demo steps
 
@@ -203,3 +216,8 @@
   - preview sheet dang bang table,
   - open/reanalyze run cu.
 - Tinh nang cards/actions cu tren `/insights` duoc thu gon de tranh loạn source.
+
+## Sprint 3 update - phan bo scope cho logic (2026-04-14)
+
+- Must cho capstone demo: US-35..US-41 + US-48..US-54.
+- Should/co the de sau demo: US-42..US-45 (notification day du), US-55..US-58 (admin ops).

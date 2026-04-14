@@ -60,7 +60,7 @@ C4Container
 - `/(app)/campaigns` — Danh sách và tạo campaign
 - `/(app)/campaigns/[id]` — Chi tiết campaign + agent logs
 - `/(app)/brand-vault` — Cấu hình Brand Vault
-- `/(app)/approve` — Queue phê duyệt nội dung
+- `/(app)/insights` — Insight Copilot: upload CSV/Excel, deep analysis, run history
 - `/(app)/calendar` — Marketing Calendar
 
 **Giao tiếp:**
@@ -86,6 +86,7 @@ C4Container
 - `/calendar/*` — Calendar view
 - `/dashboard/*` — Stats aggregation
 - `/workflow/*` — Workflow jobs và schedules
+- `/insights/*` — Insight Copilot A2A (deep-analysis, runs, replay)
 - `/internal/*` — Agent callback endpoints (không public)
 
 **Giao tiếp:**
@@ -194,3 +195,4 @@ Tất cả containers giao tiếp qua Docker internal network `aimap_network`. C
   - GPT API: fallback khi quality gate fail.
 - Database bo sung bang run-trace de audit model usage va fallback reason.
 - Frontend parse duoc ca `csv/xlsx/xls` truoc khi gui du lieu da chuan hoa sang API.
+- Frontend bo sung run history table va replay flow (`GET /insights/a2a/runs/{run_id}/result`, `POST /insights/a2a/runs/{run_id}/reanalyze`).

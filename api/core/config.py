@@ -26,9 +26,16 @@ class Settings(BaseSettings):
     CALENDAR_REMINDER_HOUR: int = 8
     WORKFLOW_SCHEDULER_ENABLED: bool = True
     WORKFLOW_SCHEDULER_INTERVAL_MINUTES: int = 5
+    CLOUDINARY_CLOUD_NAME: str = ""
+    CLOUDINARY_API_KEY: str = ""
+    CLOUDINARY_API_SECRET: str = ""
+    CLOUDINARY_FOLDER: str = "aimap/campaigns"
+    STATIC_DIR: str = "static/uploads"
+    STATIC_BASE_URL: str = "http://localhost:8000/static/uploads"
 
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 
 settings = Settings()

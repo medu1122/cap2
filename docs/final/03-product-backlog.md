@@ -8,9 +8,9 @@
 
 | Metric | Giá trị |
 |---|---|
-| Tổng Epics | 10 |
-| Tổng User Stories | 52 |
-| Tổng Story Points | 144 |
+| Tổng Epics | 12 |
+| Tổng User Stories | 58 |
+| Tổng Story Points | 171 |
 | Velocity ước tính | 48 points/sprint |
 | Số Sprints | 3 (mỗi sprint 3 tuần) |
 
@@ -184,6 +184,35 @@
 
 ---
 
+## EPIC 11: Insight Copilot A2A (F11)
+
+**Sprint**: Sprint 3 | **Tổng points**: 24
+
+| ID | User Story | Acceptance Criteria | Points | Priority |
+|---|---|---|---|---|
+| US-48 | As a user, I want to upload 1-sheet CSV for deep analysis | Given file CSV hợp lệ, When upload, Then parse được headers + rows và lưu trạng thái nguồn | 5 | M |
+| US-49 | As a user, I want to see A2A pipeline and model currently running | Given đang phân tích, When open overlay, Then thấy step/model/status theo tiến trình | 5 | M |
+| US-50 | As a user, I want actionable 30/60/90 plan from report data | Given đủ dữ liệu KPI, Then trả về action plan có thể đọc được | 5 | M |
+| US-51 | As an operator, I want fallback reasons logged for each run | Given model fail, Then trace lưu provider + reason + status | 3 | S |
+| US-52 | As a user, I want to upload Excel (.xlsx/.xls) besides CSV | Given file excel 1-sheet, Then parse thành rows chuẩn trước khi gửi API | 3 | M |
+| US-53 | As a user, I want to preview the uploaded sheet as a table before/after analysis | Given đã nạp file, Then xem được preview table có scroll + pagination | 3 | M |
+
+---
+
+## EPIC 12: Insight Run History & Admin Ops (F12)
+
+**Sprint**: Sprint 3 | **Tổng points**: 14
+
+| ID | User Story | Acceptance Criteria | Points | Priority |
+|---|---|---|---|---|
+| US-54 | As a user, I want to open previous result and reanalyze from saved run | Given có run cũ, Then có thể xem snapshot và reanalyze | 3 | S |
+| US-55 | As an admin, I want a system dashboard for AI usage and health | Given admin login, Then xem usage/errors/workflow health | 3 | S |
+| US-56 | As an admin, I want to lock/unlock user accounts | Given admin action, Then user is_active cập nhật và có audit log | 3 | S |
+| US-57 | As an admin, I want to retry failed workflow jobs | Given failed jobs, Then admin trigger retry và theo dõi kết quả | 3 | S |
+| US-58 | As an admin, I want audit logs for operational actions | Given admin thao tác, Then lưu đầy đủ ai/lúc nào/làm gì | 2 | S |
+
+---
+
 ## Backlog Summary
 
 | Epic | Sprint | Stories | Points | Priority |
@@ -198,34 +227,20 @@
 | F08 — Dashboard | Sprint 3 | 3 | 13 | Must |
 | F09 — Workflow Automation | Sprint 3 | 4 | 16 | Should |
 | F10 — Notifications | Sprint 3 | 6 | 11 | Should |
-| **Tổng** | | **47** | **144** | |
+| F11 — Insight Copilot A2A | Sprint 3 | 6 | 24 | Must |
+| F12 — Run History & Admin Ops | Sprint 3 | 5 | 14 | Should |
+| **Tổng** | | **58** | **171** | |
 
 **Sprint Velocity Plan:**
 - Sprint 1: 34 points (F01 + F02 + Infra setup ~5pts)
 - Sprint 2: 70 points (F03 + F04 + F05 + F06 + F07)
-- Sprint 3: 40 points (F08 + F09 + F10 + Polish ~5pts)
+- Sprint 3: 67 points (F08 + F09 + F10 + F11 + F12 + Polish ~5pts)
 
-> Lưu ý: Sprint 2 có velocity cao nhất vì đây là phase triển khai tính năng core nhất. Sprint 1 và 3 có buffer cho setup và polish.
+> Lưu ý: Sprint 3 đã mở rộng scope với Insight Copilot A2A và Admin Ops, nên cần ưu tiên backlog theo Must/Should để giữ ổn định demo.
 
 ---
 
-## Bo sung backlog cho Admin
+## Ghi chú đồng bộ
 
-| Feature | Sprint de xuat | Story points | Priority |
-|---|---|---:|---|
-| Admin Dashboard (health + usage) | Sprint 3 | 5 | Must |
-| User Management (lock/unlock) | Sprint 3 | 5 | Must |
-| Workflow Ops (view failed/retry) | Sprint 3 | 4 | Should |
-| Audit Logs cho thao tac admin | Sprint 3 | 3 | Should |
-
-## Bo sung backlog Insight A2A (2026-04-14)
-
-| ID | User Story | Points | Priority |
-|---|---|---:|---|
-| US-48 | As a user, I want to upload 1-sheet CSV for deep analysis | 5 | Must |
-| US-49 | As a user, I want to see A2A pipeline and model currently running | 5 | Must |
-| US-50 | As a user, I want actionable 30/60/90 plan from report data | 5 | Must |
-| US-51 | As an operator, I want fallback reasons logged for each run | 3 | Should |
-| US-52 | As a user, I want to upload Excel (.xlsx/.xls) besides CSV | 3 | Must |
-| US-53 | As a user, I want to preview the uploaded sheet as a table before/after analysis | 3 | Must |
-| US-54 | As a user, I want to open previous result and reanalyze from saved run | 3 | Should |
+- Nhóm Insight Copilot A2A (US-48..US-54) được tách thành 2 epic F11/F12 để phản ánh đúng scope hiện tại.
+- Nhóm Admin Ops được gắn ID chính thức US-55..US-58 thay vì để bảng phụ không định danh.

@@ -35,7 +35,7 @@
 |---|---|---|---|
 | Sprint 1 | [sprint-1.md](04-sprints/sprint-1.md) | 1–3 | Foundation: Auth, Brand Vault, Infra |
 | Sprint 2 | [sprint-2.md](04-sprints/sprint-2.md) | 4–6 | Core AI: Orchestrator, Content, Calendar |
-| Sprint 3 | [sprint-3.md](04-sprints/sprint-3.md) | 7–9 | Advanced: Dashboard, Workflow, Polish |
+| Sprint 3 | [sprint-3.md](04-sprints/sprint-3.md) | 7–9 | Advanced: Dashboard, Workflow, Insight Copilot, Polish |
 
 ---
 
@@ -55,6 +55,8 @@ Mỗi tính năng có 4 file: **README.md** (tổng quan + trạng thái thực 
 | F08 — Dashboard & AI Summary | [F08-dashboard/](05-features/F08-dashboard/) | Sprint 3 |
 | F09 — Workflow Automation | [F09-workflow-automation/](05-features/F09-workflow-automation/) | Sprint 3 |
 | F10 — Notifications & Customer Lists | [F10-notifications/](05-features/F10-notifications/) | Sprint 3 |
+| F11 — Insight Copilot A2A | [F11-insight-copilot-a2a/](05-features/F11-insight-copilot-a2a/) | Sprint 3 |
+| F12 — Admin Operations | [F12-admin-operations/](05-features/F12-admin-operations/) | Sprint 3 |
 
 Bắt đầu đọc mỗi tính năng từ file `README.md` trong thư mục tương ứng, sau đó đi sâu vào `plan.md`, `coding.md`, `test.md`.
 
