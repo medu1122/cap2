@@ -16,6 +16,23 @@ interface InsightCard {
   status: string;
 }
 
+interface DeepAnalysisResult {
+  business_name: string;
+  industry?: string;
+  model: { provider: string; name: string; base_url: string };
+  kpis: {
+    revenue: number;
+    ad_spend: number;
+    orders: number;
+    leads: number;
+    roas: number;
+    conversion_rate: number;
+    repeat_rate: number;
+    aov: number;
+  };
+  a2a_pipeline: Array<{ agent: string; summary?: string; issues?: string[]; actions?: Array<{ priority: string; text: string }> }>;
+}
+
 const PRIORITY_STYLES: Record<string, string> = {
   P1: "bg-red-50 text-red-700 border-red-200",
   P2: "bg-amber-50 text-amber-700 border-amber-200",
@@ -38,6 +55,11 @@ export default function InsightsPage() {
   const [seeding, setSeeding] = useState(false);
   const [uploadingCsv, setUploadingCsv] = useState(false);
   const [uploadSummary, setUploadSummary] = useState<string | null>(null);
+  const [deepAnalyzing, setDeepAnalyzing] = useState(false);
+  const [deepResult, setDeepResult] = useState<DeepAnalysisResult | null>(null);
+  const [deepRows, setDeepRows] = useState<Array<{ revenue: number; ad_spend: number; orders: number; leads: number; repeat_orders: number }>>([]);
+  const [businessName, setBusinessName] = useState("Cửa hàng Mộc An");
+  const [industry, setIndustry] = useState("Bán lẻ tiêu dùng");
 
   async function loadCards() {
     setLoading(true);
@@ -121,14 +143,21 @@ export default function InsightsPage() {
 
       const delimiter = lines[0].includes(";") ? ";" : ",";
       const headers = _splitCsvLine(lines[0], delimiter);
+      const pickIndex = (...names: string[]) => {
+        for (const name of names) {
+          const idx = headers.indexOf(name);
+          if (idx >= 0) return idx;
+        }
+        return -1;
+      };
       const idx = {
-        ngay: headers.indexOf("ngay_du_lieu"),
-        kenh: headers.indexOf("kenh"),
-        doanhThu: headers.indexOf("doanh_thu_vnd"),
-        donHang: headers.indexOf("so_don_hang"),
-        chiPhiAds: headers.indexOf("chi_phi_quang_cao_vnd"),
-        khachTiemNang: headers.indexOf("so_khach_tiem_nang"),
-        donLapLai: headers.indexOf("so_don_hang_lap_lai"),
+        ngay: pickIndex("ngay_du_lieu", "ngay_bao_cao"),
+        kenh: pickIndex("kenh", "kenh_ban_hang"),
+        doanhThu: pickIndex("doanh_thu_vnd", "doanh_thu_thuan_vnd"),
+        donHang: pickIndex("so_don_hang", "so_don_hang_thanh_cong"),
+        chiPhiAds: pickIndex("chi_phi_quang_cao_vnd", "chi_phi_marketing_vnd"),
+        khachTiemNang: pickIndex("so_khach_tiem_nang", "so_lead"),
+        donLapLai: pickIndex("so_don_hang_lap_lai"),
       };
 
       const requiredIndexes = Object.values(idx);
@@ -138,6 +167,7 @@ export default function InsightsPage() {
 
       let successRows = 0;
       const uniqueDates = new Set<string>();
+      const uploadedRows: Array<{ revenue: number; ad_spend: number; orders: number; leads: number; repeat_orders: number }> = [];
       for (const line of lines.slice(1)) {
         const cols = _splitCsvLine(line, delimiter);
         const snapshotDate = cols[idx.ngay];
@@ -158,6 +188,13 @@ export default function InsightsPage() {
         });
         uniqueDates.add(snapshotDate);
         successRows += 1;
+        uploadedRows.push({
+          revenue: payload.revenue,
+          ad_spend: payload.ad_spend,
+          orders: payload.orders,
+          leads: payload.leads,
+          repeat_orders: payload.repeat_orders,
+        });
       }
 
       for (const day of uniqueDates) {
@@ -170,10 +207,33 @@ export default function InsightsPage() {
       }
       await loadCards();
       setUploadSummary(`Đã nạp ${successRows} dòng dữ liệu và phân tích ${uniqueDates.size} ngày.`);
+      setDeepRows(uploadedRows);
+      setDeepResult(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Không thể nạp dữ liệu CSV.");
     } finally {
       setUploadingCsv(false);
+    }
+  }
+
+  async function handleDeepAnalyze() {
+    if (deepRows.length === 0) {
+      setError("Bạn cần nạp dữ liệu CSV trước khi phân tích sâu A2A.");
+      return;
+    }
+    setDeepAnalyzing(true);
+    setError(null);
+    try {
+      const result = await api.post<DeepAnalysisResult>("/insights/a2a/deep-analysis", {
+        business_name: businessName,
+        industry,
+        report_rows: deepRows,
+      });
+      setDeepResult(result);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Không thể chạy phân tích sâu A2A.");
+    } finally {
+      setDeepAnalyzing(false);
     }
   }
 
@@ -193,7 +253,7 @@ export default function InsightsPage() {
   const hasData = cards.length > 0;
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl">
+    <div className="p-6 space-y-6 max-w-6xl [&_.card]:!rounded-none [&_.input]:!rounded-none [&_.select]:!rounded-none [&_.btn-primary]:!rounded-none [&_.btn-secondary]:!rounded-none">
       <div className="flex items-center justify-between">
         <div>
           <h1>Trợ lý phân tích</h1>
@@ -263,6 +323,20 @@ export default function InsightsPage() {
             {uploadSummary && (
               <p className="text-sm text-green-700">{uploadSummary}</p>
             )}
+            <div className="rounded border border-indigo-200 bg-indigo-50 p-3 space-y-2">
+              <p className="text-sm font-medium text-indigo-800">Phân tích sâu A2A (Agent-to-Agent)</p>
+              <p className="text-xs text-indigo-700">
+                Luồng A2A sẽ chạy 3 tác tử: Strategist -> Diagnostic -> ActionAdvisor để phân tích sâu báo cáo của bạn.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <input className="input" value={businessName} onChange={(e) => setBusinessName(e.target.value)} placeholder="Tên doanh nghiệp" />
+                <input className="input" value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="Ngành hàng" />
+              </div>
+              <button className="btn-primary" onClick={handleDeepAnalyze} disabled={deepAnalyzing || deepRows.length === 0}>
+                {deepAnalyzing ? "Đang chạy A2A..." : "Phân tích sâu báo cáo (A2A)"}
+              </button>
+              {deepRows.length === 0 && <p className="text-xs text-indigo-700">Cần nạp CSV trước để bật tính năng này.</p>}
+            </div>
           </div>
         ) : (
           <div className="flex flex-wrap items-end gap-3">
@@ -306,6 +380,36 @@ export default function InsightsPage() {
       )}
 
       {error && <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+
+      {deepResult && (
+        <div className="card space-y-3">
+          <div className="flex items-center justify-between">
+            <h2>Kết quả phân tích sâu A2A</h2>
+            <span className="inline-flex rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-700">
+              Model đang chạy: {deepResult.model.name} ({deepResult.model.provider})
+            </span>
+          </div>
+          <p className="text-sm text-gray-600">
+            Doanh nghiệp: <strong>{deepResult.business_name}</strong> - Ngành: <strong>{deepResult.industry || "Chưa khai báo"}</strong>
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+            <div className="rounded border border-gray-200 p-2">ROAS: {deepResult.kpis.roas.toFixed(2)}</div>
+            <div className="rounded border border-gray-200 p-2">Conversion: {(deepResult.kpis.conversion_rate * 100).toFixed(1)}%</div>
+            <div className="rounded border border-gray-200 p-2">Repeat rate: {(deepResult.kpis.repeat_rate * 100).toFixed(1)}%</div>
+            <div className="rounded border border-gray-200 p-2">AOV: {Math.round(deepResult.kpis.aov).toLocaleString("vi-VN")} VND</div>
+          </div>
+          <div className="space-y-2">
+            {deepResult.a2a_pipeline.map((step, idx) => (
+              <div key={idx} className="rounded border border-gray-200 p-3">
+                <p className="font-medium text-sm text-gray-800">{step.agent}</p>
+                {step.summary && <p className="text-sm text-gray-600 mt-1">{step.summary}</p>}
+                {step.issues && <ul className="list-disc pl-5 text-sm text-gray-600 mt-1">{step.issues.map((i, n) => <li key={n}>{i}</li>)}</ul>}
+                {step.actions && <ul className="list-disc pl-5 text-sm text-gray-600 mt-1">{step.actions.map((a, n) => <li key={n}>[{a.priority}] {a.text}</li>)}</ul>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="space-y-3">

@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     INTERNAL_API_URL: str = "http://api:8000"
 
     OPENAI_API_KEY: str = ""
+    DEEPSEEK_BASE_URL: str = "http://171.238.156.10:11434/v1"
+    DEEPSEEK_MODEL: str = "deepseek-coder:6.7b"
     QWEN_BASE_URL: str = "http://171.238.156.10:11434/v1"
     QWEN_MODEL: str = "qwen2.5:7b"
     QWEN_TIMEOUT: int = 15

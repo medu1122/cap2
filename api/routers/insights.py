@@ -17,6 +17,7 @@ from models.insight_metric_daily import InsightMetricDaily
 from models.insight_card import InsightCard
 from models.insight_action import InsightAction
 from models.insight_feedback import InsightFeedback
+from core.config import settings
 
 router = APIRouter()
 
@@ -36,6 +37,12 @@ class FeedbackRequest(BaseModel):
     insight_card_id: uuid.UUID | None = None
     sentiment: str = Field(pattern="^(helpful|not_helpful)$")
     note: str | None = None
+
+
+class DeepAnalysisRequest(BaseModel):
+    business_name: str = Field(min_length=2, max_length=255)
+    industry: str | None = None
+    report_rows: list[dict]
 
 
 def _build_metrics(payload: dict) -> dict:
@@ -272,3 +279,69 @@ async def submit_feedback(
     db.add(item)
     await db.commit()
     return {"ok": True, "feedback_id": str(item.id)}
+
+
+@router.post("/a2a/deep-analysis")
+async def deep_analysis_a2a(
+    payload: DeepAnalysisRequest,
+    current_user: User = Depends(get_current_user),
+):
+    revenue = 0.0
+    ad_spend = 0.0
+    orders = 0.0
+    leads = 0.0
+    repeat_orders = 0.0
+    for row in payload.report_rows:
+        revenue += float(row.get("revenue", 0) or 0)
+        ad_spend += float(row.get("ad_spend", 0) or 0)
+        orders += float(row.get("orders", 0) or 0)
+        leads += float(row.get("leads", 0) or 0)
+        repeat_orders += float(row.get("repeat_orders", 0) or 0)
+
+    roas = revenue / ad_spend if ad_spend > 0 else 0.0
+    conversion = orders / leads if leads > 0 else 0.0
+    repeat_rate = repeat_orders / orders if orders > 0 else 0.0
+    aov = revenue / orders if orders > 0 else 0.0
+
+    strategist = {
+        "agent": "StrategistAgent",
+        "summary": f"Tong doanh thu {revenue:,.0f} VND, ROAS {roas:.2f}, Conversion {conversion*100:.1f}%.",
+    }
+    diagnostician = {
+        "agent": "DiagnosticAgent",
+        "issues": [
+            "ROAS thap hon moc an toan 2.0" if roas < 2 else "ROAS dang o muc chap nhan duoc",
+            "Conversion duoi 10% can toi uu phieu uu dai" if conversion < 0.1 else "Conversion on dinh",
+            "Ty le khach quay lai duoi 20% can chuong trinh giu chan" if repeat_rate < 0.2 else "Ty le quay lai kha tot",
+        ],
+    }
+    advisor = {
+        "agent": "ActionAdvisorAgent",
+        "actions": [
+            {"priority": "Cao", "text": "Toi uu 3 nhom quang cao chi phi cao nhung chuyen doi thap trong 48h."},
+            {"priority": "Vua", "text": "A/B test 2 uu dai ban chay tren kenh co conversion thap."},
+            {"priority": "Thap", "text": "Theo doi tuan su thay doi AOV sau khi cap nhat thong diep."},
+        ],
+    }
+
+    return {
+        "business_name": payload.business_name,
+        "industry": payload.industry,
+        "model": {
+            "provider": "qwen",
+            "name": settings.QWEN_MODEL,
+            "base_url": settings.QWEN_BASE_URL,
+        },
+        "kpis": {
+            "revenue": revenue,
+            "ad_spend": ad_spend,
+            "orders": orders,
+            "leads": leads,
+            "roas": roas,
+            "conversion_rate": conversion,
+            "repeat_rate": repeat_rate,
+            "aov": aov,
+        },
+        "a2a_pipeline": [strategist, diagnostician, advisor],
+        "generated_for_user_id": str(current_user.id),
+    }

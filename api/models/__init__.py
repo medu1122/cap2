@@ -14,6 +14,10 @@ from .insight_metric_daily import InsightMetricDaily
 from .insight_card import InsightCard
 from .insight_action import InsightAction
 from .insight_feedback import InsightFeedback
+from .insight_report_run import InsightReportRun
+from .insight_report_schema_map import InsightReportSchemaMap
+from .insight_agent_trace import InsightAgentTrace
+from .insight_result_snapshot import InsightResultSnapshot
 
 __all__ = [
     "User",
@@ -32,4 +36,8 @@ __all__ = [
     "InsightCard",
     "InsightAction",
     "InsightFeedback",
+    "InsightReportRun",
+    "InsightReportSchemaMap",
+    "InsightAgentTrace",
+    "InsightResultSnapshot",
 ]

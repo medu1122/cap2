@@ -1,37 +1,51 @@
-# README - Mau du lieu CSV cho Tro ly phan tich
+# README - Mẫu báo cáo kinh doanh CSV cho Trợ lý phân tích
 
-## Muc tieu
-Tai lieu nay huong dan nguoi dung Viet Nam chuan bi file CSV de nap du lieu vao tinh nang `http://localhost:3000/insights` mot cach de hieu va dung cau truc.
+## Mục tiêu
+Tài liệu này hướng dẫn doanh nghiệp nhỏ tại Việt Nam chuẩn bị file CSV dạng **báo cáo kinh doanh** để nạp vào `http://localhost:3000/insights`.
 
-## File mau co san
-- Duong dan tai file mau: `web/public/mau-du-lieu-tro-ly-phan-tich.csv`
-- Link tren UI: nut `Tai file CSV mau` o Bước 1 - Nap du lieu.
+## File mẫu có sẵn
+- Đường dẫn: `web/public/mau-du-lieu-tro-ly-phan-tich.csv`
+- Số dòng dữ liệu mẫu: **100 dòng** (không tính header)
+- Định dạng tách cột: dấu `;` để mở đẹp trên Excel tiếng Việt
 
-## Cau truc cot bat buoc
-| Cot | Y nghia | Vi du |
+## Cấu trúc cột bắt buộc (bản báo cáo kinh doanh)
+| Cột | Ý nghĩa | Ví dụ |
 |---|---|---|
-| `ngay_du_lieu` | Ngay tong hop so lieu (dinh dang YYYY-MM-DD) | `2026-04-12` |
-| `kenh` | Kenh marketing/chot don | `facebook`, `zalo`, `tiktok`, `email` |
-| `doanh_thu_vnd` | Tong doanh thu trong ngay theo kenh (VND) | `20100000` |
-| `so_don_hang` | So don thanh cong | `141` |
-| `chi_phi_quang_cao_vnd` | Tong chi phi ads theo kenh (VND) | `7900000` |
-| `so_khach_tiem_nang` | So lead/comment/inbox hop le | `1520` |
-| `so_don_hang_lap_lai` | So don tu khach cu quay lai | `33` |
+| `ngay_bao_cao` | Ngày báo cáo theo định dạng `YYYY-MM-DD` | `2026-01-20` |
+| `kenh_ban_hang` | Kênh bán/chạy marketing | `facebook`, `zalo`, `tiktok`, `email`, `google` |
+| `doanh_thu_thuan_vnd` | Doanh thu thuần theo ngày và kênh | `20300000` |
+| `so_don_hang_thanh_cong` | Số đơn hàng thành công | `143` |
+| `chi_phi_quang_cao_vnd` | Chi phí quảng cáo theo kênh | `8050000` |
+| `so_khach_tiem_nang` | Số khách tiềm năng (lead/comment/inbox hợp lệ) | `1610` |
+| `so_don_hang_lap_lai` | Số đơn từ khách cũ quay lại | `33` |
 
-## Quy tac file CSV
-- Header phai dung dung ten cot nhu bang tren.
-- Co the dung dau `;` (khuyen nghi cho Excel tieng Viet) hoac `,`.
-- Khong de trong cot `ngay_du_lieu`.
-- Cac cot so nen de dang so thuần (khong them chu, ky hieu).
+## Trợ lý phân tích sẽ phân tích gì cho bạn
+Sau khi nạp báo cáo, hệ thống tính và phân tích:
+- ROAS (doanh thu / chi phí quảng cáo)
+- Conversion rate (đơn hàng / khách tiềm năng)
+- Repeat rate (đơn lặp lại / tổng đơn)
+- AOV (giá trị đơn hàng trung bình)
+- Mức ưu tiên xử lý: `Cao (P1)`, `Vừa (P2)`, `Thấp (P3)`
+- Gợi ý hành động theo từng vấn đề
 
-## Quy trinh su dung tren giao dien
-1. Mo trang `Trợ lý phân tích`.
-2. O Bước 1, bam `Nạp dữ liệu từ CSV`.
-3. Chon file CSV theo mau.
-4. He thong tu nap du lieu va chay phan tich theo ngay.
-5. Sang Bước 2/Bước 3 de xem insight va hang doi hanh dong.
+## Phân tích sâu A2A
+Trên giao diện có form `Phân tích sâu báo cáo (A2A)` với luồng:
+1. `StrategistAgent`: tổng hợp bức tranh kinh doanh
+2. `DiagnosticAgent`: chỉ ra vấn đề gốc
+3. `ActionAdvisorAgent`: đề xuất hành động ưu tiên
 
-## Goi y cho doanh nghiep nho (SMB)
-- Nen tong hop du lieu moi ngay theo tung kenh chinh.
-- Neu du lieu chua du, co the nap file mau de hoc cach van hanh truoc.
-- Nen phan tich lai vao cuoi ngay de he thong cap nhat khuyen nghi moi nhat.
+UI cũng hiển thị rõ model đang hoạt động (ví dụ `qwen2.5:7b`).
+
+## Quy tắc file CSV
+- Giữ đúng header như bảng trên.
+- Không để trống `ngay_bao_cao`.
+- Cột số để dạng số thuần (không thêm chữ hay ký hiệu tiền tệ).
+- Có thể dùng dấu `;` hoặc `,` (khuyến nghị `;` cho Excel tiếng Việt).
+
+## Quy trình sử dụng
+1. Mở trang `Trợ lý phân tích`.
+2. Bấm `Nạp dữ liệu từ CSV`.
+3. Chọn file báo cáo kinh doanh theo mẫu.
+4. Hệ thống tự nạp và phân tích theo từng ngày dữ liệu.
+5. (Tuỳ chọn) chạy `Phân tích sâu báo cáo (A2A)` để xem phân tích chuyên sâu.
+6. Mở `Hàng đợi hành động` để triển khai.

@@ -89,6 +89,12 @@ Bắt đầu đọc mỗi tính năng từ file `README.md` trong thư mục tư
 | [insight-copilot-plan.md](06-update/insight-copilot-plan.md) | Kien truc backend/frontend/database va roadmap trien khai |
 | [insight-copilot-ai-quality.md](06-update/insight-copilot-ai-quality.md) | Khung chat luong AI cho Qwen: prompt, guardrails, eval |
 | [insight-copilot-data-template-readme.md](06-update/insight-copilot-data-template-readme.md) | Huong dan CSV mau tieng Viet de nap du lieu cho Tro ly phan tich |
+| [deepseek-a2a-feasibility-readme.md](06-update/deepseek-a2a-feasibility-readme.md) | Phan tich kha thi DeepSeek + Qwen + GPT fallback |
+| [deepseek-coder-vps-ubuntu-playbook.md](06-update/deepseek-coder-vps-ubuntu-playbook.md) | Playbook cai va van hanh DeepSeek Coder 6.7B tren VPS Ubuntu |
+| [insight-a2a-backend-readme.md](06-update/insight-a2a-backend-readme.md) | API contracts, output contract va quality gate cho backend A2A |
+| [insight-a2a-frontend-readme.md](06-update/insight-a2a-frontend-readme.md) | UX upload 1-sheet, pipeline status, model badges |
+| [insight-a2a-database-readme.md](06-update/insight-a2a-database-readme.md) | Thiet ke bang run trace/schema map/result snapshot |
+| [docs-changelog-2026-04-14.md](06-update/docs-changelog-2026-04-14.md) | Nhat ky cap nhat toan bo docs/final cho huong DeepSeek A2A |
 
 ---
 

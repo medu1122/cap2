@@ -63,7 +63,7 @@ export default function CustomerListsPage() {
   }
 
   return (
-    <div className="p-6 max-w-5xl space-y-6">
+    <div className="p-6 max-w-5xl space-y-6 [&_.card]:!rounded-none [&_.input]:!rounded-none [&_.select]:!rounded-none [&_.btn-primary]:!rounded-none [&_.btn-secondary]:!rounded-none">
       <div className="flex items-center justify-between">
         <div>
           <h1>Danh sách khách hàng</h1>
