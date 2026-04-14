@@ -3,7 +3,7 @@
 ## UX flow moi
 1. Upload 1-sheet CSV/Excel (`.csv/.xlsx/.xls`)
 2. Xem preview toan bo sheet dang table
-3. Bam Phan tich va theo doi overlay model dang chay theo o vuong + %
+3. Bam Phan tich va theo doi overlay buoc pipeline (cap nhat theo NDJSON stream tu may chu)
 4. Xem ket qua AI phan tich + diem chat luong du lieu + bang ket qua da luu
 5. Open/reanalyze run cu
 
@@ -11,9 +11,9 @@
 - Upload box (drag/drop + template download)
 - Sheet preview table (show header + rows)
 - Loading overlay:
-  - Chuoi o vuong theo buoc
-  - Ten model tung buoc
-  - % tien trinh va mui ten luong
+  - Nam o vuong: phan loai, anh xa cot, tinh chi so (Pandas), dien giai (Qwen), chuan hoa (DeepSeek) — trang thai theo su kien `progress` tu API stream
+  - Ten model tung buoc; buoc dang chay hien "Dang chay…"
+  - % tong tinh tu buoc da xong tren may chu; mui ten luong
 - Saved runs table: time, report type, source file, fallback, actions
 - Ket qua:
   - KPI cards quy ve % va mau muc uu tien

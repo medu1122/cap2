@@ -7,11 +7,13 @@ import time
 import uuid
 import unicodedata
 import asyncio
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -74,6 +76,12 @@ VIETNAMESE_COLUMN_HINTS: dict[str, list[str]] = {
         "repeat_orders",
     ],
 }
+
+# DeepSeek/Ollama hay tra them markdown hoac loi; system ep format de giam trace failed gia.
+_DEEPSEEK_JSON_ONLY_SYSTEM = (
+    "Ban chi xuat DUY NHAT mot object JSON hop le (UTF-8). "
+    "Khong dung markdown ``` hay ```json, khong them loi mo dau hay ket thuc ngoai JSON."
+)
 
 
 def _normalize_text(value: str) -> str:
@@ -155,12 +163,15 @@ async def _chat_completion(
         headers["Authorization"] = f"Bearer {api_key}"
 
     url = f"{base_url.rstrip('/')}/chat/completions"
-    payload = {"model": model, "messages": messages, "temperature": 0.1}
-    async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+    # stream=False: mot so server OpenAI-compatible mac dinh stream, chunk cham co the keo dai read > timeout mong doi.
+    payload = {"model": model, "messages": messages, "temperature": 0.1, "stream": False}
+    # Doc body trong client dang mo: doc sau khi dong client co the treo/loi tren mot so phien ban httpx.
+    timeout = httpx.Timeout(timeout_seconds, connect=15.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.post(url, headers=headers, json=payload)
         response.raise_for_status()
-    data = response.json()
-    return data["choices"][0]["message"]["content"]
+        data = response.json()
+    return str(data["choices"][0]["message"]["content"])
 
 
 async def _chat_completion_with_retry(
@@ -265,14 +276,18 @@ def _find_column(columns: list[str], candidates: list[str]) -> str | None:
     return None
 
 
-@router.post("/a2a/deep-analysis")
-async def deep_analysis_a2a(
+def _overlay_evt(overlay_step: int, status: str, step_key: str) -> dict[str, Any]:
+    return {"type": "progress", "overlay_step": overlay_step, "status": status, "step_key": step_key}
+
+
+async def _run_deep_analysis_gen(
     payload: DeepAnalysisRequest,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
+    current_user: User,
+    db: AsyncSession,
+) -> AsyncIterator[dict[str, Any]]:
     if not payload.report_rows:
-        return {"detail": "report_rows cannot be empty"}
+        yield {"type": "error", "detail": "report_rows cannot be empty"}
+        return
 
     columns = list(payload.report_rows[0].keys())
     sample_rows = payload.report_rows[:5]
@@ -282,19 +297,24 @@ async def deep_analysis_a2a(
     fallback_reason = None
 
     # Buoc 1: DeepSeek phan loai loai bao cao.
+    yield _overlay_evt(0, "started", "classify_report")
     report_type = "generic_report"
     classify_started = time.perf_counter()
     try:
         classify_prompt = (
             "Ban la ClassifierAgent. Tra ve JSON duy nhat voi schema: "
             '{"report_type":"sales_report|expense_report|payroll_report|generic_report","reason":"..."}.\n'
-            f"Columns: {columns}\nSample rows: {sample_rows}"
+            f"Columns: {columns}\nSample rows: {sample_rows}\n"
+            "Chi tra ve object JSON, khong markdown."
         )
         classify_text = await _chat_completion_with_retry(
             base_url=settings.DEEPSEEK_BASE_URL,
             model=settings.DEEPSEEK_MODEL,
-            messages=[{"role": "user", "content": classify_prompt}],
-            timeout_seconds=45,
+            messages=[
+                {"role": "system", "content": _DEEPSEEK_JSON_ONLY_SYSTEM},
+                {"role": "user", "content": classify_prompt},
+            ],
+            timeout_seconds=60,
             max_attempts=2,
         )
         classify_json = _extract_json_block(classify_text) or {}
@@ -327,9 +347,11 @@ async def deep_analysis_a2a(
                 {"error": str(exc), "fallback_report_type": report_type},
             )
         )
+    yield _overlay_evt(0, "finished", "classify_report")
     step_order += 1
 
     # Buoc 2: DeepSeek map cot ve canonical schema.
+    yield _overlay_evt(1, "started", "map_schema")
     mapping_started = time.perf_counter()
     mapping: dict[str, str | None] = {k: None for k in VIETNAMESE_COLUMN_HINTS.keys()}
     mapping_confidence: dict[str, float] = {k: 0.0 for k in VIETNAMESE_COLUMN_HINTS.keys()}
@@ -338,13 +360,17 @@ async def deep_analysis_a2a(
             "Ban la MapperAgent. Map columns sang canonical keys: revenue, ad_spend, orders, leads, repeat_orders. "
             "Tra ve JSON object duy nhat theo schema "
             '{"revenue":"column_or_null","ad_spend":"column_or_null","orders":"column_or_null","leads":"column_or_null","repeat_orders":"column_or_null"}.\n'
-            f"Columns: {columns}\nReport type: {report_type}"
+            f"Columns: {columns}\nReport type: {report_type}\n"
+            "Gia tri phai la ten cot chinh xac trong danh sach Columns hoac null. Chi tra ve JSON, khong markdown."
         )
         mapping_text = await _chat_completion_with_retry(
             base_url=settings.DEEPSEEK_BASE_URL,
             model=settings.DEEPSEEK_MODEL,
-            messages=[{"role": "user", "content": mapping_prompt}],
-            timeout_seconds=45,
+            messages=[
+                {"role": "system", "content": _DEEPSEEK_JSON_ONLY_SYSTEM},
+                {"role": "user", "content": mapping_prompt},
+            ],
+            timeout_seconds=60,
             max_attempts=2,
         )
         mapping_json = _extract_json_block(mapping_text) or {}
@@ -390,6 +416,7 @@ async def deep_analysis_a2a(
                 {"error": str(exc), "fallback_mapping": mapping, "mapping_confidence": mapping_confidence},
             )
         )
+    yield _overlay_evt(1, "finished", "map_schema")
     step_order += 1
 
     plan_started = time.perf_counter()
@@ -407,6 +434,7 @@ async def deep_analysis_a2a(
     )
     step_order += 1
 
+    yield _overlay_evt(2, "started", "compute_metrics")
     revenue_col = mapping.get("revenue")
     ad_spend_col = mapping.get("ad_spend")
     orders_col = mapping.get("orders")
@@ -464,6 +492,7 @@ async def deep_analysis_a2a(
             {"rows": len(payload.report_rows), "mapping": mapping},
         )
     )
+    yield _overlay_evt(2, "finished", "compute_metrics")
     step_order += 1
 
     run = InsightReportRun(
@@ -523,6 +552,7 @@ async def deep_analysis_a2a(
     }
 
     # Buoc 5: Qwen dien giai ket qua. Neu fail thi fallback GPT/OpenAI.
+    yield _overlay_evt(3, "started", "narrative")
     narrative_started = time.perf_counter()
     narrative_payload = {
         "kpis": {
@@ -546,11 +576,13 @@ async def deep_analysis_a2a(
             '"action_plan_30_60_90":{"day_30":["..."],"day_60":["..."],"day_90":["..."]}}.\n'
             f"Input: {json.dumps(narrative_payload, ensure_ascii=False)}"
         )
+        # Qwen tren VPS CPU thuong >30s; QWEN_TIMEOUT (.env) la giay cho moi lan doc response.
+        qwen_read_timeout = max(120, int(settings.QWEN_TIMEOUT) + 30)
         qwen_text = await _chat_completion_with_retry(
             base_url=settings.QWEN_BASE_URL,
             model=settings.QWEN_MODEL,
             messages=[{"role": "user", "content": narrative_prompt}],
-            timeout_seconds=max(30, settings.QWEN_TIMEOUT + 15),
+            timeout_seconds=qwen_read_timeout,
             max_attempts=2,
         )
         qwen_json = _extract_json_block(qwen_text) or {}
@@ -633,21 +665,28 @@ async def deep_analysis_a2a(
             fallback_provider = "deterministic"
             fallback_reason = f"qwen failed and OPENAI_API_KEY is empty: {qwen_exc}"
 
+    yield _overlay_evt(3, "finished", "narrative")
+
     # Buoc 6: Agent hau xu ly de chuan hoa ket qua cho nguoi dung Viet.
+    yield _overlay_evt(4, "started", "polish_result")
     polish_started = time.perf_counter()
     polish_prompt = (
         "Ban la ResultPolisherAgent. Nhiem vu: viet lai ket qua de de hieu cho chu doanh nghiep, "
         "giu nguyen y nghia, khong them so lieu moi. Tra ve JSON schema: "
         '{"insights":[{"title":"...","severity":"Cao|Vừa|Thấp","recommendation":"..."}],'
         '"limitations":["..."]}.\n'
-        f"Input: {json.dumps({'insights': insights, 'limitations': limitations}, ensure_ascii=False)}"
+        f"Input: {json.dumps({'insights': insights, 'limitations': limitations}, ensure_ascii=False)}\n"
+        "Chi tra ve object JSON, khong markdown."
     )
     try:
         polish_text = await _chat_completion_with_retry(
             base_url=settings.DEEPSEEK_BASE_URL,
             model=settings.DEEPSEEK_MODEL,
-            messages=[{"role": "user", "content": polish_prompt}],
-            timeout_seconds=35,
+            messages=[
+                {"role": "system", "content": _DEEPSEEK_JSON_ONLY_SYSTEM},
+                {"role": "user", "content": polish_prompt},
+            ],
+            timeout_seconds=max(90, int(settings.QWEN_TIMEOUT) + 30),
             max_attempts=2,
         )
         polish_json = _extract_json_block(polish_text) or {}
@@ -693,6 +732,8 @@ async def deep_analysis_a2a(
             )
         )
         limitations = limitations or ["Dữ liệu hiện tại chưa đủ để mở rộng toàn bộ phân tích nâng cao."]
+
+    yield _overlay_evt(4, "finished", "polish_result")
 
     friendly_trace_name = {
         "classify_report": "Phân loại báo cáo",
@@ -767,7 +808,49 @@ async def deep_analysis_a2a(
 
     db.add(InsightResultSnapshot(run_id=run.id, result_json=result))
     await db.commit()
-    return result
+    yield {"type": "result", "data": result}
+
+
+@router.post("/a2a/deep-analysis")
+async def deep_analysis_a2a(
+    payload: DeepAnalysisRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    last: dict[str, Any] | None = None
+    async for evt in _run_deep_analysis_gen(payload, current_user, db):
+        if evt.get("type") == "error":
+            return JSONResponse(status_code=400, content={"detail": evt.get("detail", "Invalid request")})
+        if evt.get("type") == "result":
+            last = evt["data"]
+    if last is None:
+        raise HTTPException(status_code=500, detail="Phân tích không trả về kết quả.")
+    return last
+
+
+@router.post("/a2a/deep-analysis-stream")
+async def deep_analysis_a2a_stream(
+    payload: DeepAnalysisRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    async def ndjson_iter() -> AsyncIterator[bytes]:
+        try:
+            async for evt in _run_deep_analysis_gen(payload, current_user, db):
+                line = json.dumps(evt, ensure_ascii=False) + "\n"
+                yield line.encode("utf-8")
+        except Exception as exc:  # noqa: BLE001
+            err = json.dumps({"type": "error", "detail": str(exc)}, ensure_ascii=False) + "\n"
+            yield err.encode("utf-8")
+
+    return StreamingResponse(
+        ndjson_iter(),
+        media_type="application/x-ndjson; charset=utf-8",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/a2a/runs")
@@ -858,3 +941,51 @@ async def reanalyze_previous_run(
         report_rows=source_rows,
     )
     return await deep_analysis_a2a(replay_request, current_user, db)
+
+
+@router.post("/a2a/runs/{run_id}/reanalyze-stream")
+async def reanalyze_previous_run_stream(
+    run_id: uuid.UUID,
+    payload: ReanalyzeRunRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    run = (
+        await db.execute(
+            select(InsightReportRun).where(
+                InsightReportRun.id == run_id,
+                InsightReportRun.user_id == current_user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    source_rows = (run.summary_json or {}).get("report_rows")
+    if not isinstance(source_rows, list) or len(source_rows) == 0:
+        raise HTTPException(status_code=400, detail="Run does not contain source rows for reanalyze")
+
+    replay_request = DeepAnalysisRequest(
+        business_name=payload.business_name or run.business_name,
+        industry=payload.industry or run.industry,
+        source_filename=run.source_filename,
+        report_rows=source_rows,
+    )
+
+    async def ndjson_iter() -> AsyncIterator[bytes]:
+        try:
+            async for evt in _run_deep_analysis_gen(replay_request, current_user, db):
+                line = json.dumps(evt, ensure_ascii=False) + "\n"
+                yield line.encode("utf-8")
+        except Exception as exc:  # noqa: BLE001
+            err = json.dumps({"type": "error", "detail": str(exc)}, ensure_ascii=False) + "\n"
+            yield err.encode("utf-8")
+
+    return StreamingResponse(
+        ndjson_iter(),
+        media_type="application/x-ndjson; charset=utf-8",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Accel-Buffering": "no",
+        },
+    )

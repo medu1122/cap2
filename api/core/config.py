@@ -15,7 +15,8 @@ class Settings(BaseSettings):
     DEEPSEEK_MODEL: str = "deepseek-coder:6.7b"
     QWEN_BASE_URL: str = "http://171.238.156.10:11434/v1"
     QWEN_MODEL: str = "qwen2.5:7b"
-    QWEN_TIMEOUT: int = 15
+    # Giay: timeout doc mot lan completion Qwen/Ollama (VPS cham nen mac dinh cao hon).
+    QWEN_TIMEOUT: int = 120
 
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
