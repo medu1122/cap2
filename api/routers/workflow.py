@@ -4,10 +4,12 @@ import io
 import json
 import os
 import uuid
+import re
+import unicodedata
 from datetime import date, datetime, timedelta, timezone
 
 from croniter import croniter
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -35,8 +37,124 @@ _qwen = AsyncOpenAI(
     api_key="ollama",
 )
 _openai = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
-QWEN_MODEL = os.getenv("QWEN_MODEL", "qwen2.5:7b")
-QWEN_TIMEOUT = int(os.getenv("QWEN_TIMEOUT", "15"))
+QWEN_MODEL = os.getenv("QWEN_MODEL", "qwen2.5:14b")
+QWEN_TIMEOUT = int(os.getenv("QWEN_TIMEOUT", "180"))
+
+
+def _to_float_or_none(value: object) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    raw = str(value).strip().replace(" ", "").replace(",", "")
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
+def _to_int_or_none(value: object) -> int | None:
+    parsed = _to_float_or_none(value)
+    if parsed is None:
+        return None
+    return int(parsed)
+
+
+def _segment_customer(extra_fields: dict | None) -> str:
+    """
+    Segment runtime (khong migration):
+    - inactive: days_since_last_purchase >= 60
+    - vip: total_spend >= 10_000_000 hoac order_count >= 10
+    - potential: con lai va co du lieu co ban
+    """
+    extra = extra_fields or {}
+    days_since_last_purchase = _to_int_or_none(extra.get("days_since_last_purchase"))
+    total_spend = _to_float_or_none(extra.get("total_spend"))
+    order_count = _to_int_or_none(extra.get("order_count"))
+
+    if days_since_last_purchase is not None and days_since_last_purchase >= 60:
+        return "inactive"
+    if (total_spend is not None and total_spend >= 10_000_000) or (
+        order_count is not None and order_count >= 10
+    ):
+        return "vip"
+    if days_since_last_purchase is not None or total_spend is not None or order_count is not None:
+        return "potential"
+    return "unknown"
+
+
+def _normalize_key(value: str) -> str:
+    normalized = unicodedata.normalize("NFD", value or "")
+    normalized = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
+    normalized = normalized.lower().strip()
+    normalized = re.sub(r"[^a-z0-9]+", "", normalized)
+    return normalized
+
+
+def _pick_value_case_insensitive(row: dict, aliases: list[str]) -> str | None:
+    if not isinstance(row, dict):
+        return None
+    normalized_aliases = {_normalize_key(a) for a in aliases}
+    for k, v in row.items():
+        if _normalize_key(str(k)) in normalized_aliases:
+            text = str(v).strip()
+            return text or None
+    return None
+
+
+def _row_to_customer_fields(row: dict) -> tuple[str | None, str | None, str | None, dict | None]:
+    email = _pick_value_case_insensitive(row, ["email"])
+    full_name = _pick_value_case_insensitive(row, ["hovaten", "ho va ten", "fullname", "name"])
+    phone = _pick_value_case_insensitive(row, ["sdt", "phone", "so dien thoai"])
+
+    reserved = {
+        "id",
+        "hovaten",
+        "hovatens",
+        "hova ten",
+        "hovaten",
+        "tuoi",
+        "sdt",
+        "email",
+        "linkfb",
+        "lancuoichitra",
+        "tongsotiendachitra",
+        "tongsolanquaylai",
+        "loaikhachhang",
+        "dichvulancuoisudung",
+        "dichvusudungnhieunhat",
+        "fullname",
+        "name",
+        "phone",
+    }
+    extra_fields: dict[str, str] = {}
+    for k, v in row.items():
+        nk = _normalize_key(str(k))
+        if nk in reserved:
+            continue
+        value_text = str(v).strip()
+        if value_text:
+            extra_fields[str(k)] = value_text
+
+    # Giu them cac cot nghiep vu template vao extra_fields de phan tich insight sau nay.
+    for key, aliases in {
+        "id": ["id"],
+        "tuoi": ["tuoi", "age"],
+        "link_fb": ["linkfb", "facebook", "link facebook"],
+        "lan_cuoi_chi_tra": ["lancuoichitra", "last_payment_date"],
+        "tong_so_tien_da_chi_tra": ["tongsotiendachitra", "total_spend"],
+        "tong_so_lan_quay_lai": ["tongsolanquaylai", "order_count"],
+        "loai_khach_hang": ["loaikhachhang", "customer_type"],
+        "dich_vu_lan_cuoi_su_dung": ["dichvulancuoisudung", "last_service_used"],
+        "dich_vu_su_dung_nhieu_nhat": ["dichvusudungnhieunhat", "most_used_service"],
+    }.items():
+        value = _pick_value_case_insensitive(row, aliases)
+        if value is not None:
+            extra_fields[key] = value
+
+    return email, full_name, phone, (extra_fields or None)
 
 # ---------------------------------------------------------------------------
 # Preset definitions — source of truth for workflow automation
@@ -83,6 +201,12 @@ async def _generate_brief(preset: dict, brand: Brand) -> dict:
         brand_ctx += f"\nSản phẩm/dịch vụ: {', '.join(brand.key_products[:4])}"
     if brand.target_audience:
         brand_ctx += f"\nKhách hàng mục tiêu: {brand.target_audience}"
+    if brand.contact_email:
+        brand_ctx += f"\nEmail liên hệ: {brand.contact_email}"
+    if brand.phone:
+        brand_ctx += f"\nSĐT: {brand.phone}"
+    if brand.address:
+        brand_ctx += f"\nĐịa chỉ: {brand.address}"
 
     prompt = (
         f"{brand_ctx}\n\n"
@@ -171,6 +295,18 @@ class ScheduleUpdatePayload(BaseModel):
     is_active: bool | None = None
 
 
+class CustomerListCreatePayload(BaseModel):
+    list_name: str
+
+
+class CustomerListUpdatePayload(BaseModel):
+    list_name: str
+
+
+class CustomerRowsUpsertPayload(BaseModel):
+    rows: list[dict]
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -224,6 +360,7 @@ async def trigger_workflow(
 
     campaign = Campaign(
         user_id=current_user.id,
+        brand_id=brand.id,
         campaign_name=brief.get("campaign_name", preset["label"]),
         objective=brief.get("objective", preset["objective_hint"]),
         product_or_service=brief.get("product_or_service", brand.brand_name),
@@ -588,6 +725,197 @@ async def upload_customer_list(
     }
 
 
+@router.post("/customer-lists", status_code=201)
+async def create_customer_list(
+    payload: CustomerListCreatePayload,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    list_name = payload.list_name.strip()
+    if not list_name:
+        raise HTTPException(400, "Tên bảng không được để trống")
+    customer_list = CustomerList(
+        user_id=current_user.id,
+        list_name=list_name,
+        status="draft",
+        total_records=0,
+        valid_records=0,
+        invalid_records=0,
+    )
+    db.add(customer_list)
+    await db.commit()
+    await db.refresh(customer_list)
+    return {
+        "id": str(customer_list.id),
+        "list_name": customer_list.list_name,
+        "status": customer_list.status,
+    }
+
+
+@router.patch("/customer-lists/{customer_list_id}")
+async def update_customer_list(
+    customer_list_id: uuid.UUID,
+    payload: CustomerListUpdatePayload,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(CustomerList).where(
+            CustomerList.id == customer_list_id,
+            CustomerList.user_id == current_user.id,
+        )
+    )
+    customer_list = result.scalar_one_or_none()
+    if not customer_list:
+        raise HTTPException(404, "Customer list không tồn tại")
+    list_name = payload.list_name.strip()
+    if not list_name:
+        raise HTTPException(400, "Tên bảng không được để trống")
+    customer_list.list_name = list_name
+    await db.commit()
+    return {"id": str(customer_list.id), "list_name": customer_list.list_name}
+
+
+@router.delete("/customer-lists/{customer_list_id}", status_code=204)
+async def delete_customer_list(
+    customer_list_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(CustomerList).where(
+            CustomerList.id == customer_list_id,
+            CustomerList.user_id == current_user.id,
+        )
+    )
+    customer_list = result.scalar_one_or_none()
+    if not customer_list:
+        raise HTTPException(404, "Customer list không tồn tại")
+    await db.delete(customer_list)
+    await db.commit()
+
+
+@router.put("/customer-lists/{customer_list_id}/rows")
+async def replace_customer_list_rows(
+    customer_list_id: uuid.UUID,
+    payload: CustomerRowsUpsertPayload,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(CustomerList).where(
+            CustomerList.id == customer_list_id,
+            CustomerList.user_id == current_user.id,
+        )
+    )
+    customer_list = result.scalar_one_or_none()
+    if not customer_list:
+        raise HTTPException(404, "Customer list không tồn tại")
+
+    rows = payload.rows or []
+    await db.execute(
+        Customer.__table__.delete().where(Customer.customer_list_id == customer_list.id)
+    )
+
+    new_customers: list[Customer] = []
+    valid_records = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        email, full_name, phone, extra_fields = _row_to_customer_fields(row)
+        if email:
+            valid_records += 1
+        new_customers.append(
+            Customer(
+                customer_list_id=customer_list.id,
+                email=email,
+                full_name=full_name,
+                phone=phone,
+                extra_fields=extra_fields,
+            )
+        )
+    if new_customers:
+        db.add_all(new_customers)
+
+    total_records = len(new_customers)
+    customer_list.total_records = total_records
+    customer_list.valid_records = valid_records
+    customer_list.invalid_records = max(total_records - valid_records, 0)
+    customer_list.status = "ready" if total_records > 0 else "draft"
+    await db.commit()
+    return {
+        "id": str(customer_list.id),
+        "total_records": customer_list.total_records,
+        "valid_records": customer_list.valid_records,
+        "invalid_records": customer_list.invalid_records,
+        "status": customer_list.status,
+    }
+
+
+@router.get("/customer-lists/{customer_list_id}/rows")
+async def get_customer_list_rows(
+    customer_list_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(CustomerList).where(
+            CustomerList.id == customer_list_id,
+            CustomerList.user_id == current_user.id,
+        )
+    )
+    customer_list = result.scalar_one_or_none()
+    if not customer_list:
+        raise HTTPException(404, "Customer list không tồn tại")
+
+    rows_result = await db.execute(
+        select(Customer)
+        .where(Customer.customer_list_id == customer_list.id)
+        .order_by(Customer.created_at.asc())
+    )
+    customers = rows_result.scalars().all()
+    rows: list[dict] = []
+    for idx, customer in enumerate(customers, start=1):
+        row = {
+            "ID": idx,
+            "HoVaTen": customer.full_name or "",
+            "Tuoi": (customer.extra_fields or {}).get("tuoi", ""),
+            "SDT": customer.phone or "",
+            "Email": customer.email or "",
+            "LinkFB": (customer.extra_fields or {}).get("link_fb", ""),
+            "LanCuoiChiTra": (customer.extra_fields or {}).get("lan_cuoi_chi_tra", ""),
+            "TongSoTienDaChiTra": (customer.extra_fields or {}).get("tong_so_tien_da_chi_tra", ""),
+            "TongSoLanQuayLai": (customer.extra_fields or {}).get("tong_so_lan_quay_lai", ""),
+            "LoaiKhachHang": (customer.extra_fields or {}).get("loai_khach_hang", ""),
+            "DichVuLanCuoiSuDung": (customer.extra_fields or {}).get("dich_vu_lan_cuoi_su_dung", ""),
+            "DichVuSuDungNhieuNhat": (customer.extra_fields or {}).get("dich_vu_su_dung_nhieu_nhat", ""),
+        }
+        # Giu them cot extra khac neu co.
+        for k, v in (customer.extra_fields or {}).items():
+            if k in {
+                "tuoi",
+                "link_fb",
+                "lan_cuoi_chi_tra",
+                "tong_so_tien_da_chi_tra",
+                "tong_so_lan_quay_lai",
+                "loai_khach_hang",
+                "dich_vu_lan_cuoi_su_dung",
+                "dich_vu_su_dung_nhieu_nhat",
+            }:
+                continue
+            if k not in row:
+                row[k] = v
+        rows.append(row)
+    return {
+        "table": {
+            "id": str(customer_list.id),
+            "name": customer_list.list_name,
+            "status": customer_list.status,
+        },
+        "rows": rows,
+    }
+
+
 @router.get("/customer-lists")
 async def list_customer_lists(
     current_user: User = Depends(get_current_user),
@@ -599,23 +927,36 @@ async def list_customer_lists(
         .order_by(CustomerList.created_at.desc())
     )
     items = result.scalars().all()
-    return [
-        {
-            "id": str(item.id),
-            "list_name": item.list_name,
-            "status": item.status,
-            "total_records": item.total_records,
-            "valid_records": item.valid_records,
-            "invalid_records": item.invalid_records,
-            "created_at": item.created_at.isoformat(),
-        }
-        for item in items
-    ]
+    payload: list[dict] = []
+    for item in items:
+        segment_counts = {"vip": 0, "potential": 0, "inactive": 0, "unknown": 0}
+        seg_result = await db.execute(
+            select(Customer.extra_fields).where(Customer.customer_list_id == item.id)
+        )
+        for row in seg_result.scalars().all():
+            segment_counts[_segment_customer(row)] += 1
+
+        payload.append(
+            {
+                "id": str(item.id),
+                "list_name": item.list_name,
+                "status": item.status,
+                "total_records": item.total_records,
+                "valid_records": item.valid_records,
+                "invalid_records": item.invalid_records,
+                "segment_summary": segment_counts,
+                "created_at": item.created_at.isoformat(),
+            }
+        )
+    return payload
 
 
 @router.get("/customer-lists/{customer_list_id}/customers")
 async def list_customers(
     customer_list_id: uuid.UUID,
+    segment: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -633,15 +974,21 @@ async def list_customers(
         select(Customer)
         .where(Customer.customer_list_id == customer_list.id)
         .order_by(Customer.created_at.desc())
-        .limit(200)
     )
     customers = result.scalars().all()
-    return [
+    payload = [
         {
             "id": str(c.id),
             "email": c.email,
             "full_name": c.full_name,
             "phone": c.phone,
+            "segment": _segment_customer(c.extra_fields),
         }
         for c in customers
     ]
+    if segment:
+        normalized_segment = segment.strip().lower()
+        if normalized_segment not in {"vip", "potential", "inactive", "unknown"}:
+            raise HTTPException(400, f"Segment không hợp lệ: {segment}")
+        payload = [item for item in payload if item["segment"] == normalized_segment]
+    return payload[offset : offset + limit]

@@ -37,3 +37,36 @@ SMB can "dat lich mot lan, he thong tu chay" cho cac campaign lap lai, thay vi t
 - [ ] Schedule bat/tat dung ngay tren giao dien va DB.
 - [ ] Job tao dung thoi diem va co trace day du.
 - [ ] Khi worker gap loi tam thoi, he thong van bao toan du lieu va de retry.
+
+---
+
+## 8) Dinh huong san pham moi — *Tu dong sau khi co Action Plan* (`toanbotinhnang-updatemoi.md`)
+
+| Vai tro | Ghi chu | Giu / Bo |
+|---|---|---|
+| Lap lai campaign / job nen | Da co cron + schedule | **Giu** |
+| Gan voi “AI Action Engine” | Co the trigger job tu insight/segment (sau nay) | **Mo rong** |
+
+**Plan coding:** preset schedule “inactive weekly” map voi segment F10; structured logs (muc 6 cu).
+
+**Khong can:** thay the hoan toan bang tay action — workflow van huu ich cho SMB lap lai.
+
+## 9) Pham vi user-facing
+
+- User tao/sua/bat-tat lich workflow tren UI.
+- User trigger job thu cong khi can.
+- User xem lich su job de theo doi ket qua.
+- Ngoai pham vi dot nay: workflow engine da tenant / visual builder phuc tap.
+
+## 10) Clean code checklist
+
+- [ ] Gom toan bo scheduler tick log theo 1 format structured.
+- [ ] Tach logic CRUD lich va logic runner job de de test.
+- [ ] Chuan hoa status job (`queued/running/done/failed/retrying`) giua BE/FE.
+- [ ] Bo sung test race-condition co ban khi nhieu schedule cung den han.
+
+## 11) Cau hinh env lien quan
+
+- `WORKFLOW_SCHEDULER_ENABLED`
+- `WORKFLOW_SCHEDULER_INTERVAL_MINUTES`
+- Neu job co goi AI/model thi tai su dung env model chung, khong set rieng cho workflow.

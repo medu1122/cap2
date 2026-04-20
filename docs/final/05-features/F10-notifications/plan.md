@@ -1,94 +1,61 @@
-# F10 — Notifications & Customer Lists: Plan
+# F10 - Notifications & Customer Lists: Plan (chuan hoa)
 
-**Feature ID**: F10 | **Sprint**: Sprint 3
+## 1) Bai toan thuc te
 
----
+SMB can:
+- quan ly danh sach khach de chay campaign nhanh,
+- duoc nhac su kien quan trong ma khong can kiem tra tay.
 
-## Mô tả
+## 2) Pham vi user-facing
 
-Hệ thống thông báo trong ứng dụng (in-app) giúp user nhận biết các sự kiện quan trọng mà không cần kiểm tra thủ công. Kết hợp với quản lý danh sách khách hàng đã upload.
+- User upload CSV danh sach khach.
+- User xem danh sach khach + loc theo segment:
+  - VIP
+  - potential
+  - inactive
+- User tao campaign tu customer list.
+- User nhan in-app notification (giai doan mo rong tiep).
 
----
+Ngoai pham vi dot nay:
+- CRM enterprise (pipeline sales/ticket).
+- bulk email sender day du.
 
-## User Stories
+## 3) API contracts
 
-| ID | Story | Points | Priority |
-|---|---|---|---|
-| US-42 | Nhận in-app notification khi campaign xong | 3 | S |
-| US-43 | Unread notification count trên bell icon | 2 | S |
-| US-44 | Mark notification as read | 1 | S |
-| US-45 | Cấu hình loại notification muốn nhận | 2 | C |
-| US-46 | Xem danh sách customer lists | 2 | S |
-| US-47 | Xem customers trong 1 list | 1 | S |
+- `POST /workflow/customer-lists/upload`
+- `GET /workflow/customer-lists`
+- `GET /workflow/customer-lists/{id}/customers`
+- (mo rong sau) `/notifications`, `/notification-settings`
 
----
+## 4) Ke hoach coding
 
-## Data Model
+### Backend
+- Them segment runtime (khong migration):
+  - dua tren `extra_fields` (`total_spend`, `order_count`, `days_since_last_purchase`...).
+- Tra ve `segment` trong API list customers.
+- Tra ve summary segment trong API list customer lists.
+- Nang cap validation import:
+  - duplicate email
+  - dong loi format
+  - report so dong hop le/khong hop le.
 
-### `notifications`
+### Frontend
+- Them tabs/filter segment trong `/customer-lists`.
+- Hien badge segment tren bang khach hang.
+- Hien import summary ro rang.
 
-```
-id UUID PK | user_id UUID FK → users
-type VARCHAR     -- 'campaign_complete' | 'content_pending' | 'workflow_done'
-title VARCHAR NOT NULL | body TEXT NOT NULL
-payload JSONB    -- {campaign_id, content_count, ...}
-is_read BOOLEAN DEFAULT FALSE | read_at TIMESTAMPTZ
-created_at TIMESTAMPTZ
-```
+### Test
+- Segment classifier test theo sample rows.
+- Upload file loi van tra du summary va message de hieu.
+- Auto tao campaign tu list co trace payload.
 
-### `notification_settings`
+## 5) Env lien quan
 
-```
-id UUID PK | user_id UUID FK → users (UNIQUE)
-campaign_completed BOOLEAN DEFAULT TRUE
-content_pending BOOLEAN DEFAULT TRUE
-workflow_triggered BOOLEAN DEFAULT TRUE
-weekly_summary BOOLEAN DEFAULT TRUE
-```
+- `SMTP_*` (chi cho reminder/notification email bo tro).
+- Khong dung `SMTP_*` lam bulk marketing ngay trong phase nay.
 
-### `customer_lists` + `customers` (xem F09)
+## 6) Clean code checklist
 
----
-
-## Notification Types
-
-| Type | When | Payload |
-|---|---|---|
-| `campaign_complete` | Campaign status → pending_approval | {campaign_id, content_count} |
-| `content_pending` | Số pending items > 0 | {pending_count} |
-| `workflow_done` | Workflow job completed | {job_id, campaign_id} |
-
----
-
-## API Endpoints
-
-| Method | Path | Description |
-|---|---|---|
-| GET | `/notifications` | List notifications (latest 20) |
-| GET | `/notifications/unread-count` | Số chưa đọc |
-| PATCH | `/notifications/{id}/read` | Mark as read |
-| PATCH | `/notifications/read-all` | Mark all as read |
-| GET | `/notification-settings` | Lấy settings |
-| PUT | `/notification-settings` | Cập nhật settings |
-| GET | `/customer-lists` | List customer lists |
-| GET | `/customer-lists/{id}/customers` | Customers paginated |
-
----
-
-## UI
-
-**Bell icon** trong top navigation bar:
-- Badge với unread count (đỏ)
-- Click → dropdown (tối đa 5 notifications gần nhất)
-- "Xem tất cả" link → /notifications page
-
-**`/(app)/notifications`:**
-- Full list với pagination
-- Mỗi item: icon theo type, title, body, time ago
-- Mark as read khi click
-
----
-
-## Dependencies
-
-- Depends on: F01 (Auth), F03-F04 (để tạo notifications)
+- [ ] Tach segment classifier thanh helper rieng.
+- [ ] Khong de business logic segment tron trong endpoint.
+- [ ] Chuan hoa response shape list/list-detail/summaries.

@@ -49,6 +49,11 @@ interface Campaign {
   created_at: string;
 }
 
+interface SourceContext {
+  source_insight_run_id?: string;
+  source_customer_segment?: string;
+}
+
 // ── Progress model ────────────────────────────────────────────────────────────
 
 type StepStatus = "pending" | "running" | "done" | "failed";
@@ -75,7 +80,7 @@ function buildPipelineSteps(campaign: Campaign): PipelineStep[] {
   const expected: { key: string; label: string; agentName: string; channel: string | null }[] = [
     {
       key: "strategist",
-      label: "Strategist — Phân tích brief & lên kế hoạch",
+      label: "Strategist — Phân tích input & lên kế hoạch",
       agentName: "strategist",
       channel: null,
     },
@@ -144,7 +149,7 @@ function AIPipelineProgress({ campaign }: { campaign: Campaign }) {
     <div className="card border-blue-100 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-700">Tiến trình AI Pipeline</h2>
+        <h2 className="text-sm font-semibold text-gray-700">Chi tiết các bước</h2>
         <span className="text-xs text-gray-400 tabular-nums">
           {doneCount}/{totalCount} bước
         </span>
@@ -167,7 +172,7 @@ function AIPipelineProgress({ campaign }: { campaign: Campaign }) {
           <Loader2 size={11} className="animate-spin shrink-0" />
           <span>
             <strong>{AGENT_LABELS[currentStep.agentName] ?? currentStep.agentName}</strong>
-            {currentStep.channel ? ` đang xử lý ${CHANNEL_LABELS[currentStep.channel] ?? currentStep.channel}` : " đang phân tích brief"}
+            {currentStep.channel ? ` đang xử lý ${CHANNEL_LABELS[currentStep.channel] ?? currentStep.channel}` : " đang phân tích input"}
             <span className="animate-pulse">...</span>
           </span>
         </p>
@@ -270,6 +275,13 @@ function ContentCard({ item, onAction }: { item: ContentItem; onAction: () => vo
     setLoading(false);
   }
 
+  async function regenerate() {
+    setLoading(true);
+    await api.post(`/content/${item.id}/regenerate`).catch(() => {});
+    onAction();
+    setLoading(false);
+  }
+
   const c = item.content_json;
 
   return (
@@ -281,9 +293,17 @@ function ContentCard({ item, onAction }: { item: ContentItem; onAction: () => vo
           {item.source === "user_edit" && <span className="badge bg-gray-100 text-gray-500">Đã chỉnh sửa</span>}
         </div>
         {item.status === "pending_approval" && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button onClick={approve} disabled={loading} className="btn-primary text-xs py-1 px-3">Duyệt</button>
             <button onClick={() => setShowReject(!showReject)} className="btn-danger text-xs py-1 px-3">Từ chối</button>
+            <button
+              type="button"
+              onClick={regenerate}
+              disabled={loading}
+              className="btn-secondary text-xs py-1 px-3"
+            >
+              Tạo lại
+            </button>
           </div>
         )}
       </div>
@@ -342,111 +362,29 @@ function ContentCard({ item, onAction }: { item: ContentItem; onAction: () => vo
   );
 }
 
-// ── AgentLogTimeline (completed steps only) ───────────────────────────────────
-
-function AgentLogTimeline({ logs }: { logs: AgentLog[] }) {
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const completedLogs = logs.filter((l) => l.status === "success" || l.status === "failed");
-
-  if (completedLogs.length === 0)
-    return <p className="text-sm text-gray-400">Chưa có hoạt động.</p>;
-
-  return (
-    <div className="space-y-3">
-      {completedLogs.map((log) => (
-        <div key={log.id} className="flex gap-3">
-          <div className="flex flex-col items-center">
-            <span className={cn(
-              "w-2.5 h-2.5 rounded-full mt-1",
-              log.status === "success" ? "bg-green-500" : "bg-red-500"
-            )} />
-            <div className="flex-1 w-px bg-gray-200 mt-1" />
-          </div>
-          <div className="flex-1 pb-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-medium capitalize text-gray-800">{log.agent_name}</span>
-                {log.channel && <span className="badge bg-gray-100 text-gray-500 text-xs">{CHANNEL_LABELS[log.channel] || log.channel}</span>}
-                {log.model_used && log.model_used !== "pending" && (
-                  <span className={cn(
-                    "badge text-xs",
-                    log.model_provider === "qwen" ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-600"
-                  )}>
-                    {log.model_used}
-                  </span>
-                )}
-                {log.model_provider === "qwen→gpt" && (
-                  <span className="badge bg-amber-50 text-amber-700 text-xs" title="Qwen không phản hồi, đã chuyển sang GPT">
-                    Qwen → GPT dự phòng
-                  </span>
-                )}
-                {log.model_provider === "qwen" && (
-                  <span className="badge bg-emerald-50 text-emerald-700 text-xs">Qwen</span>
-                )}
-              </div>
-              <div className="flex items-center gap-2 text-xs text-gray-400">
-                {log.duration_ms && <span>{log.duration_ms}ms</span>}
-                {log.input_tokens && <span>{log.input_tokens + (log.output_tokens || 0)} tokens</span>}
-              </div>
-            </div>
-            <button
-              className="text-xs text-gray-400 hover:text-gray-600 mt-1"
-              onClick={() => setExpanded(expanded === log.id ? null : log.id)}
-            >
-              {expanded === log.id ? "Thu gọn" : "Xem chi tiết"}
-            </button>
-            {expanded === log.id && (
-              <div className="mt-2 space-y-2">
-                {log.prompt_preview && (
-                  <div>
-                    <p className="text-xs text-gray-400 mb-1">Prompt preview</p>
-                    <pre className="text-xs bg-surface p-2 rounded border border-gray-100 whitespace-pre-wrap font-mono">{log.prompt_preview}</pre>
-                  </div>
-                )}
-                {log.output_preview && (
-                  <div>
-                    <p className="text-xs text-gray-400 mb-1">Output preview</p>
-                    <pre className="text-xs bg-surface p-2 rounded border border-gray-100 whitespace-pre-wrap font-mono">{log.output_preview}</pre>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // ── PipelineOverlay (floating modal while AI runs) ────────────────────────────
 
 const PHASE_CONFIG = [
   {
     key: "strategist",
     label: "Strategist",
-    sublabel: "Phân tích brief",
-    emoji: "🧠",
-    activeClasses: "bg-indigo-50 border-indigo-400 shadow-indigo-100",
-    textClass: "text-indigo-700",
-    shadowClass: "shadow-lg shadow-indigo-100",
+    sublabel: "Phân tích input",
+    activeClasses: "bg-indigo-50 border-indigo-500",
+    textClass: "text-indigo-800",
   },
   {
     key: "writer",
     label: "Writer",
     sublabel: "Soạn nội dung",
-    emoji: "✍️",
-    activeClasses: "bg-emerald-50 border-emerald-400 shadow-emerald-100",
-    textClass: "text-emerald-700",
-    shadowClass: "shadow-lg shadow-emerald-100",
+    activeClasses: "bg-emerald-50 border-emerald-500",
+    textClass: "text-emerald-800",
   },
   {
     key: "critic",
     label: "Critic",
     sublabel: "Kiểm tra chất lượng",
-    emoji: "⚖️",
-    activeClasses: "bg-amber-50 border-amber-400 shadow-amber-100",
-    textClass: "text-amber-700",
-    shadowClass: "shadow-lg shadow-amber-100",
+    activeClasses: "bg-amber-50 border-amber-500",
+    textClass: "text-amber-800",
   },
 ] as const;
 
@@ -463,7 +401,7 @@ function PipelineOverlay({ campaign }: { campaign: Campaign }) {
   let statusLabel = "Đang khởi động AI Pipeline...";
   if (runningLog) {
     const ch = runningLog.channel ? ` ${CHANNEL_LABELS[runningLog.channel] || runningLog.channel}` : "";
-    if (runningLog.agent_name === "strategist") statusLabel = "Strategist đang phân tích brief & lập kế hoạch...";
+    if (runningLog.agent_name === "strategist") statusLabel = "Strategist đang phân tích input & lập kế hoạch...";
     else if (runningLog.agent_name === "writer") statusLabel = `Writer đang soạn nội dung${ch}...`;
     else if (runningLog.agent_name === "critic") statusLabel = `Critic đang kiểm tra chất lượng${ch}...`;
     else if (runningLog.agent_name === "image_prompt_qwen") statusLabel = "Qwen đang tạo prompt hình ảnh...";
@@ -481,49 +419,41 @@ function PipelineOverlay({ campaign }: { campaign: Campaign }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-lg mx-4 space-y-7">
-        {/* Header */}
-        <div className="text-center space-y-1">
-          <p className="text-xs uppercase tracking-widest text-gray-400 font-medium">AI đang xử lý</p>
+      <div className="bg-white border border-gray-200 w-full max-w-lg mx-4 p-6 space-y-6 rounded-none">
+        <div className="text-center">
           <h2 className="text-base font-semibold text-gray-800">{campaign.campaign_name}</h2>
         </div>
 
-        {/* Phase blocks */}
-        <div className="flex items-center justify-center gap-3">
+        <div className="flex items-center justify-center gap-2 flex-wrap">
           {phases.flatMap((phase, idx) => {
             const block = (
               <div
                 key={phase.key}
                 className={cn(
-                  "flex flex-col items-center justify-center rounded-xl w-28 h-24 border-2 transition-all duration-500",
-                  phase.status === "done" && "bg-green-50 border-green-300 shadow-md shadow-green-100",
-                  phase.status === "running" && cn("border-2 animate-pulse", phase.activeClasses, phase.shadowClass),
+                  "flex flex-col items-center justify-center w-28 min-h-[5.5rem] border-2 px-2 py-2 text-center transition-colors rounded-none",
+                  phase.status === "done" && "bg-green-50 border-green-600",
+                  phase.status === "running" && cn("animate-pulse", phase.activeClasses),
                   phase.status === "pending" && "bg-gray-50 border-gray-200",
                 )}
               >
-                <span className="text-2xl leading-none">
-                  {phase.status === "done" ? "✅" : phase.emoji}
-                </span>
                 <p
                   className={cn(
-                    "text-xs font-semibold mt-2",
-                    phase.status === "done" && "text-green-700",
+                    "text-xs font-semibold",
+                    phase.status === "done" && "text-green-800",
                     phase.status === "running" && phase.textClass,
                     phase.status === "pending" && "text-gray-400",
                   )}
                 >
                   {phase.label}
                 </p>
-                <p className="text-xs text-gray-400 mt-0.5 text-center leading-tight px-1">
-                  {phase.sublabel}
-                </p>
+                <p className="text-xs text-gray-500 mt-1 leading-tight">{phase.sublabel}</p>
               </div>
             );
             const arrow = idx < phases.length - 1
               ? (
                 <div key={`a${idx}`} className={cn(
-                  "text-xl font-light transition-colors duration-500",
-                  phases[idx].status === "done" ? "text-green-400" : "text-gray-200"
+                  "text-sm text-gray-400",
+                  phases[idx].status === "done" ? "text-green-600" : "text-gray-300"
                 )}>
                   →
                 </div>
@@ -533,22 +463,17 @@ function PipelineOverlay({ campaign }: { campaign: Campaign }) {
           })}
         </div>
 
-        {/* Current step label */}
-        <div className="text-center">
-          <p className="text-sm text-gray-600 flex items-center justify-center gap-2">
-            <Loader2 size={14} className="animate-spin text-blue-400 shrink-0" />
-            <span>{statusLabel}</span>
-          </p>
+        <div className="text-center text-sm text-gray-600">
+          {statusLabel}
         </div>
 
-        {/* Progress dots */}
-        <div className="flex items-center justify-center gap-1.5">
+        <div className="flex items-center justify-center gap-1">
           {Array.from({ length: Math.max(allSteps, doneCount) }).map((_, i) => (
             <span
               key={i}
               className={cn(
-                "w-1.5 h-1.5 rounded-full transition-all duration-300",
-                i < doneCount ? "bg-green-400 scale-110" : "bg-gray-200"
+                "w-2 h-2 rounded-none transition-colors",
+                i < doneCount ? "bg-green-600" : "bg-gray-200"
               )}
             />
           ))}
@@ -851,15 +776,9 @@ function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpda
         </div>
       )}
 
-      {suggestedPrompt && !showPromptInput && (
-        <div className="text-xs text-gray-500 bg-gray-50 rounded p-2 line-clamp-2" title={suggestedPrompt}>
-          <span className="font-medium">Prompt gợi ý:</span> {suggestedPrompt}
-        </div>
-      )}
-
       {showPromptInput && (
         <div className="space-y-1">
-          <p className="text-xs text-gray-500">Nhập prompt tuỳ chỉnh (để trống = dùng gợi ý)</p>
+          <p className="text-xs text-gray-500">Nhập prompt tuỳ chỉnh (để trống = dùng gợi ý hệ thống)</p>
           <textarea
             className="input text-xs resize-none w-full"
             rows={3}
@@ -936,12 +855,13 @@ export default function CampaignDetailPage() {
   }, [campaign?.status, load]);
 
   if (loading && !campaign) {
-    return <div className="p-6 skeleton h-40 max-w-4xl" />;
+    return <div className="p-6 skeleton h-40 max-w-6xl" />;
   }
 
   if (!campaign) return <div className="p-6 text-sm text-gray-400">Không tìm thấy chiến dịch.</div>;
 
   const isProcessing = campaign.status === "running" || campaign.status === "pending_agent";
+  const sourceContext = (campaign.campaign_plan_json?.source_context || null) as SourceContext | null;
 
   return (
     <>
@@ -957,8 +877,8 @@ export default function CampaignDetailPage() {
             summary="Trang này là nơi bạn theo dõi toàn bộ đầu ra AI, duyệt nội dung và kiểm tra tiến trình."
             steps={[
               "Xem phần Brief để kiểm tra mục tiêu và kênh đã chọn.",
-              "Theo dõi Tiến trình AI Pipeline khi chiến dịch đang chạy.",
-              "Duyệt/chỉnh sửa nội dung trong danh sách Nội dung.",
+              "Khi AI đang chạy, màn hình sẽ hiện tiến trình Strategist → Writer → Critic.",
+              "Duyệt, từ chối hoặc bấm Tạo lại để sinh bản nội dung mới (khi đang chờ duyệt).",
               "Sau khi duyệt, nội dung sẽ xuất hiện trong Lịch marketing.",
             ]}
             buttonClassName="btn-secondary text-xs"
@@ -967,9 +887,8 @@ export default function CampaignDetailPage() {
           {isProcessing && <Loader2 size={14} className="text-blue-400 animate-spin" />}
         </div>
 
-        <div className="grid grid-cols-5 gap-6">
-          <div className="col-span-3 space-y-5">
-
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+          <div className="lg:col-span-3 space-y-5">
             {/* Brief info */}
             <div className="card">
               <h2 className="mb-3">Brief</h2>
@@ -994,6 +913,25 @@ export default function CampaignDetailPage() {
                     ))}
                   </dd>
                 </div>
+                {sourceContext?.source_insight_run_id ? (
+                  <div className="flex gap-4">
+                    <dt className="text-gray-500 w-32 shrink-0">Nguồn tạo</dt>
+                    <dd className="text-gray-800">
+                      Insight run:{" "}
+                      <Link
+                        href="/insights/actions"
+                        className="text-blue-600 hover:underline"
+                      >
+                        {sourceContext.source_insight_run_id}
+                      </Link>
+                      {sourceContext.source_customer_segment ? (
+                        <span className="ml-2 text-xs border px-2 py-0.5 bg-gray-50 text-gray-700 border-gray-200">
+                          Segment: {sourceContext.source_customer_segment}
+                        </span>
+                      ) : null}
+                    </dd>
+                  </div>
+                ) : null}
               </dl>
             </div>
 
@@ -1013,20 +951,13 @@ export default function CampaignDetailPage() {
             {!isProcessing && <CampaignImageCard campaign={campaign} onUpdated={load} />}
           </div>
 
-          {/* Right sidebar */}
-          <div className="col-span-2 space-y-4">
-            {/* Pipeline summary when done */}
+          <div className="lg:col-span-2">
             {!isProcessing && campaign.agent_logs.length > 0 && (
-              <div className="card">
-                <h2 className="mb-3">Pipeline Summary</h2>
+              <div className="card lg:sticky lg:top-6 space-y-3">
+                <h2 className="text-base font-semibold text-gray-800">Tiến trình AI</h2>
                 <AIPipelineProgress campaign={campaign} />
               </div>
             )}
-
-            <div className="card sticky top-6">
-              <h2 className="mb-4">Agent Activity Log</h2>
-              <AgentLogTimeline logs={campaign.agent_logs} />
-            </div>
           </div>
         </div>
       </div>

@@ -3,8 +3,8 @@ import asyncio
 from openai import AsyncOpenAI
 
 QWEN_BASE_URL = os.getenv("QWEN_BASE_URL", "http://171.238.156.10:11434/v1")
-QWEN_MODEL = os.getenv("QWEN_MODEL", "qwen2.5:7b")
-QWEN_TIMEOUT = int(os.getenv("QWEN_TIMEOUT", "15"))
+QWEN_MODEL = os.getenv("QWEN_MODEL", "qwen2.5:14b")
+QWEN_TIMEOUT = int(os.getenv("QWEN_TIMEOUT", "180"))
 
 client = AsyncOpenAI(
     base_url=QWEN_BASE_URL,

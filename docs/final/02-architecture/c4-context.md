@@ -1,6 +1,16 @@
 # C4 Model — Level 1: System Context
 
-**AIMAP — AI-Powered Marketing Automation Platform**
+**AIMAP — Nền tảng hỗ trợ marketing có AI**
+
+---
+
+## Mục tiêu sơ đồ
+
+Sơ đồ này chỉ trả lời 3 câu hỏi đơn giản:
+
+1. Ai dùng hệ thống?
+2. Hệ thống kết nối với dịch vụ nào bên ngoài?
+3. Dòng giá trị chính đi qua đâu?
 
 ---
 
@@ -10,85 +20,39 @@
 C4Context
     title System Context — AIMAP Platform
 
-    Person(user, "User", "Người dùng doanh nghiệp. Role: user")
-    Person(admin, "Admin", "Quản trị hệ thống AIMAP. Role: admin")
-    System(cron, "Cron Scheduler", "Tiến trình tự động chạy ngầm trong hệ thống")
+    Person(user, "Người dùng doanh nghiệp", "Tạo chiến dịch, duyệt nội dung, xem báo cáo")
+    Person(admin, "Quản trị hệ thống", "Giám sát vận hành và hỗ trợ người dùng")
+    System(cron, "Bộ lịch tự động", "Kích hoạt workflow theo giờ")
 
-    System(aimap, "AIMAP Platform", "Nền tảng AI tự động hóa marketing cho SMB — Web App, Backend API, Agent Service, PostgreSQL")
+    System(aimap, "AIMAP Platform", "Web + API + AI pipeline + Database")
 
-    System_Ext(openai, "OpenAI API", "GPT-4o-mini — Fallback Reasoning")
-    System_Ext(qwen, "Qwen VPS", "Qwen 2.5 7B self-hosted — Narrative")
-    System_Ext(deepseek, "DeepSeek VPS", "DeepSeek Coder 6.7B — Classify/Map/Plan")
-    System_Ext(smtp, "Email SMTP", "Dịch vụ gửi email giao dịch")
+    System_Ext(ai, "AI Providers", "DeepSeek / Qwen / OpenAI (fallback khi cần)")
+    System_Ext(smtp, "Email SMTP", "Gửi email xác minh và đặt lại mật khẩu")
 
-    %% ── User → AIMAP ─────────────────────────────────────────────────
-    Rel(user, aimap, "Đăng ký tài khoản mới")
-    Rel(user, aimap, "Đăng nhập tài khoản")
-    Rel(user, aimap, "Cập nhật hồ sơ / Brand Vault")
-    Rel(user, aimap, "Tạo Campaign Brief")
-    Rel(user, aimap, "Duyệt / từ chối / chỉnh sửa nội dung")
-    Rel(user, aimap, "Xem Dashboard và Calendar")
-    Rel(user, aimap, "Cài workflow và upload CSV")
-    Rel(user, aimap, "Nạp CSV/Excel vào Insight Copilot và xem kết quả AI phân tích")
-    Rel(user, aimap, "Xem Lịch Marketing")
-    Rel(user, aimap, "Xem Nhật ký AI (theo dõi tiến trình)")
+    Rel(user, aimap, "Sử dụng các tính năng marketing và insight")
+    Rel(admin, aimap, "Quản trị vận hành")
+    Rel(cron, aimap, "Kích hoạt các workflow định kỳ")
 
-    %% ── AIMAP → User ─────────────────────────────────────────────────
-    Rel_Back(user, aimap, "Danh sách campaign & nội dung")
-    Rel_Back(user, aimap, "Lịch Marketing theo tháng")
-    Rel_Back(user, aimap, "Email xác minh tài khoản và đặt lại mật khẩu")
-    Rel_Back(user, aimap, "Nội dung AI và log xử lý")
-
-    %% ── Admin ↔ AIMAP ────────────────────────────────────────────────
-    Rel(admin, aimap, "Quản trị user (khóa/mở)")
-    Rel(admin, aimap, "Giám sát workflow jobs")
-    Rel(admin, aimap, "Theo dõi AI usage và audit logs")
-    Rel_Back(admin, aimap, "Báo cáo vận hành toàn hệ thống")
-
-    %% ── Cron → AIMAP ─────────────────────────────────────────────────
-    Rel(cron, aimap, "Kích hoạt workflow schedule (VD: Thứ Hai 8am)")
-    Rel(cron, aimap, "Upload trigger: tạo email campaign từ CSV")
-
-    %% ── AIMAP → Cron ─────────────────────────────────────────────────
-    Rel_Back(cron, aimap, "Cập nhật next_run_at sau mỗi lần chạy")
-
-    %% ── AIMAP ↔ OpenAI ───────────────────────────────────────────────
-    Rel(aimap, openai, "Strategist Agent: gửi brief + brand vault → yêu cầu lên kế hoạch")
-    Rel(aimap, openai, "Critic Agent: gửi bản nháp + tiêu chuẩn → yêu cầu kiểm duyệt")
-    Rel_Back(aimap, openai, "Trả về campaign plan JSON (summary, key_messages, deliverables)")
-    Rel_Back(aimap, openai, "Trả về review result (status, issues_found, final_content)")
-
-    %% ── AIMAP ↔ Qwen ─────────────────────────────────────────────────
-    Rel(aimap, qwen, "Writer Agent: gửi deliverable spec + brand → yêu cầu viết nội dung")
-    Rel(aimap, qwen, "Dashboard AI: gửi stats context → yêu cầu tóm tắt tiếng Việt")
-    Rel(aimap, qwen, "Insight Copilot: diễn giải KPI thành business insights")
-    Rel_Back(aimap, qwen, "Trả về content JSON (FB copy/hashtags, email subject/body, video script)")
-    Rel_Back(aimap, qwen, "Trả về đoạn tóm tắt 2-3 câu + gợi ý hành động")
-
-    Rel(aimap, deepseek, "Insight Copilot: phân loại báo cáo, map cột, lập kế hoạch phân tích")
-    Rel_Back(aimap, deepseek, "Trả về report_type, schema_map, trace")
-
-    %% ── AIMAP → SMTP ─────────────────────────────────────────────────
-    Rel(aimap, smtp, "Gửi email xác minh tài khoản (link hết hạn 24h)")
-    Rel(aimap, smtp, "Gửi email đặt lại mật khẩu (link dùng 1 lần, hết hạn 1h)")
-    Rel_Back(aimap, smtp, "Xác nhận email đã được gửi thành công")
-
-    UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
+    Rel(aimap, ai, "Gọi AI để tạo nội dung và phân tích dữ liệu")
+    Rel(aimap, smtp, "Gửi email giao dịch")
 ```
 
 ---
 
-## Roles thực tế trong hệ thống
+## Luồng chính cho người đọc phổ thông
 
-| Actor trong diagram | Role trong DB | Mô tả |
-|---|---|---|
-| **User** | `user` | Người dùng doanh nghiệp — sử dụng toàn bộ luồng marketing |
-| **Admin** | `admin` | Quản trị hệ thống AIMAP: user ops, workflow ops, audit |
-| **Cron Scheduler** | *(system)* | Tiến trình tự động, không phải người dùng |
+- Người dùng thao tác trên web: tạo campaign, duyệt nội dung, xem dashboard/calendar/insight.
+- AIMAP gọi nhóm AI Providers để tạo nội dung và diễn giải dữ liệu.
+- Nếu model chính lỗi hoặc timeout, hệ thống tự chuyển model dự phòng để đảm bảo có kết quả.
+- Cron Scheduler chạy nền để kích hoạt workflow tự động.
+- Admin theo dõi trạng thái vận hành, không tham gia luồng sử dụng hằng ngày của user.
 
-> Cap nhat: he thong da bo sung role `admin` de van hanh o muc system-level.
+---
 
-## Fallback Logic (Qwen ↔ OpenAI)
+## Vai trò trong hệ thống
 
-Nếu Qwen VPS không phản hồi trong **15 giây** → Agent Service tự động chuyển sang OpenAI.  
-Áp dụng cho: Writer Agent và Dashboard AI Summary.
+| Actor | Vai trò |
+|---|---|
+| `user` | Người dùng doanh nghiệp |
+| `admin` | Quản trị vận hành hệ thống |
+| `cron` | Tiến trình tự động, không phải người dùng |

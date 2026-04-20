@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Sparkles, Loader2 } from "lucide-react";
-import { api } from "@/lib/api-client";
+import { Sparkles, Loader2, X } from "lucide-react";
+import { api, API_BASE, getToken } from "@/lib/api-client";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
 
 const TONES = [
@@ -27,6 +27,9 @@ interface Brand {
   preferred_cta: string;
   preferred_salutation: string;
   sample_post?: string;
+  contact_email?: string;
+  phone?: string;
+  address?: string;
   updated_at?: string;
 }
 
@@ -39,6 +42,9 @@ const EMPTY: Brand = {
   forbidden_words: [],
   preferred_cta: "",
   preferred_salutation: "bạn",
+  contact_email: "",
+  phone: "",
+  address: "",
 };
 
 export default function BrandVaultPage() {
@@ -55,6 +61,7 @@ export default function BrandVaultPage() {
   const [saved, setSaved]       = useState(false);
   const [error, setError]       = useState("");
   const [generating, setGenerating] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
 
   function hydrateForm(brand: Brand) {
     setForm(brand);
@@ -66,7 +73,20 @@ export default function BrandVaultPage() {
     setForm(EMPTY);
     setProductsRaw("");
     setForbiddenRaw("");
+    setError("");
+    setSaved(false);
+    setIsFormOpen(true);
     router.replace("/brand-vault");
+  }
+
+  function openBrandForm(brand: Brand) {
+    hydrateForm(brand);
+    setError("");
+    setSaved(false);
+    setIsFormOpen(true);
+    if (brand.id) {
+      router.replace(`/brand-vault?brandId=${brand.id}`);
+    }
   }
 
   async function loadBrands() {
@@ -82,6 +102,7 @@ export default function BrandVaultPage() {
           const selected = list.find((b) => b.id === brandId);
           if (selected) {
             hydrateForm(selected);
+            setIsFormOpen(true);
             return;
           }
         }
@@ -98,6 +119,66 @@ export default function BrandVaultPage() {
 
   function update(key: keyof Brand, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  function formatDebug(value: unknown): string {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  }
+
+  async function saveBrandWithDebug(payload: Record<string, unknown>) {
+    const token = getToken();
+    const isUpdate = Boolean(form.id);
+    const path = isUpdate ? `/brands/id/${form.id}` : "/brands";
+    const url = API_BASE ? `${API_BASE}${path}` : path;
+
+    const debugBase = {
+      timestamp: new Date().toISOString(),
+      method: isUpdate ? "PUT" : "POST",
+      url,
+      hasToken: Boolean(token),
+      payload,
+    };
+    console.debug("[brand-vault:save:start]", debugBase);
+
+    try {
+      const res = await fetch(url, {
+        method: isUpdate ? "PUT" : "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const rawText = await res.text();
+      let parsed: unknown = rawText;
+      try {
+        parsed = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        // keep raw text for debugging
+      }
+
+      if (!res.ok) {
+        const debugErr = { ...debugBase, status: res.status, response: parsed };
+        console.error("[brand-vault:save:error]", debugErr);
+        const detail =
+          typeof parsed === "object" && parsed && "detail" in parsed
+            ? String((parsed as { detail?: string }).detail || "")
+            : "";
+        throw new Error(detail || `Save failed (HTTP ${res.status})`);
+      }
+
+      const debugOk = { ...debugBase, status: res.status, response: parsed };
+      console.debug("[brand-vault:save:success]", debugOk);
+      return parsed as Brand;
+    } catch (err) {
+      console.error("[brand-vault:save:fetch_error]", { ...debugBase, fetch_error: String(err) });
+      throw err;
+    }
   }
 
   async function generateDescription() {
@@ -130,10 +211,7 @@ export default function BrandVaultPage() {
         key_products:   productsRaw.split(",").map((s) => s.trim()).filter(Boolean),
         forbidden_words: forbiddenRaw.split(",").map((s) => s.trim()).filter(Boolean),
       };
-
-      const savedBrand = form.id
-        ? await api.put<Brand>(`/brands/id/${form.id}`, payload)
-        : await api.post<Brand>("/brands", payload);
+      const savedBrand = await saveBrandWithDebug(payload);
 
       await loadBrands();
       hydrateForm(savedBrand);
@@ -141,7 +219,8 @@ export default function BrandVaultPage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Lỗi lưu hồ sơ thương hiệu");
+      const msg = err instanceof Error ? err.message : "Lỗi lưu hồ sơ thương hiệu";
+      setError(`${msg}. Mở DevTools để xem log [brand-vault:save:*].`);
     } finally {
       setSaving(false);
     }
@@ -187,16 +266,13 @@ export default function BrandVaultPage() {
             summary="Hồ sơ thương hiệu giúp AI viết đúng giọng văn, thông điệp và nhóm khách hàng của bạn."
             steps={[
               "Tạo hồ sơ mới hoặc chọn hồ sơ hiện có trong danh sách.",
-              "Điền đầy đủ mô tả thương hiệu, tone, khách hàng mục tiêu.",
+              "Tuỳ chọn: email, SĐT, địa chỉ — backend cần migration mới nhất (xem docs/final database-overview).",
               "Khai báo sản phẩm chính và từ cấm để AI tránh dùng.",
               "Bấm Lưu để áp dụng cho các chiến dịch tạo sau đó.",
             ]}
           />
           <button type="button" className="btn-secondary" onClick={startNewBrand}>
             + Tạo hồ sơ mới
-          </button>
-          <button form="brand-form" type="submit" className="btn-primary" disabled={saving}>
-            {saving ? "Đang lưu..." : saved ? "Đã lưu ✓" : "Lưu"}
           </button>
         </div>
       </div>
@@ -227,7 +303,7 @@ export default function BrandVaultPage() {
                     <td className="py-2">
                       <button
                         type="button"
-                        onClick={() => router.replace(`/brand-vault?brandId=${b.id}`)}
+                        onClick={() => openBrandForm(b)}
                         className="text-blue-600 hover:underline"
                       >
                         Xem
@@ -241,7 +317,28 @@ export default function BrandVaultPage() {
         )}
       </div>
 
-      <form id="brand-form" onSubmit={handleSubmit} className="space-y-5 max-w-2xl">
+      {isFormOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setIsFormOpen(false)}
+            aria-label="Đóng form thương hiệu"
+          />
+          <div className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl bg-white p-5 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2>{form.id ? "Cập nhật hồ sơ thương hiệu" : "Tạo hồ sơ thương hiệu"}</h2>
+              <button
+                type="button"
+                className="btn-secondary p-1.5"
+                onClick={() => setIsFormOpen(false)}
+                aria-label="Đóng"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form id="brand-form" onSubmit={handleSubmit} className="space-y-5">
 
         {/* Thông tin cơ bản */}
         <div className="card space-y-4">
@@ -289,60 +386,60 @@ export default function BrandVaultPage() {
               placeholder="Học sinh, sinh viên 18-25 tuổi"
             />
           </div>
+
+          <div className="border-t border-gray-100 pt-4 space-y-3">
+            <p className="text-xs font-medium text-gray-600">
+              Liên hệ và địa điểm <span className="font-normal text-gray-400">(tuỳ chọn)</span>
+            </p>
+            <div>
+              <label className="label">Email liên hệ</label>
+              <input
+                type="email"
+                className="input"
+                value={form.contact_email ?? ""}
+                onChange={(e) => update("contact_email", e.target.value)}
+                placeholder="hello@thuonghieu.vn"
+              />
+            </div>
+            <div>
+              <label className="label">Số điện thoại</label>
+              <input
+                className="input"
+                value={form.phone ?? ""}
+                onChange={(e) => update("phone", e.target.value)}
+                placeholder="0901 234 567"
+              />
+            </div>
+            <div>
+              <label className="label">Địa chỉ</label>
+              <textarea
+                className="input min-h-[72px] resize-y text-sm"
+                value={form.address ?? ""}
+                onChange={(e) => update("address", e.target.value)}
+                placeholder="123 Đường ABC, Quận 1, TP.HCM"
+              />
+            </div>
+          </div>
         </div>
 
         {/* Phong cách viết */}
         <div className="card space-y-4">
           <div>
             <label className="label">AI sẽ viết theo phong cách nào?</label>
-            <p className="text-xs text-gray-400 mb-2">Ảnh hưởng trực tiếp đến cách AI "nói chuyện" trong mọi bài đăng của bạn</p>
-            <div className="grid grid-cols-1 gap-2 mt-1">
+            <p className="text-xs text-gray-400 mb-2">
+              Ảnh hưởng trực tiếp đến cách AI &quot;nói chuyện&quot; trong mọi bài đăng của bạn
+            </p>
+            <select
+              className="input"
+              value={TONES.some((t) => t.value === form.tone_of_voice) ? form.tone_of_voice : "warm"}
+              onChange={(e) => update("tone_of_voice", e.target.value)}
+            >
               {TONES.map((t) => (
-                <label
-                  key={t.value}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded border cursor-pointer transition-colors ${
-                    form.tone_of_voice === t.value
-                      ? "border-blue-500 bg-blue-50"
-                      : "border-gray-200 hover:border-gray-300"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="tone"
-                    value={t.value}
-                    checked={form.tone_of_voice === t.value}
-                    onChange={() => update("tone_of_voice", t.value)}
-                    className="accent-blue-600 shrink-0"
-                  />
-                  <div>
-                    <span className="text-sm font-medium text-gray-800">{t.label}</span>
-                    <span className="text-xs text-gray-400 ml-2">{t.hint}</span>
-                  </div>
-                </label>
+                <option key={t.value} value={t.value}>
+                  {t.label} — {t.hint}
+                </option>
               ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="label">Gọi khách hàng là...</label>
-              <input
-                className="input"
-                value={form.preferred_salutation}
-                onChange={(e) => update("preferred_salutation", e.target.value)}
-                placeholder="bạn, quý khách, anh/chị..."
-              />
-            </div>
-            <div>
-              <label className="label">Câu kêu gọi hành động</label>
-              <input
-                className="input"
-                value={form.preferred_cta}
-                onChange={(e) => update("preferred_cta", e.target.value)}
-                placeholder="Đặt ngay, Ghé thăm hôm nay..."
-              />
-              <p className="text-xs text-gray-400 mt-1">AI sẽ dùng câu này ở cuối bài</p>
-            </div>
+            </select>
           </div>
         </div>
 
@@ -383,7 +480,23 @@ export default function BrandVaultPage() {
             </button>
           </div>
         )}
-      </form>
+              <div className="sticky bottom-0 bg-white pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setIsFormOpen(false)}
+                  disabled={saving}
+                >
+                  Đóng
+                </button>
+                <button type="submit" className="btn-primary" disabled={saving}>
+                  {saving ? "Đang lưu..." : saved ? "Đã lưu ✓" : "Lưu"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

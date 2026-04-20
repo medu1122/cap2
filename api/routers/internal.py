@@ -62,12 +62,18 @@ async def get_campaign_detail_internal(
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Campaign not found")
 
-    brand_result = await db.execute(
-        select(Brand)
-        .where(Brand.user_id == campaign.user_id)
-        .order_by(Brand.updated_at.desc())
-        .limit(1)
-    )
+    if campaign.brand_id:
+        brand_result = await db.execute(
+            select(Brand).where(Brand.id == campaign.brand_id, Brand.user_id == campaign.user_id)
+        )
+    else:
+        # Compatibility for old campaigns without explicit brand_id.
+        brand_result = await db.execute(
+            select(Brand)
+            .where(Brand.user_id == campaign.user_id)
+            .order_by(Brand.updated_at.desc())
+            .limit(1)
+        )
     brand = brand_result.scalar_one_or_none()
 
     return {
@@ -90,6 +96,9 @@ async def get_campaign_detail_internal(
             "forbidden_words": brand.forbidden_words if brand else [],
             "preferred_cta": brand.preferred_cta if brand else "Liên hệ ngay",
             "preferred_salutation": brand.preferred_salutation if brand else "bạn",
+            "contact_email": brand.contact_email if brand else None,
+            "phone": brand.phone if brand else None,
+            "address": brand.address if brand else None,
         } if brand else {},
     }
 

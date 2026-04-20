@@ -31,6 +31,7 @@ def _plan_publish_dates(deadline_str: str | None, channels: list[str]) -> list[s
     - spread evenly in [today, deadline]
     - prioritize channel-friendly weekdays
     - avoid major fixed holidays and avoid weekend for email
+    (Khi đổi rules, đồng bộ với api/services/publish_schedule.py.)
     """
     num_channels = len(channels)
     if not deadline_str or num_channels == 0:
@@ -178,8 +179,12 @@ class CampaignOrchestrator:
                     brand_desc    = brand_vault.get("brand_description", "")
                     tone          = brand_vault.get("tone_of_voice", "")
                     preferred_cta = brand_vault.get("preferred_cta", "")
+                    contact_email = (brand_vault.get("contact_email") or "").strip()
+                    phone         = (brand_vault.get("phone") or "").strip()
+                    address       = (brand_vault.get("address") or "").strip()
                     key_products  = ", ".join(brand_vault.get("key_products") or [])
                     target        = brief.get("target_audience") or brand_vault.get("target_audience", "")
+                    campaign_title = brief.get("campaign_name", "")
                     key_messages  = "\n".join(f"- {m}" for m in (plan.get("key_messages") or []))
                     visual_dir    = plan.get("visual_direction", "")
                     campaign_summary = plan.get("campaign_summary", "")
@@ -195,9 +200,14 @@ class CampaignOrchestrator:
                         f"Giọng văn / phong cách: {tone}\n"
                         f"Sản phẩm/dịch vụ chính: {key_products}\n"
                         f"Đối tượng khách hàng: {target}\n"
-                        f"CTA thường dùng: {preferred_cta}\n\n"
+                        f"CTA thường dùng: {preferred_cta}\n"
+                        "=== LIÊN HỆ & ĐỊA ĐIỂM (infer bối cảnh thật — cửa hàng, phố, khu vực; "
+                        "KHÔNG mô tả chữ số/SĐT/email lên ảnh) ===\n"
+                        f"Email: {contact_email or '—'}\n"
+                        f"SĐT: {phone or '—'}\n"
+                        f"Địa chỉ: {address or '—'}\n\n"
                         "=== THÔNG TIN CHIẾN DỊCH ===\n"
-                        f"Tên chiến dịch: {brief.get('campaign_name', '')}\n"
+                        f"Tên chiến dịch: {campaign_title}\n"
                         f"Mục tiêu: {brief.get('objective', '')}\n"
                         f"Sản phẩm/Dịch vụ: {brief.get('product_or_service', '')}\n"
                         f"Ưu đãi / Hook: {brief.get('offer_or_hook', '')}\n"
@@ -208,21 +218,37 @@ class CampaignOrchestrator:
                         f"Định hướng hình ảnh từ strategist: {visual_dir}\n\n"
                         "=== NỘI DUNG ĐÃ ĐƯỢC AI VIẾT (tham khảo để ảnh khớp với copy) ===\n"
                         f"{content_blocks}\n\n"
-                        "Dựa trên TẤT CẢ thông tin trên, hãy tạo một image generation prompt bằng tiếng Anh, "
-                        "chi tiết và giàu hình ảnh, phù hợp để tạo key visual cho chiến dịch này bằng DALL-E 3.\n"
-                        "Prompt phải mô tả: chủ thể chính, bối cảnh/nền, cảm xúc/bầu không khí, bảng màu, "
-                        "ánh sáng, phong cách nghệ thuật.\n"
-                        "Prompt phải phản ánh đúng thông điệp và phong cách thương hiệu.\n"
+                        "Nhiệm vụ — poster / key visual chiến dịch:\n"
+                        "Bạn là creative director. Hãy TỰ PHÂN TÍCH (im lặng, không xuất phân tích) xem với "
+                        f"tên chiến dịch «{campaign_title}», thương hiệu «{brand_name}», mục tiêu và manh mối địa lý "
+                        "(địa chỉ/SĐT/email chỉ để suy ra không gian/cửa hàng điển hình, không vẽ chữ), "
+                        "đâu là MỘT ý poster một thông điệp mạnh, dễ nhớ, đúng campaign.\n"
+                        "Sau đó chỉ XUẤT DUY NHẤT một image generation prompt bằng tiếng Anh, tối đa ~180 từ, cho DALL-E 3 — "
+                        "không tiêu đề, không bullet, không giải thích, không JSON.\n"
+                        "Mô tả trong prompt: một chủ thể tiêu điểm rõ ràng, bối cảnh thật (VN khi hợp lý), cảm xúc, palette, ánh sáng.\n\n"
+                        "Ràng buộc bắt buộc (marketing-aware):\n"
+                        "- Mặc định: ảnh chụp thực tế (photorealistic documentary / lifestyle), ánh sáng tự nhiên hoặc "
+                        "đèn thực tế trong không gian, candid, máy ảnh DSLR cảm giác 35mm, da và chi tiết tự nhiên, "
+                        "tránh da bóng nhựa / render 3D / phong cách hoạt hình trừ khi strategist visual_direction "
+                        "yêu cầu minh họa rõ ràng.\n"
+                        "- Khớp đúng loại hình dịch vụ và mục tiêu (ads cần một thông điệp thị giác rõ, ít người chen "
+                        "chúc; tránh crowd mơ hồ).\n"
+                        "- KHÔNG mô tả chữ đọc được, bảng viết chữ, logo, watermark hay UI — DALL-E hay sai chữ; "
+                        "headline/CTA để designer thêm sau.\n"
+                        "- Tránh stock smile cứng; ưu tiên khoảnh khắc chân thật.\n"
                         "Chỉ trả về prompt text, không giải thích."
                     )
 
                     qwen_system = (
                         "You are a world-class marketing visual director and AI image prompt engineer "
-                        "specializing in Vietnamese consumer market campaigns.\n"
-                        "Your task: given full brand, campaign, strategy, and written content context, "
-                        "create a vivid, detailed image generation prompt in English.\n"
-                        "The image must perfectly complement the written marketing copy and embody the brand's identity.\n"
-                        "Output: only the prompt text, no preamble."
+                        "for Vietnamese SME and consumer campaigns, specializing in single strong campaign poster key visuals.\n"
+                        "You reason internally about brand, campaign name, objective, and locality cues (address/phone/email "
+                        "inform setting and vibe only), then output exactly one English DALL-E prompt with no analysis text.\n"
+                        "Match campaign objective and channel (conversion ads need trustworthy real-life photography).\n"
+                        "Unless the strategist explicitly requests illustration, default to photorealistic "
+                        "documentary or lifestyle photography with believable Vietnam-relevant settings when appropriate.\n"
+                        "Never instruct readable typography, phone numbers, addresses, logos, or whiteboard text in the image.\n"
+                        "Output: only the English prompt text, no preamble."
                     )
 
                     qwen_raw, _ = await timed_agent_call(
@@ -242,22 +268,34 @@ class CampaignOrchestrator:
                         channel="image_prompt",
                         step_order=step,
                         system_prompt=(
-                            "You are a senior prompt engineer specializing in DALL-E 3 for commercial marketing.\n"
+                            "You are a senior prompt engineer for DALL-E 3 in Vietnamese SME marketing, "
+                            "optimizing a single campaign poster / key visual prompt.\n"
                             "Rules:\n"
-                            "- Preserve the core concept and brand intent from the draft\n"
-                            "- Add precise visual descriptors: camera angle, lens focal length, lighting technique, color grading\n"
-                            "- Ensure professional commercial quality, not AI-generic\n"
-                            "- Append quality suffix: photorealistic, commercial photography, 8K resolution, sharp focus, award-winning\n"
-                            "- Max 200 words\n"
-                            "- Return only the final prompt, no explanation."
+                            "- Preserve the core concept, product, campaign goal, and brand name energy from the draft\n"
+                            "- Add precise descriptors: camera angle, lens feel (e.g. 35mm), lighting (natural window light, "
+                            "soft bounce), color grading (natural, not neon oversaturation)\n"
+                            "- Prefer believable real-world photography; reject glossy CGI, 3D render, anime, or "
+                            "plastic 'AI portrait' looks unless the draft explicitly needs illustration\n"
+                            "- One clear focal subject; poster-like clarity; simplify busy backgrounds for ad-style compositions\n"
+                            "- Explicitly forbid readable text, phone numbers, addresses, signage, logos, watermarks, UI overlays\n"
+                            "- Avoid empty hype tokens like '8K award-winning hyperreal' that encourage synthetic polish\n"
+                            "- Max 200 words; output only the final English prompt, no explanation."
                         ),
                         user_prompt=(
-                            f"Brand: {brand_name}\n"
+                            f"Campaign name: {campaign_title}\n"
+                            f"Brand name: {brand_name}\n"
+                            f"Brand phone (scene mood / local business context only, never as legible text): {phone or 'n/a'}\n"
+                            f"Brand address (infer typical storefront or neighborhood vibe only): {address or 'n/a'}\n"
+                            f"Brand contact email (never render as text in image): {contact_email or 'n/a'}\n"
                             f"Product: {brief.get('product_or_service', '')}\n"
+                            f"Objective: {brief.get('objective', '')}\n"
+                            f"Offer/hook: {brief.get('offer_or_hook', '')}\n"
+                            f"Channels: {', '.join(channels)}\n"
                             f"Target audience: {target}\n"
                             f"Tone: {tone}\n\n"
                             f"Qwen draft prompt:\n{qwen_raw.strip()}\n\n"
-                            "Refine into a production-ready DALL-E 3 prompt."
+                            "Refine into one production-ready DALL-E 3 prompt: a strong campaign poster key visual, "
+                            "on-brand and not generic stock."
                         ),
                         campaign_id=campaign_id,
                         temperature=0.35,

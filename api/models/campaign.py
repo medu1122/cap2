@@ -11,6 +11,7 @@ class Campaign(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    brand_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("brands.id", ondelete="SET NULL"), index=True)
     campaign_name: Mapped[str] = mapped_column(String(255), nullable=False)
     objective: Mapped[str] = mapped_column(Text, nullable=False)
     product_or_service: Mapped[str] = mapped_column(Text, nullable=False)
@@ -26,6 +27,7 @@ class Campaign(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     user: Mapped["User"] = relationship("User", back_populates="campaigns")
+    brand: Mapped["Brand | None"] = relationship("Brand", back_populates="campaigns")
     content_items: Mapped[list["ContentItem"]] = relationship("ContentItem", back_populates="campaign", cascade="all, delete-orphan")
     agent_run_logs: Mapped[list["AgentRunLog"]] = relationship("AgentRunLog", back_populates="campaign", cascade="all, delete-orphan")
     workflow_jobs: Mapped[list["WorkflowJob"]] = relationship("WorkflowJob", back_populates="campaign")

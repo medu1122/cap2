@@ -56,8 +56,8 @@ _qwen = AsyncOpenAI(
     api_key="ollama",
 )
 _openai = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
-QWEN_MODEL   = os.getenv("QWEN_MODEL", "qwen2.5:7b")
-QWEN_TIMEOUT = int(os.getenv("QWEN_TIMEOUT", "15"))
+QWEN_MODEL   = os.getenv("QWEN_MODEL", "qwen2.5:14b")
+QWEN_TIMEOUT = int(os.getenv("QWEN_TIMEOUT", "180"))
 
 
 class SuggestRequest(BaseModel):
@@ -146,6 +146,12 @@ async def list_campaigns(
         item = CampaignListItem.model_validate(c)
         item.content_count = content_result.scalar() or 0
         item.pending_count = pending_result.scalar() or 0
+        source_context = (c.campaign_plan_json or {}).get("source_context") if isinstance(c.campaign_plan_json, dict) else None
+        if isinstance(source_context, dict):
+            source_run = source_context.get("source_insight_run_id")
+            source_segment = source_context.get("source_customer_segment")
+            item.source_insight_run_id = str(source_run) if source_run else None
+            item.source_customer_segment = str(source_segment) if source_segment else None
         items.append(item)
     return items
 
@@ -157,6 +163,13 @@ async def create_campaign(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    brand_result = await db.execute(
+        select(Brand).where(Brand.id == payload.brand_id, Brand.user_id == current_user.id)
+    )
+    brand = brand_result.scalar_one_or_none()
+    if not brand:
+        raise HTTPException(400, "Thương hiệu không hợp lệ hoặc không thuộc tài khoản hiện tại")
+
     if not payload.channels:
         raise HTTPException(400, "Phải chọn ít nhất 1 kênh nội dung")
     invalid = [c for c in payload.channels if c not in VALID_CHANNELS]
@@ -165,7 +178,25 @@ async def create_campaign(
     if payload.deadline < date.today():
         raise HTTPException(400, "Ngày kết thúc không được là ngày trong quá khứ")
 
-    campaign = Campaign(user_id=current_user.id, **payload.model_dump())
+    payload_data = payload.model_dump()
+    source_insight_run_id = payload_data.pop("source_insight_run_id", None)
+    source_customer_segment = payload_data.pop("source_customer_segment", None)
+
+    source_context: dict[str, str] = {}
+    if source_insight_run_id:
+        source_context["source_insight_run_id"] = str(source_insight_run_id)
+    if source_customer_segment:
+        source_context["source_customer_segment"] = source_customer_segment
+
+    campaign_plan_json: dict = {}
+    if source_context:
+        campaign_plan_json["source_context"] = source_context
+
+    campaign = Campaign(
+        user_id=current_user.id,
+        **payload_data,
+        campaign_plan_json=campaign_plan_json or None,
+    )
     db.add(campaign)
     await db.commit()
     await db.refresh(campaign)
@@ -195,6 +226,7 @@ async def get_campaign(
 
     detail = CampaignDetail.model_validate({
         "id": campaign.id,
+        "brand_id": campaign.brand_id,
         "campaign_name": campaign.campaign_name,
         "objective": campaign.objective,
         "product_or_service": campaign.product_or_service,
@@ -227,12 +259,18 @@ async def run_campaign(
     if campaign.status == "running":
         raise HTTPException(status_code=409, detail="Campaign is already running")
 
-    brand_result = await db.execute(
-        select(Brand)
-        .where(Brand.user_id == current_user.id)
-        .order_by(Brand.updated_at.desc())
-        .limit(1)
-    )
+    if campaign.brand_id:
+        brand_result = await db.execute(
+            select(Brand).where(Brand.id == campaign.brand_id, Brand.user_id == current_user.id)
+        )
+    else:
+        # Compatibility for old campaigns created before brand_id was introduced.
+        brand_result = await db.execute(
+            select(Brand)
+            .where(Brand.user_id == current_user.id)
+            .order_by(Brand.updated_at.desc())
+            .limit(1)
+        )
     brand = brand_result.scalar_one_or_none()
     if not brand:
         raise HTTPException(status_code=400, detail="Brand Vault not configured. Please set up your brand first.")
@@ -303,6 +341,63 @@ class GenerateImagePayload(BaseModel):
     prompt: str | None = None
 
 
+def _fallback_dalle_prompt(
+    campaign: Campaign,
+    plan: dict,
+    brand_contact: dict | None = None,
+) -> str:
+    """Khi chưa có image_prompt từ agent — tránh prompt chung chung, hướng ảnh thật / poster key visual cho ads VN."""
+    channels = ", ".join(campaign.channels or [])
+    audience = (campaign.target_audience or "").strip()
+    offer = (campaign.offer_or_hook or "").strip()
+    notes = (campaign.additional_notes or "").strip()
+    vd = (plan.get("visual_direction") or "").strip()
+    summary = (plan.get("campaign_summary") or "").strip()
+    parts = [
+        "Photorealistic campaign key visual / poster-style photograph for Vietnamese SME social marketing, "
+        "not illustration, not 3D render, not anime.",
+        f"Campaign: {campaign.campaign_name}.",
+        f"Business goal: {campaign.objective}.",
+        f"Product or service (scene must match this): {campaign.product_or_service}.",
+    ]
+    if brand_contact:
+        bn = (brand_contact.get("brand_name") or "").strip()
+        em = (brand_contact.get("contact_email") or "").strip()
+        ph = (brand_contact.get("phone") or "").strip()
+        ad = (brand_contact.get("address") or "").strip()
+        if bn or em or ph or ad:
+            parts.append(
+                "Brand context for believable setting only (no readable phone numbers, addresses, or text in frame): "
+                f"brand {bn or 'n/a'}; locality cues {ad or 'n/a'}."
+            )
+    if audience:
+        parts.append(f"Target audience: {audience}.")
+    if offer:
+        parts.append(
+            "Convey promotion energy through authentic expressions and setting only — "
+            f"no readable text in frame (hook: {offer})."
+        )
+    if channels:
+        parts.append(f"Primary channels: {channels}.")
+    if summary:
+        parts.append(f"Strategy summary: {summary[:400]}.")
+    if vd:
+        parts.append(f"Visual direction from strategist: {vd[:400]}.")
+    if notes:
+        parts.append(f"Extra brief: {notes[:220]}.")
+    parts.extend(
+        [
+            "Setting: believable Vietnam-relevant real interior or everyday context when it fits "
+            "(classroom, office, cafe, retail) with natural daylight or soft practical lighting.",
+            "Camera: DSLR candid moment, 35mm lens feel, shallow depth of field, natural skin texture, "
+            "avoid glossy plastic skin and overcooked saturation.",
+            "Composition: one strong focal subject; avoid cluttered crowd shots typical of weak ad visuals.",
+            "Do not include readable text, signage typography, whiteboards with words, logos, watermarks, or UI overlays.",
+        ]
+    )
+    return " ".join(parts)
+
+
 @router.post("/{campaign_id}/image/generate")
 async def generate_campaign_image(
     campaign_id: uuid.UUID,
@@ -319,16 +414,27 @@ async def generate_campaign_image(
         raise HTTPException(404, "Không tìm thấy chiến dịch")
 
     plan = campaign.campaign_plan_json or {}
+    brand_row = await db.execute(
+        select(Brand)
+        .where(Brand.user_id == current_user.id)
+        .order_by(Brand.updated_at.desc())
+        .limit(1)
+    )
+    brand = brand_row.scalar_one_or_none()
+    brand_contact = None
+    if brand:
+        brand_contact = {
+            "brand_name": brand.brand_name,
+            "contact_email": brand.contact_email,
+            "phone": brand.phone,
+            "address": brand.address,
+        }
+
     prompt = (
         payload.prompt
         or plan.get("image_prompt_final")
         or plan.get("image_prompt_qwen")
-        or (
-            f"Professional marketing image for a Vietnamese small business. "
-            f"Campaign: {campaign.campaign_name}. "
-            f"Product: {campaign.product_or_service}. "
-            f"Clean, modern, vibrant style."
-        )
+        or _fallback_dalle_prompt(campaign, plan, brand_contact)
     )
 
     try:

@@ -65,7 +65,7 @@ async def seed():
         )
         log2 = AgentRunLog(
             campaign_id=c1.id, agent_name="writer", step_order=2, channel="facebook_post",
-            model_used="qwen2.5:7b", model_provider="qwen",
+            model_used="qwen2.5:14b", model_provider="qwen",
             duration_ms=4120, input_tokens=540, output_tokens=320, status="success",
         )
         log3 = AgentRunLog(

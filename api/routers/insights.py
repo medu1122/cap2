@@ -7,6 +7,7 @@ import time
 import uuid
 import unicodedata
 import asyncio
+from collections import Counter
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -263,6 +264,381 @@ def _to_float(value: object) -> float:
         return 0.0
 
 
+def _series_numeric_values(values: list[object]) -> list[float]:
+    """Lay day so tu cot — dung cho thong ke min/max/trung binh (khong bat doc het neu cot la hon hop)."""
+    out: list[float] = []
+    for v in values:
+        if v is None:
+            continue
+        if isinstance(v, (int, float)):
+            out.append(float(v))
+            continue
+        s = str(v).strip()
+        if not s or not any(c.isdigit() for c in s):
+            continue
+        out.append(_to_float(v))
+    return out
+
+
+def _guess_column_hints(columns: list[str]) -> dict[str, str | None]:
+    """Heuristic: goi y cot kieu khach hang / gia / ngay de nhieu loai file khac nhau van co goi y."""
+    customer_tokens = (
+        "khach",
+        "customer",
+        "ten_khach",
+        "ma_kh",
+        "sdt",
+        "phone",
+        "email",
+        "ho_ten",
+        "contact",
+    )
+    price_tokens = ("gia", "price", "don_gia", "thanh_tien", "amount", "tien", "chi_phi", "cost", "von", "doanh_thu")
+    date_tokens = ("ngay", "date", "thang", "nam", "time", "week")
+    likely_customer: str | None = None
+    likely_price: str | None = None
+    likely_date: str | None = None
+    for col in columns:
+        n = _normalize_text(col)
+        if likely_customer is None and any(t in n for t in customer_tokens):
+            likely_customer = col
+        if likely_price is None and any(t in n for t in price_tokens):
+            likely_price = col
+        if likely_date is None and any(t in n for t in date_tokens):
+            likely_date = col
+    return {
+        "likely_customer_identifier": likely_customer,
+        "likely_price_or_amount": likely_price,
+        "likely_date": likely_date,
+    }
+
+
+def _exploratory_column_stats(
+    rows: list[dict[str, Any]],
+    columns: list[str],
+    *,
+    max_categorical_cardinality: int = 28,
+    top_k: int = 5,
+) -> dict[str, Any]:
+    """
+    Thong ke khap bo: trung binh / min / max cho cot so; top gia tri cho cot phan loai ngan.
+    Chu dong nhieu truong hop (ban hang, chi phi, danh sach khach, bang tom tat...).
+    """
+    numeric_columns: list[dict[str, Any]] = []
+    categorical_columns: list[dict[str, Any]] = []
+    n_rows = len(rows)
+    if n_rows == 0:
+        return {
+            "numeric_columns": [],
+            "categorical_columns": [],
+            "column_hints": _guess_column_hints(columns),
+            "row_count": 0,
+        }
+
+    for col in columns:
+        values = [row.get(col) for row in rows]
+        nums = _series_numeric_values(values)
+        ratio = len(nums) / max(len(values), 1)
+        if len(nums) >= 2 and ratio >= 0.4:
+            mn, mx = min(nums), max(nums)
+            sm = sum(nums)
+            mean = sm / len(nums)
+            numeric_columns.append(
+                {
+                    "column": col,
+                    "count": len(nums),
+                    "min": round(mn, 4),
+                    "max": round(mx, 4),
+                    "mean": round(mean, 4),
+                    "sum": round(sm, 2),
+                }
+            )
+            continue
+
+        str_vals: list[str] = []
+        for v in values:
+            if v is None:
+                continue
+            s = str(v).strip()
+            if s:
+                str_vals.append(s[:240])
+        if not str_vals:
+            continue
+        uniq = len(set(str_vals))
+        if uniq > max_categorical_cardinality:
+            continue
+        ctr = Counter(str_vals)
+        top = ctr.most_common(top_k)
+        categorical_columns.append(
+            {
+                "column": col,
+                "unique_count": uniq,
+                "top_values": [{"value": t[0], "count": t[1]} for t in top],
+            }
+        )
+
+    return {
+        "numeric_columns": numeric_columns[:48],
+        "categorical_columns": categorical_columns[:24],
+        "column_hints": _guess_column_hints(columns),
+        "row_count": n_rows,
+    }
+
+
+def _sanitize_columns_overview(raw: Any, columns: list[str]) -> list[dict[str, str]]:
+    colset = set(columns)
+    out: list[dict[str, str]] = []
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        if isinstance(name, str) and name in colset:
+            out.append(
+                {
+                    "name": name,
+                    "role_guess": str(item.get("role_guess") or "unknown").strip() or "unknown",
+                }
+            )
+    return out[:80]
+
+
+def _build_kpi_availability(
+    mapping: dict[str, str | None],
+    revenue: float,
+    ad_spend: float,
+    orders: float,
+    leads: float,
+    repeat_orders: float,
+) -> dict[str, Any]:
+    """
+    Chi khi du cot VA mau so hop le thi KPI moi duoc coi la 'tinh duoc' — tranh hien thi 0.00 gia y nghia.
+    """
+    rc = mapping.get("revenue")
+    asc = mapping.get("ad_spend")
+    oc = mapping.get("orders")
+    lc = mapping.get("leads")
+    rpc = mapping.get("repeat_orders")
+
+    def slot(computable: bool, reason: str) -> dict[str, Any]:
+        return {"computable": computable, "reason_if_not": None if computable else reason}
+
+    return {
+        "revenue": slot(rc is not None, "Chưa ánh xạ cột doanh thu."),
+        "ad_spend": slot(asc is not None, "Chưa ánh xạ cột chi phí quảng cáo."),
+        "orders": slot(oc is not None, "Chưa ánh xạ cột đơn hàng."),
+        "leads": slot(lc is not None, "Chưa ánh xạ cột lead/khách tiềm năng."),
+        "roas": slot(
+            rc is not None and asc is not None and ad_spend > 0,
+            "ROAS cần đủ cột doanh thu + chi phí QC và tổng chi phí QC > 0.",
+        ),
+        "conversion_rate": slot(
+            oc is not None and lc is not None and leads > 0,
+            "Tỷ lệ chuyển đổi cần cột đơn + lead và tổng lead > 0.",
+        ),
+        "repeat_rate": slot(
+            oc is not None and rpc is not None and orders > 0,
+            "Tỷ lệ quay lại cần cột đơn + đơn lặp và tổng đơn > 0.",
+        ),
+        "aov": slot(
+            rc is not None and oc is not None and orders > 0,
+            "AOV cần doanh thu + đơn và tổng đơn > 0.",
+        ),
+    }
+
+
+def _any_core_kpi_computable(avail: dict[str, Any]) -> bool:
+    return bool(
+        (avail.get("roas") or {}).get("computable")
+        or (avail.get("conversion_rate") or {}).get("computable")
+        or (avail.get("repeat_rate") or {}).get("computable")
+    )
+
+
+def _build_issues_from_kpis(
+    avail: dict[str, Any],
+    roas: float,
+    conversion_rate: float,
+    repeat_rate: float,
+) -> list[str]:
+    """Khong tao 'van de ROAS' khi ROAS khong tin duoc."""
+    issues: list[str] = []
+    if (avail.get("roas") or {}).get("computable"):
+        issues.append("ROAS đang thấp hơn ngưỡng an toàn 2.0" if roas < 2 else "ROAS ở mức chấp nhận được")
+    if (avail.get("conversion_rate") or {}).get("computable"):
+        issues.append("Tỷ lệ chuyển đổi dưới 10%" if conversion_rate < 0.1 else "Tỷ lệ chuyển đổi đang ổn định")
+    if (avail.get("repeat_rate") or {}).get("computable"):
+        issues.append("Tỷ lệ khách quay lại dưới 20%" if repeat_rate < 0.2 else "Tỷ lệ khách quay lại khá tốt")
+    if not issues:
+        issues.append(
+            "Không có nhận định so sánh KPI (ROAS / chuyển đổi / quay lại) vì thiếu cột hoặc mẫu số không hợp lệ — không coi các chỉ số 0 là kết luận kinh doanh."
+        )
+    return issues
+
+
+def _build_situations_and_actions(
+    *,
+    kpi_availability: dict[str, Any],
+    kpis: dict[str, float],
+    issues: list[str],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    situations: list[dict[str, Any]] = []
+    suggested_actions: list[dict[str, Any]] = []
+
+    roas_ok = bool((kpi_availability.get("roas") or {}).get("computable"))
+    conv_ok = bool((kpi_availability.get("conversion_rate") or {}).get("computable"))
+    repeat_ok = bool((kpi_availability.get("repeat_rate") or {}).get("computable"))
+
+    roas = float(kpis.get("roas", 0.0))
+    conversion_rate = float(kpis.get("conversion_rate", 0.0))
+    repeat_rate = float(kpis.get("repeat_rate", 0.0))
+
+    if roas_ok:
+        if roas < 2:
+            situations.append(
+                {
+                    "id": "low_roas",
+                    "title": "Hieu qua quang cao thap",
+                    "severity": "cao",
+                    "reason": "ROAS duoi nguong 2.0",
+                    "evidence": {"roas": round(roas, 4)},
+                }
+            )
+            suggested_actions.append(
+                {
+                    "id": "optimize_ads_low_roas",
+                    "title": "Toi uu nhom quang cao co chi phi cao",
+                    "priority": "high",
+                    "target_segment": "potential",
+                    "reason": "Can giam chi phi/doi tuong cho cac nhom chuyen doi thap",
+                    "expected_impact": "Cai thien ROAS trong 2-4 tuan",
+                }
+            )
+        else:
+            situations.append(
+                {
+                    "id": "roas_stable",
+                    "title": "ROAS dang o muc chap nhan duoc",
+                    "severity": "thap",
+                    "reason": "ROAS tu 2.0 tro len",
+                    "evidence": {"roas": round(roas, 4)},
+                }
+            )
+
+    if conv_ok and conversion_rate < 0.1:
+        situations.append(
+            {
+                "id": "low_conversion",
+                "title": "Ty le chuyen doi thap",
+                "severity": "vua",
+                "reason": "Conversion rate duoi 10%",
+                "evidence": {"conversion_rate": round(conversion_rate, 4)},
+            }
+        )
+        suggested_actions.append(
+            {
+                "id": "improve_conversion_flow",
+                "title": "Toi uu noi dung va CTA cho nhom potential",
+                "priority": "high",
+                "target_segment": "potential",
+                "reason": "Tang suc hut thong diep o buoc can chot don",
+                "expected_impact": "Tang ty le chuyen doi trong chu ky campaign tiep theo",
+            }
+        )
+
+    if repeat_ok and repeat_rate < 0.2:
+        situations.append(
+            {
+                "id": "low_repeat_rate",
+                "title": "Ty le quay lai thap",
+                "severity": "vua",
+                "reason": "Repeat rate duoi 20%",
+                "evidence": {"repeat_rate": round(repeat_rate, 4)},
+            }
+        )
+        suggested_actions.append(
+            {
+                "id": "reactivate_inactive_customers",
+                "title": "Chay chuong trinh re-engagement cho nhom inactive",
+                "priority": "medium",
+                "target_segment": "inactive",
+                "reason": "Can kich hoat lai tep khach cu de tang don lap lai",
+                "expected_impact": "Tang repeat orders sau 30-60 ngay",
+            }
+        )
+
+    if not situations:
+        situations.append(
+            {
+                "id": "insufficient_kpi_signals",
+                "title": "Chua du co so xac dinh van de uu tien",
+                "severity": "thap",
+                "reason": "KPI cot loi chua tinh duoc hoac chua du tin cay",
+                "evidence": {"issues_count": len(issues)},
+            }
+        )
+        suggested_actions.append(
+            {
+                "id": "improve_data_quality_first",
+                "title": "Bo sung cot du lieu va chuan hoa file truoc khi ra quyet dinh",
+                "priority": "high",
+                "target_segment": "unknown",
+                "reason": "Can du du lieu de he thong de xuat hanh dong chinh xac hon",
+                "expected_impact": "Tang do tin cay insight va hanh dong o lan phan tich tiep theo",
+            }
+        )
+
+    return situations, suggested_actions
+
+
+def _normalize_insight_item(item: dict[str, Any]) -> dict[str, Any]:
+    ev = item.get("evidence") if isinstance(item.get("evidence"), dict) else {}
+    evidence: dict[str, float] = {}
+    for k, v in ev.items():
+        try:
+            evidence[str(k)] = float(v)
+        except (TypeError, ValueError):
+            continue
+    return {
+        "title": str(item.get("title") or "Nhận định").strip() or "Nhận định",
+        "severity": str(item.get("severity") or "Vừa").strip() or "Vừa",
+        "evidence": evidence,
+        "recommendation": str(item.get("recommendation") or "").strip(),
+    }
+
+
+def _sanitize_insights_post_llm(insights: Any, avail: dict[str, Any]) -> list[dict[str, Any]]:
+    """Loc insight template/hallucination khong gan voi KPI tinh duoc."""
+    if not isinstance(insights, list):
+        return []
+    roas_ok = bool((avail.get("roas") or {}).get("computable"))
+    conv_ok = bool((avail.get("conversion_rate") or {}).get("computable"))
+    rep_ok = bool((avail.get("repeat_rate") or {}).get("computable"))
+    out: list[dict[str, Any]] = []
+    for raw in insights:
+        if not isinstance(raw, dict):
+            continue
+        it = _normalize_insight_item(raw)
+        # Nhan dinh giai thich thieu du lieu — khong loc theo tu khoa marketing.
+        if it["title"].strip() == "Chưa đủ cơ sở cho nhận định KPI marketing":
+            out.append(it)
+            continue
+        title = it["title"].lower()
+        rec = it["recommendation"].lower()
+        blob = f"{title} {rec}"
+        if ("roas" in blob or "hiệu quả quảng" in blob or "hieu qua quang" in blob) and not roas_ok:
+            continue
+        if ("chuyển đổi" in blob or "conversion" in blob or "chot don" in blob) and not conv_ok:
+            continue
+        if ("quay lại" in blob or "quay lai" in blob or "repeat" in blob or "lap lai" in blob) and not rep_ok:
+            continue
+        if ("aov" in blob or "đơn trung bình" in blob or "don trung binh" in blob) and not (avail.get("aov") or {}).get("computable"):
+            continue
+        out.append(it)
+    return out
+
+
 def _find_column(columns: list[str], candidates: list[str]) -> str | None:
     lowered = {_normalize_text(col): col for col in columns}
     for candidate in candidates:
@@ -290,21 +666,35 @@ async def _run_deep_analysis_gen(
         return
 
     columns = list(payload.report_rows[0].keys())
-    sample_rows = payload.report_rows[:5]
+    # Buoc 1: chi can ten cot + toi da 2 dong mau — khong yeu cau model "doc het" file.
+    sample_preview = payload.report_rows[:2]
     traces: list[tuple[int, str, str, str, str, str, int, dict[str, Any]]] = []
     step_order = 1
     fallback_provider = None
     fallback_reason = None
 
-    # Buoc 1: DeepSeek phan loai loai bao cao.
+    classification: dict[str, Any] = {
+        "report_type": "generic_report",
+        "reason": None,
+        "columns_overview": [],
+        "structure_summary": "",
+    }
+
+    # Buoc 1: DeepSeek xac dinh loai bao cao + cau truc cot (khong doc toan bo du lieu).
     yield _overlay_evt(0, "started", "classify_report")
     report_type = "generic_report"
     classify_started = time.perf_counter()
     try:
         classify_prompt = (
-            "Ban la ClassifierAgent. Tra ve JSON duy nhat voi schema: "
-            '{"report_type":"sales_report|expense_report|payroll_report|generic_report","reason":"..."}.\n'
-            f"Columns: {columns}\nSample rows: {sample_rows}\n"
+            "Ban la ClassifierAgent. Chi dung danh sach ten cot va toi da 2 dong mau — KHONG can doc het toan bo hang.\n"
+            "Nhiem vu: xac dinh loai bao cao, mo ta ngan (bang tong hop / bieu do / chi tiet giao dich...), "
+            "va doan vai tro tung cot (revenue, orders, date, category, customer, price, metric_other, unknown).\n"
+            'Tra ve JSON duy nhat: {"report_type":"sales_report|expense_report|payroll_report|generic_report",'
+            '"reason":"ly do ngan",'
+            '"columns_overview":[{"name":"ten cot chinh xac trong Columns","role_guess":"..."}],'
+            '"structure_summary":"mot cau tieng Viet mo ta file"}\n'
+            f"Columns: {json.dumps(columns, ensure_ascii=False)}\n"
+            f"Sample toi da 2 dong: {json.dumps(sample_preview, ensure_ascii=False)}\n"
             "Chi tra ve object JSON, khong markdown."
         )
         classify_text = await _chat_completion_with_retry(
@@ -319,6 +709,14 @@ async def _run_deep_analysis_gen(
         )
         classify_json = _extract_json_block(classify_text) or {}
         report_type = str(classify_json.get("report_type") or "generic_report")
+        overview = _sanitize_columns_overview(classify_json.get("columns_overview"), columns)
+        structure_summary = str(classify_json.get("structure_summary") or "").strip()
+        classification = {
+            "report_type": report_type,
+            "reason": classify_json.get("reason"),
+            "columns_overview": overview,
+            "structure_summary": structure_summary,
+        }
         traces.append(
             (
                 step_order,
@@ -328,11 +726,17 @@ async def _run_deep_analysis_gen(
                 settings.DEEPSEEK_MODEL,
                 "success",
                 int((time.perf_counter() - classify_started) * 1000),
-                {"report_type": report_type, "reason": classify_json.get("reason")},
+                {"report_type": report_type, "reason": classify_json.get("reason"), "classification": classification},
             )
         )
     except Exception as exc:
         report_type = "sales_report" if any("doanh_thu" in c.lower() for c in columns) else "generic_report"
+        classification = {
+            "report_type": report_type,
+            "reason": None,
+            "columns_overview": [],
+            "structure_summary": "",
+        }
         fallback_provider = "heuristic"
         fallback_reason = f"classification failed: {exc}"
         traces.append(
@@ -357,11 +761,12 @@ async def _run_deep_analysis_gen(
     mapping_confidence: dict[str, float] = {k: 0.0 for k in VIETNAMESE_COLUMN_HINTS.keys()}
     try:
         mapping_prompt = (
-            "Ban la MapperAgent. Map columns sang canonical keys: revenue, ad_spend, orders, leads, repeat_orders. "
-            "Tra ve JSON object duy nhat theo schema "
+            "Ban la MapperAgent. Buoc nay chi chon ten cot CAN THIET de tinh KPI (khong can doc het tung o).\n"
+            "Map sang canonical keys: revenue, ad_spend, orders, leads, repeat_orders. "
+            "Tra ve JSON duy nhat: "
             '{"revenue":"column_or_null","ad_spend":"column_or_null","orders":"column_or_null","leads":"column_or_null","repeat_orders":"column_or_null"}.\n'
-            f"Columns: {columns}\nReport type: {report_type}\n"
-            "Gia tri phai la ten cot chinh xac trong danh sach Columns hoac null. Chi tra ve JSON, khong markdown."
+            f"Columns: {json.dumps(columns, ensure_ascii=False)}\nReport type: {report_type}\n"
+            "Gia tri phai la ten cot chinh xac trong Columns hoac null. Chi tra ve JSON, khong markdown."
         )
         mapping_text = await _chat_completion_with_retry(
             base_url=settings.DEEPSEEK_BASE_URL,
@@ -459,8 +864,13 @@ async def _run_deep_analysis_gen(
         data_warnings.append("Không tìm thấy cột đơn hàng. Hệ thống sẽ hạn chế các phân tích chuyển đổi.")
     if len(payload.report_rows) < 20:
         data_warnings.append("Số dòng dữ liệu dưới 20, độ tin cậy phân tích có thể thấp.")
-    if leads <= 0:
-        data_warnings.append("Không có dữ liệu lead hợp lệ, tỷ lệ chuyển đổi được tính bằng 0.")
+    if leads_col and orders_col and leads <= 0:
+        data_warnings.append("Tổng lead = 0 sau khi cộng — không tính được tỷ lệ chuyển đổi (không hiển thị 0% như kết luận).")
+    if revenue_col and len(payload.report_rows) >= 5 and revenue == 0:
+        data_warnings.append(
+            "Tổng doanh thu = 0 — kiểm tra đúng cột tiền và định dạng số (phân cách nghìn/thập phân). Độ tin ánh xạ cột doanh thu được hạ xuống."
+        )
+        mapping_confidence["revenue"] = min(float(mapping_confidence.get("revenue", 0.5)), 0.4)
     if all(score < 0.7 for score in mapping_confidence.values()):
         data_warnings.append("Khớp cột còn thấp, nên đặt lại tiêu đề cột gần với file mẫu tiếng Việt.")
 
@@ -480,6 +890,11 @@ async def _run_deep_analysis_gen(
         data_warnings=data_warnings,
     )
 
+    kpi_availability = _build_kpi_availability(mapping, revenue, ad_spend, orders, leads, repeat_orders)
+
+    # Thong ke khap bo: min/max/trung binh cot so, top gia tri cot phan loai, goi y cot khach/gia (nhieu truong hop).
+    exploratory_metrics = _exploratory_column_stats(payload.report_rows, columns)
+
     traces.append(
         (
             step_order,
@@ -489,7 +904,12 @@ async def _run_deep_analysis_gen(
             "pandas",
             "success",
             int((time.perf_counter() - metrics_started) * 1000),
-            {"rows": len(payload.report_rows), "mapping": mapping},
+            {
+                "rows": len(payload.report_rows),
+                "mapping": mapping,
+                "numeric_stats_count": len(exploratory_metrics.get("numeric_columns") or []),
+                "categorical_stats_count": len(exploratory_metrics.get("categorical_columns") or []),
+            },
         )
     )
     yield _overlay_evt(2, "finished", "compute_metrics")
@@ -525,31 +945,20 @@ async def _run_deep_analysis_gen(
                 )
             )
 
-    issues = [
-        "ROAS dang thap hon nguong an toan 2.0" if roas < 2 else "ROAS o muc chap nhan duoc",
-        "Ty le chuyen doi duoi 10%" if conversion_rate < 0.1 else "Ty le chuyen doi dang on dinh",
-        "Ty le khach quay lai duoi 20%" if repeat_rate < 0.2 else "Ty le khach quay lai kha tot",
-    ]
+    issues = _build_issues_from_kpis(kpi_availability, roas, conversion_rate, repeat_rate)
+    situations, suggested_actions = _build_situations_and_actions(
+        kpi_availability=kpi_availability,
+        kpis={
+            "roas": roas,
+            "conversion_rate": conversion_rate,
+            "repeat_rate": repeat_rate,
+        },
+        issues=issues,
+    )
 
-    insights = [
-        {
-            "title": "Hiệu quả quảng cáo cần tối ưu",
-            "severity": "Cao" if roas < 2 else "Vừa",
-            "evidence": {"roas": round(roas, 2), "baseline": 2.0},
-            "recommendation": "Cắt nhóm quảng cáo có ROAS thấp, dồn ngân sách sang kênh có tỷ lệ chuyển đổi tốt hơn.",
-        },
-        {
-            "title": "Chất lượng đầu vào và chốt đơn",
-            "severity": "Cao" if conversion_rate < 0.1 else "Thấp",
-            "evidence": {"conversion_rate": round(conversion_rate, 4), "baseline": 0.1},
-            "recommendation": "A/B test 2 ưu đãi và 2 CTA trong 7 ngày để nâng tỷ lệ chuyển đổi.",
-        },
-    ]
-    action_plan = {
-        "day_30": ["Toi uu ngan sach ads theo kenh", "Chuan hoa thong diep uu dai"],
-        "day_60": ["Danh gia cohort khach quay lai", "Tinh lai AOV theo kenh"],
-        "day_90": ["Khoa quy trinh canh bao KPI tu dong", "Lap lich review hieu qua hang tuan"],
-    }
+    # Khong seed insight template — de LLM hoac fallback rong; insight chi sau validate.
+    insights: list[dict[str, Any]] = []
+    action_plan: dict[str, list[str]] = {"day_30": [], "day_60": [], "day_90": []}
 
     # Buoc 5: Qwen dien giai ket qua. Neu fail thi fallback GPT/OpenAI.
     yield _overlay_evt(3, "started", "narrative")
@@ -565,15 +974,23 @@ async def _run_deep_analysis_gen(
             "repeat_rate": repeat_rate,
             "aov": aov,
         },
+        "kpi_availability": kpi_availability,
         "issues": issues,
         "business_name": payload.business_name,
         "industry": payload.industry,
+        "classification": classification,
+        "exploratory_metrics": exploratory_metrics,
     }
     try:
         narrative_prompt = (
             "Ban la NarratorAgent cho SMB. Tra ve JSON schema: "
             '{"insights":[{"title":"...","severity":"Cao|Vừa|Thấp","evidence":{"metric":1},"recommendation":"..."}],'
             '"action_plan_30_60_90":{"day_30":["..."],"day_60":["..."],"day_90":["..."]}}.\n'
+            "QUY TAC BAT BUOC: field kpi_availability cho biet KPI nao 'tinh duoc' (computable=true). "
+            "NEU computable=false cho roas / conversion_rate / repeat_rate thi TUYET DOI khong viet insight "
+            "ve ROAS, toi uu quang cao, ty le chuyen doi, ty le quay lai cho chi so do. "
+            "Neu khong co KPI marketing tinh duoc, tra ve insights: [] va action_plan rong hoac chi goi y bo sung cot du lieu.\n"
+            "Neu co classification va exploratory_metrics: dung so lieu thuc (min/max/trung binh) de noi, tranh khuyen nghi chung.\n"
             f"Input: {json.dumps(narrative_payload, ensure_ascii=False)}"
         )
         # Qwen tren VPS CPU thuong >30s; QWEN_TIMEOUT (.env) la giay cho moi lan doc response.
@@ -587,9 +1004,21 @@ async def _run_deep_analysis_gen(
         )
         qwen_json = _extract_json_block(qwen_text) or {}
         if isinstance(qwen_json.get("insights"), list):
-            insights = qwen_json["insights"]
+            insights = [x for x in qwen_json["insights"] if isinstance(x, dict)]
         if isinstance(qwen_json.get("action_plan_30_60_90"), dict):
-            action_plan = qwen_json["action_plan_30_60_90"]
+            raw_plan = qwen_json["action_plan_30_60_90"]
+
+            def _coerce_plan_list(key: str) -> list[str]:
+                v = raw_plan.get(key)
+                if not isinstance(v, list):
+                    return []
+                return [str(x).strip() for x in v if str(x or "").strip()]
+
+            action_plan = {
+                "day_30": _coerce_plan_list("day_30"),
+                "day_60": _coerce_plan_list("day_60"),
+                "day_90": _coerce_plan_list("day_90"),
+            }
         traces.append(
             (
                 step_order,
@@ -628,9 +1057,21 @@ async def _run_deep_analysis_gen(
                 )
                 gpt_json = _extract_json_block(gpt_text) or {}
                 if isinstance(gpt_json.get("insights"), list):
-                    insights = gpt_json["insights"]
+                    insights = [x for x in gpt_json["insights"] if isinstance(x, dict)]
                 if isinstance(gpt_json.get("action_plan_30_60_90"), dict):
-                    action_plan = gpt_json["action_plan_30_60_90"]
+                    raw_plan_g = gpt_json["action_plan_30_60_90"]
+
+                    def _coerce_plan_list_g(key: str) -> list[str]:
+                        v = raw_plan_g.get(key)
+                        if not isinstance(v, list):
+                            return []
+                        return [str(x).strip() for x in v if str(x or "").strip()]
+
+                    action_plan = {
+                        "day_30": _coerce_plan_list_g("day_30"),
+                        "day_60": _coerce_plan_list_g("day_60"),
+                        "day_90": _coerce_plan_list_g("day_90"),
+                    }
                 fallback_provider = "gpt"
                 fallback_reason = f"qwen failed: {qwen_exc}"
                 traces.append(
@@ -667,12 +1108,30 @@ async def _run_deep_analysis_gen(
 
     yield _overlay_evt(3, "finished", "narrative")
 
+    insights = _sanitize_insights_post_llm(insights, kpi_availability)
+    if not _any_core_kpi_computable(kpi_availability):
+        action_plan = {"day_30": [], "day_60": [], "day_90": []}
+    if not insights and not _any_core_kpi_computable(kpi_availability):
+        insights = [
+            {
+                "title": "Chưa đủ cơ sở cho nhận định KPI marketing",
+                "severity": "Thấp",
+                "evidence": {},
+                "recommendation": (
+                    "Hệ thống không đưa khuyến nghị về hiệu quả chi phí quảng cáo, chuyển đổi hay quay lại "
+                    "vì thiếu cột hoặc mẫu số không hợp lệ (không coi các giá trị 0 là kết luận kinh doanh). "
+                    "Hãy kiểm tra ánh xạ cột và định dạng số; xem thêm thống kê khám phá nếu có."
+                ),
+            }
+        ]
+
     # Buoc 6: Agent hau xu ly de chuan hoa ket qua cho nguoi dung Viet.
     yield _overlay_evt(4, "started", "polish_result")
     polish_started = time.perf_counter()
     polish_prompt = (
         "Ban la ResultPolisherAgent. Nhiem vu: viet lai ket qua de de hieu cho chu doanh nghiep, "
-        "giu nguyen y nghia, khong them so lieu moi. Tra ve JSON schema: "
+        "giu nguyen y nghia, khong them so lieu moi. Khong them khuyen nghi ve ROAS/quang cao/chuyen doi/quay lai "
+        "neu insight ban dau chi la template ma khong gan voi so lieu tinh duoc. Tra ve JSON schema: "
         '{"insights":[{"title":"...","severity":"Cao|Vừa|Thấp","recommendation":"..."}],'
         '"limitations":["..."]}.\n'
         f"Input: {json.dumps({'insights': insights, 'limitations': limitations}, ensure_ascii=False)}\n"
@@ -735,6 +1194,22 @@ async def _run_deep_analysis_gen(
 
     yield _overlay_evt(4, "finished", "polish_result")
 
+    insights = _sanitize_insights_post_llm(insights, kpi_availability)
+    if not _any_core_kpi_computable(kpi_availability):
+        action_plan = {"day_30": [], "day_60": [], "day_90": []}
+    if not insights and not _any_core_kpi_computable(kpi_availability):
+        insights = [
+            {
+                "title": "Chưa đủ cơ sở cho nhận định KPI marketing",
+                "severity": "Thấp",
+                "evidence": {},
+                "recommendation": (
+                    "Không có đủ cột hoặc mẫu số hợp lệ để tính các chỉ số marketing chuẩn (doanh thu/chi phí QC, chuyển đổi, quay lại). "
+                    "Vui lòng bổ sung cột và thử phân tích lại; tham khảo phần KPI trên giao diện (dòng — = không áp dụng)."
+                ),
+            }
+        ]
+
     friendly_trace_name = {
         "classify_report": "Phân loại báo cáo",
         "map_schema": "Ánh xạ cột dữ liệu",
@@ -793,11 +1268,16 @@ async def _run_deep_analysis_gen(
         "mapping_confidence": mapping_confidence,
         "insights": insights,
         "issues": issues,
+        "situations": situations,
+        "suggested_actions": suggested_actions,
         "action_plan_30_60_90": action_plan,
         "data_warnings": data_warnings,
         "data_quality_score": data_quality_score,
         "data_quality_breakdown": data_quality_breakdown,
         "limitations": limitations,
+        "classification": classification,
+        "exploratory_metrics": exploratory_metrics,
+        "kpi_availability": kpi_availability,
         "fallback": {
             "provider": fallback_provider,
             "reason": fallback_reason,

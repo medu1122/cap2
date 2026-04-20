@@ -9,6 +9,7 @@ from models.user import User
 from models.campaign import Campaign
 from models.content_item import ContentItem
 from pydantic import BaseModel
+from services.publish_schedule import suggest_reschedule_dates
 import uuid
 
 router = APIRouter()
@@ -51,7 +52,7 @@ async def get_calendar(
     )
 
     query = (
-        select(ContentItem, Campaign.campaign_name)
+        select(ContentItem, Campaign.campaign_name, Campaign.deadline)
         .join(Campaign, Campaign.id == ContentItem.campaign_id)
         .join(
             latest_version_sq,
@@ -77,7 +78,7 @@ async def get_calendar(
     rows = result.all()
 
     items = []
-    for content_item, campaign_name in rows:
+    for content_item, campaign_name, campaign_deadline in rows:
         content_json = content_item.content_json or {}
         preview = (
             content_json.get("copy")
@@ -89,6 +90,7 @@ async def get_calendar(
             "id": str(content_item.id),
             "campaign_id": str(content_item.campaign_id),
             "campaign_name": campaign_name,
+            "campaign_deadline": str(campaign_deadline),
             "channel": content_item.channel,
             "status": content_item.status,
             "scheduled_date": str(content_item.scheduled_date),
@@ -98,6 +100,57 @@ async def get_calendar(
         })
 
     return {"month": month, "items": items}
+
+
+@router.get("/items/{item_id}/suggest-dates")
+async def suggest_dates_for_item(
+    item_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Gợi ý ngày đăng hợp lý theo kênh, deadline chiến dịch và ngày đã có bài khác cùng chiến dịch.
+    """
+    result = await db.execute(
+        select(ContentItem, Campaign.deadline)
+        .join(Campaign, Campaign.id == ContentItem.campaign_id)
+        .where(ContentItem.id == item_id, Campaign.user_id == current_user.id)
+    )
+    row = result.one_or_none()
+    if not row:
+        raise HTTPException(404, "Nội dung không tìm thấy")
+
+    item, campaign_deadline = row
+
+    sib = await db.execute(
+        select(ContentItem.scheduled_date).where(
+            ContentItem.campaign_id == item.campaign_id,
+            ContentItem.id != item.id,
+            ContentItem.scheduled_date.is_not(None),
+        )
+    )
+    avoid: set[date] = {r[0] for r in sib.all() if r[0] is not None}
+
+    suggestions = suggest_reschedule_dates(
+        channel=item.channel,
+        deadline=campaign_deadline,
+        avoid_dates=avoid,
+        limit=6,
+    )
+    horizon = max((campaign_deadline - date.today()).days, 0)
+    return {
+        "content_item_id": str(item.id),
+        "channel": item.channel,
+        "campaign_deadline": str(campaign_deadline),
+        "horizon_days": horizon,
+        "avoid_dates": sorted(d.isoformat() for d in avoid),
+        "suggestions": suggestions,
+        "rules_summary": (
+            "Hệ thống ưu tiên ngày trong tuần phù hợp từng kênh (Facebook: T3/T5/T7; Email: T3/T5; "
+            "Video: T4/T6/T7), tránh lễ cố định VN, hạn chế email cuối tuần, và tránh trùng ngày với "
+            "bài khác trong cùng chiến dịch."
+        ),
+    }
 
 
 @router.patch("/{item_id}")

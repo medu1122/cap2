@@ -16,13 +16,46 @@ interface InsightRun {
   created_at: string;
 }
 
+interface SuggestedAction {
+  id: string;
+  title: string;
+  priority: string;
+  target_segment: string;
+  reason: string;
+  expected_impact?: string;
+}
+
+interface InsightRunResult {
+  run_id: string;
+  suggested_actions?: SuggestedAction[];
+}
+
 const STATUS_LABELS: Record<string, string> = {
   completed: "Hoàn tất",
   failed: "Thất bại",
+  success: "Thành công",
 };
+
+function toCampaignFromActionHref(runId: string, action: SuggestedAction): string {
+  const normalizedSegment = (action.target_segment || "unknown").toLowerCase();
+  const channels = normalizedSegment === "inactive" || normalizedSegment === "vip" ? "email" : "facebook_post";
+  const params = new URLSearchParams({
+    source_insight_run_id: runId,
+    source_customer_segment: normalizedSegment,
+    channels,
+    campaign_name: `Action: ${action.title}`.slice(0, 120),
+    objective: action.reason || action.title,
+    offer_or_hook: action.expected_impact || "",
+    additional_notes: `[INSIGHT_ACTION] ${action.title}`,
+  });
+  return `/campaigns/new?${params.toString()}`;
+}
 
 export default function InsightActionsPage() {
   const [runs, setRuns] = useState<InsightRun[]>([]);
+  const [actionsByRun, setActionsByRun] = useState<Record<string, SuggestedAction[]>>({});
+  const [loadingRunIds, setLoadingRunIds] = useState<Record<string, boolean>>({});
+  const [runErrors, setRunErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,6 +76,24 @@ export default function InsightActionsPage() {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function handleLoadActions(runId: string) {
+    if (actionsByRun[runId]) return;
+    setLoadingRunIds((prev) => ({ ...prev, [runId]: true }));
+    setRunErrors((prev) => ({ ...prev, [runId]: "" }));
+    try {
+      const result = await api.get<InsightRunResult>(`/insights/a2a/runs/${runId}/result`);
+      setActionsByRun((prev) => ({
+        ...prev,
+        [runId]: result.suggested_actions ?? [],
+      }));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Không tải được action cho run này";
+      setRunErrors((prev) => ({ ...prev, [runId]: msg }));
+    } finally {
+      setLoadingRunIds((prev) => ({ ...prev, [runId]: false }));
+    }
+  }
 
   return (
     <div className="p-6 max-w-5xl space-y-5">
@@ -97,6 +148,45 @@ export default function InsightActionsPage() {
                 </span>
               </div>
               <p className="text-xs text-gray-400 mt-2">{new Date(run.created_at).toLocaleString("vi-VN")}</p>
+              <div className="mt-3 space-y-2">
+                <button
+                  className="btn-secondary text-xs"
+                  onClick={() => void handleLoadActions(run.id)}
+                  disabled={loadingRunIds[run.id]}
+                >
+                  {loadingRunIds[run.id] ? "Đang tải action..." : "Xem action đề xuất"}
+                </button>
+                {runErrors[run.id] ? (
+                  <p className="text-xs text-red-600">{runErrors[run.id]}</p>
+                ) : null}
+                {actionsByRun[run.id] && (
+                  actionsByRun[run.id].length === 0 ? (
+                    <p className="text-xs text-gray-500">Run này chưa có action đề xuất.</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {actionsByRun[run.id].map((action) => (
+                        <li key={action.id} className="border border-green-200 bg-green-50/40 p-3">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <p className="font-medium text-gray-900 text-sm">{action.title}</p>
+                              <p className="mt-1 text-xs text-gray-600">
+                                Ưu tiên: {action.priority} | Segment: {action.target_segment}
+                              </p>
+                            </div>
+                            <a
+                              className="btn-primary text-xs"
+                              href={toCampaignFromActionHref(run.id, action)}
+                            >
+                              Tạo campaign
+                            </a>
+                          </div>
+                          <p className="mt-2 text-sm text-gray-700">{action.reason}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  )
+                )}
+              </div>
             </div>
           ))}
         </div>

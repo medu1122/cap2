@@ -23,7 +23,11 @@ class Brand(Base):
     preferred_cta: Mapped[str | None] = mapped_column(String(255))
     preferred_salutation: Mapped[str | None] = mapped_column(String(50))
     sample_post: Mapped[str | None] = mapped_column(Text)
+    contact_email: Mapped[str | None] = mapped_column(String(255))
+    phone: Mapped[str | None] = mapped_column(String(64))
+    address: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     user: Mapped["User"] = relationship("User", back_populates="brands")
+    campaigns: Mapped[list["Campaign"]] = relationship("Campaign", back_populates="brand")

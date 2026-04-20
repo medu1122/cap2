@@ -1,5 +1,7 @@
 # F12 - Admin Operations
 
+> **Dinh huong moi (`toanbotinhnang-updatemoi.md`):** F12 **giu** de van hanh pipeline insight / action / workflow va audit. Khong thay the bang tinh nang end-user; bo sung giam sat khi co SMTP marketing bulk va job segment.
+
 ## 1) Bai toan thuc te
 Khi he thong co nhieu user va workflow AI, can co vai tro admin de giam sat suc khoe he thong, xu ly su co va audit thao tac van hanh.
 
@@ -36,3 +38,22 @@ Khi he thong co nhieu user va workflow AI, can co vai tro admin de giam sat suc 
 - [ ] Admin lock/unlock duoc user.
 - [ ] Admin retry duoc workflow jobs loi.
 - [ ] Tat ca thao tac admin duoc ghi audit log.
+
+## 8) Pham vi user-facing
+
+- User thuong khong thao tac truc tiep F12; day la pham vi cho admin/operator.
+- Admin theo doi health insight/action/workflow, retry job loi, audit hanh dong.
+- Admin can co page giam sat tap trung de giam MTTR khi su co.
+- Ngoai pham vi dot nay: IAM phuc tap da cap doanh nghiep.
+
+## 9) Clean code checklist
+
+- [ ] Gom middleware ghi admin audit log dung 1 co che.
+- [ ] Tach ro namespace `/admin/*` khoi API nguoi dung thuong.
+- [ ] Chuan hoa error code cho cac thao tac admin nhay cam.
+- [ ] Bo sung test role guard cho toan bo endpoint admin.
+
+## 10) Cau hinh env lien quan
+
+- Khong co env rieng bat buoc cho F12 o dot nay.
+- Neu bo sung monitor can gui canh bao email, tai su dung `SMTP_*` voi role-based policy.

@@ -19,8 +19,8 @@ _qwen_client = AsyncOpenAI(
     api_key="ollama",
 )
 _openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
-QWEN_MODEL  = os.getenv("QWEN_MODEL", "qwen2.5:7b")
-QWEN_TIMEOUT = int(os.getenv("QWEN_TIMEOUT", "15"))
+QWEN_MODEL  = os.getenv("QWEN_MODEL", "qwen2.5:14b")
+QWEN_TIMEOUT = int(os.getenv("QWEN_TIMEOUT", "180"))
 
 
 class DescribeRequest(BaseModel):

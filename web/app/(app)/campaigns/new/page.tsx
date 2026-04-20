@@ -1,8 +1,7 @@
 "use client";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Sparkles, Loader2 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
 
@@ -14,9 +13,17 @@ const CHANNELS = [
 
 const today = new Date().toISOString().split("T")[0];
 
+interface BrandOption {
+  id: string;
+  brand_name: string;
+}
+
 export default function NewCampaignPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const [brands, setBrands] = useState<BrandOption[]>([]);
   const [form, setForm] = useState({
+    brand_id: "",
     campaign_name: "",
     objective: "",
     product_or_service: "",
@@ -26,10 +33,52 @@ export default function NewCampaignPage() {
     channels: [] as string[],
     image_required: false,
     additional_notes: "",
+    source_insight_run_id: "",
+    source_customer_segment: "",
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingBrands, setLoadingBrands] = useState(true);
   const [suggesting, setSuggesting] = useState(false);
+
+  useEffect(() => {
+    api.get<BrandOption[]>("/brands")
+      .then((list) => {
+        setBrands(list);
+        if (list.length > 0) {
+          setForm((f) => ({ ...f, brand_id: f.brand_id || list[0].id }));
+        }
+      })
+      .catch(() => setError("Không tải được danh sách thương hiệu"))
+      .finally(() => setLoadingBrands(false));
+  }, []);
+
+  useEffect(() => {
+    const sourceInsightRunId = (searchParams.get("source_insight_run_id") || "").trim();
+    const sourceCustomerSegment = (searchParams.get("source_customer_segment") || "").trim().toLowerCase();
+    const campaignName = (searchParams.get("campaign_name") || "").trim();
+    const objective = (searchParams.get("objective") || "").trim();
+    const offerOrHook = (searchParams.get("offer_or_hook") || "").trim();
+    const additionalNotes = (searchParams.get("additional_notes") || "").trim();
+    const channelsRaw = (searchParams.get("channels") || "").trim();
+    const channelsFromQuery = channelsRaw
+      ? channelsRaw
+          .split(",")
+          .map((x) => x.trim())
+          .filter((x) => ["facebook_post", "email", "video_script"].includes(x))
+      : [];
+
+    setForm((f) => ({
+      ...f,
+      source_insight_run_id: sourceInsightRunId || f.source_insight_run_id,
+      source_customer_segment: sourceCustomerSegment || f.source_customer_segment,
+      campaign_name: campaignName || f.campaign_name,
+      objective: objective || f.objective,
+      offer_or_hook: offerOrHook || f.offer_or_hook,
+      additional_notes: additionalNotes || f.additional_notes,
+      channels: channelsFromQuery.length > 0 ? channelsFromQuery : f.channels,
+    }));
+  }, [searchParams]);
 
   function update(key: string, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -78,12 +127,17 @@ export default function NewCampaignPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!form.brand_id) { setError("Vui lòng chọn thương hiệu."); return; }
     if (form.channels.length === 0) { setError("Vui lòng chọn ít nhất 1 kênh."); return; }
     setError("");
     setLoading(true);
     try {
+      const normalizedSegment = form.source_customer_segment.trim().toLowerCase();
+      const segmentAllowed = ["vip", "potential", "inactive", "unknown"].includes(normalizedSegment);
       const payload = {
         ...form,
+        source_insight_run_id: form.source_insight_run_id.trim() || undefined,
+        source_customer_segment: segmentAllowed ? normalizedSegment : undefined,
         additional_notes: [
           form.additional_notes?.trim() || "",
           form.image_required ? "[IMAGE_REQUIRED] Người dùng yêu cầu gợi ý prompt tạo ảnh cho chiến dịch." : "",
@@ -105,8 +159,8 @@ export default function NewCampaignPage() {
     <div className="p-6 max-w-2xl">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
-          <Link href="/campaigns" className="text-gray-400 hover:text-gray-700">
-            <ChevronLeft size={18} />
+          <Link href="/campaigns" className="text-sm text-gray-500 hover:text-gray-800">
+            ← Quay lại
           </Link>
           <h1>Tạo chiến dịch mới</h1>
         </div>
@@ -125,11 +179,51 @@ export default function NewCampaignPage() {
         />
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-5">
+      <form
+        onSubmit={handleSubmit}
+        className="space-y-5 [&_.input]:!rounded-none [&_.btn-primary]:!rounded-none [&_.btn-secondary]:!rounded-none"
+      >
+        <div>
+          <label className="label">Thương hiệu *</label>
+          <select
+            className="input"
+            value={form.brand_id}
+            onChange={(e) => update("brand_id", e.target.value)}
+            required
+            disabled={loadingBrands || brands.length === 0}
+          >
+            {brands.length === 0 ? (
+              <option value="">Chưa có thương hiệu</option>
+            ) : (
+              brands.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.brand_name}
+                </option>
+              ))
+            )}
+          </select>
+          {brands.length === 0 && !loadingBrands && (
+            <p className="text-xs text-red-600 mt-1">
+              Bạn cần tạo thương hiệu trước ở Brand Vault.
+              {" "}
+              <Link href="/brand-vault" className="underline">Mở Brand Vault</Link>
+            </p>
+          )}
+        </div>
+
         <div>
           <label className="label">Tên chiến dịch *</label>
           <input className="input" value={form.campaign_name} onChange={(e) => update("campaign_name", e.target.value)} placeholder="Ra mắt cà phê mới" required />
         </div>
+
+        {form.source_insight_run_id ? (
+          <div className="border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
+            Campaign này được tạo từ Insight run: <span className="font-medium">{form.source_insight_run_id}</span>
+            {form.source_customer_segment ? (
+              <span> | Segment: <span className="font-medium">{form.source_customer_segment}</span></span>
+            ) : null}
+          </div>
+        ) : null}
 
         <div>
           <div className="flex items-center justify-between mb-1">
@@ -138,12 +232,9 @@ export default function NewCampaignPage() {
               type="button"
               onClick={handleAISuggest}
               disabled={suggesting}
-              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50 transition-colors"
+              className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
             >
-              {suggesting
-                ? <><Loader2 size={12} className="animate-spin" /> AI đang gợi ý...</>
-                : <><Sparkles size={12} /> AI điền giúp tất cả</>
-              }
+              {suggesting ? "AI đang gợi ý..." : "AI điền giúp tất cả"}
             </button>
           </div>
           <textarea className="input min-h-[72px] resize-none" value={form.objective} onChange={(e) => update("objective", e.target.value)} placeholder="Giới thiệu sản phẩm mới, tăng nhận diện thương hiệu..." required />
@@ -187,7 +278,7 @@ export default function NewCampaignPage() {
           </div>
         </div>
 
-        <div className="card border-gray-200 bg-gray-50/60">
+        <div className="border border-gray-200 bg-gray-50/60 p-3 rounded-none">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -197,9 +288,6 @@ export default function NewCampaignPage() {
             />
             <span className="text-sm text-gray-800">Cần hệ thống gợi ý prompt tạo ảnh</span>
           </label>
-          <p className="text-xs text-gray-500 mt-1">
-            Nếu bật, AI sẽ chạy 2 bước A2A: Qwen tạo prompt ảnh ban đầu, sau đó GPT tối ưu prompt cuối.
-          </p>
         </div>
 
         <div>

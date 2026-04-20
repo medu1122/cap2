@@ -9,6 +9,9 @@ API_BASE = os.getenv("INTERNAL_API_URL", "http://api:8000")
 def build_brand_context_block(brand: dict) -> str:
     forbidden = ", ".join(brand.get("forbidden_words") or []) or "không có"
     products = ", ".join(brand.get("key_products") or []) or "chưa chỉ định"
+    email = (brand.get("contact_email") or "").strip() or "chưa có"
+    phone = (brand.get("phone") or "").strip() or "chưa có"
+    addr = (brand.get("address") or "").strip() or "chưa có"
     return (
         f"Brand: {brand.get('brand_name', '')}\n"
         f"Mô tả: {brand.get('brand_description', '')}\n"
@@ -17,7 +20,10 @@ def build_brand_context_block(brand: dict) -> str:
         f"Sản phẩm chính: {products}\n"
         f"Từ cấm (KHÔNG được dùng): {forbidden}\n"
         f"CTA ưa dùng: {brand.get('preferred_cta', 'Liên hệ ngay')}\n"
-        f"Cách xưng hô: {brand.get('preferred_salutation', 'bạn')}"
+        f"Cách xưng hô: {brand.get('preferred_salutation', 'bạn')}\n"
+        f"Email liên hệ: {email}\n"
+        f"SĐT: {phone}\n"
+        f"Địa chỉ: {addr}"
     )
 
 

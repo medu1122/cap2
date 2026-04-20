@@ -37,3 +37,41 @@ SMB can biet "hom nay dang gi, kenh nao, trang thai nao" de phoi hop van hanh nh
 - [ ] User loc duoc lich theo kenh va status dung nhu mong doi.
 - [ ] Week/month view khong mat du lieu va khong duplicate.
 - [ ] Reschedule cap nhat dung DB va UI phan hoi ngay.
+
+---
+
+## 8) Dinh huong san pham moi — *Smart Campaign Planner* (`toanbotinhnang-updatemoi.md`)
+
+| Muc trong tai lieu moi | Trang thai vs F07 | Giu / Bo |
+|---|---|---|
+| Lich noi dung da duyet, doi lich | Da co day du | **Giu** |
+| Goi y lich theo hanh vi khach (inactive -> re-engagement, VIP -> cham soc) | Chua co engine rule gan voi CRM/insight | **Can lam moi** (input tu F03/F10) |
+
+**Plan coding:**
+1. Service `suggest_slots` (rule-based dau tien): inactive -> uu tien 3-7 ngay toi; VIP -> spacing deu.
+2. API: `GET /calendar/suggestions?campaign_id=` hoac embed trong campaign detail.
+3. UI: panel “De xuat lich” + apply bulk reschedule.
+4. Clean code: tach logic query calendar vs reminder SMTP (khong tron business rule vao `calendar_reminder_service`).
+
+**Khong can:** toi uu “gio cao diem” bang ML trong MVP — rule + config la du cho thuyet trinh.
+
+## 9) Pham vi user-facing
+
+- User xem lich theo thang/tuan va loc theo kenh/trang thai.
+- User doi lich noi dung nhanh tren UI.
+- User nhan de xuat lich rule-based khi tao campaign tu insight/segment.
+- Ngoai pham vi dot nay: toi uu lich bang machine learning phuc tap.
+
+## 10) Clean code checklist
+
+- [ ] Tach service `calendar_query` va `calendar_suggestion` ro rang.
+- [ ] Khong dat business rule campaign trong `calendar_reminder_service`.
+- [ ] Chuan hoa date-time timezone handling giua API va UI.
+- [ ] Bo sung integration tests cho month/week/filter + suggestion apply.
+
+## 11) Cau hinh env lien quan
+
+- Reminder:
+  - `CALENDAR_REMINDER_ENABLED`
+  - `CALENDAR_REMINDER_HOUR`
+  - `SMTP_*` (neu gui nhac qua email)

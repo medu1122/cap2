@@ -18,6 +18,9 @@ class BrandUpsert(BaseModel):
     preferred_cta: str | None = None
     preferred_salutation: str | None = None
     sample_post: str | None = None
+    contact_email: str | None = None
+    phone: str | None = None
+    address: str | None = None
 
 
 class BrandOut(BrandUpsert):

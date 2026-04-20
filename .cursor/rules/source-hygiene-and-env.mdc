@@ -22,3 +22,13 @@ alwaysApply: true
 - Ưu tiên code đơn giản, dễ đọc, tên biến/hàm rõ nghĩa.
 - Với đoạn logic khó, thêm comment ngắn bằng tiếng Việt để người đọc hiểu nhanh.
 - Tránh comment thừa, chỉ giải thích chỗ khó hoặc quyết định quan trọng.
+
+# Quy tắc copy / micro-text trên UI
+
+- Không thêm đoạn mô tả phụ dài nhiều dòng ngay dưới label (kiểu “giải thích quá tay” trên form).
+- Ưu tiên: label rõ + placeholder gọn; chi tiết nghiệp vụ đưa vào Help dialog hoặc tài liệu `docs/final`, không nhồi vào giao diện.
+
+# Quy tắc migration / database
+
+- Không tự tạo thêm file migration trong `api/alembic/versions` nếu user không yêu cầu explicit.
+- Khi cần thay đổi schema DB, ưu tiên ghi câu SQL trực tiếp trong chat để user tự copy/paste chạy trên database.

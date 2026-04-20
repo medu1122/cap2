@@ -70,7 +70,7 @@ Bắt đầu đọc mỗi tính năng từ file `README.md` trong thư mục tư
 | Backend API | FastAPI (Python 3.11+), SQLAlchemy 2.x async, Pydantic v2 |
 | Agent Service | FastAPI, LangChain / CrewAI pattern, httpx |
 | Database | PostgreSQL 16 (JSONB, UUID, ARRAY) — schema mo rong cho workflow schedule va customer list (xem [database-overview.md](02-architecture/database-overview.md)) |
-| AI Models | OpenAI GPT-4o-mini (Strategy/Critic), Qwen 2.5 7B self-hosted (Writer) |
+| AI Models | Qwen 2.5 14B self-hosted (local primary), OpenAI GPT fallback cho case kho / khi local loi |
 | Infrastructure | Docker Compose, Alembic migrations, Cloudinary (campaign image storage) |
 
 ---
@@ -125,3 +125,12 @@ He thong duoc cap nhat mo hinh van hanh co vai tro `admin` ben canh user doanh n
 - API bo sung:
   - `GET /insights/a2a/runs/{run_id}/result`
   - `POST /insights/a2a/runs/{run_id}/reanalyze`
+
+## Cap nhat model strategy (2026-04)
+
+- Huong van hanh moi: **1 model local chinh + GPT fallback**, thay vi giu 2 model local cung luc.
+- Cau hinh de xuat cho VPS 12GB RAM:
+  - `QWEN_MODEL=qwen2.5:14b`
+  - `DEEPSEEK_MODEL=qwen2.5:14b` (giu bien de tuong thich code hien tai)
+  - `OPENAI_API_KEY` bat buoc neu muon fallback cho bai toan kho.
+- Luu y: parse CSV/XLSX nen xu ly co cau truc truoc (schema/map/KPI), sau do moi dua context vao model de phan tich sau.

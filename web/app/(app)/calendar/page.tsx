@@ -1,9 +1,9 @@
 "use client";
-import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Copy, CalendarDays, Check } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, Copy, CalendarDays, Check, Sparkles } from "lucide-react";
 import { api } from "@/lib/api-client";
-import { STATUS_COLORS, STATUS_LABELS, CHANNEL_LABELS, cn } from "@/lib/utils";
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, isToday } from "date-fns";
+import { STATUS_COLORS, STATUS_LABELS, CHANNEL_LABELS, cn, formatDate } from "@/lib/utils";
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, isToday, parseISO } from "date-fns";
 import { vi } from "date-fns/locale";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
 
@@ -11,12 +11,21 @@ interface CalendarItem {
   id: string;
   campaign_id: string;
   campaign_name: string;
+  campaign_deadline?: string;
   channel: string;
   status: string;
   scheduled_date: string;
   content_preview: string;
   copy_text: string;
   content_json: Record<string, string>;
+}
+
+interface SuggestDatesResponse {
+  suggestions: { date: string; score: number; reasons: string[] }[];
+  rules_summary: string;
+  horizon_days: number;
+  campaign_deadline: string;
+  avoid_dates: string[];
 }
 
 const CHANNEL_DOT: Record<string, string> = {
@@ -37,8 +46,22 @@ export default function CalendarPage() {
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduling, setRescheduling] = useState(false);
   const [rescheduleMsg, setRescheduleMsg] = useState("");
+  const [suggestData, setSuggestData] = useState<SuggestDatesResponse | null>(null);
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  const [suggestErr, setSuggestErr] = useState("");
 
   const monthStr = format(currentDate, "yyyy-MM");
+
+  const overloadedDays = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const it of items) {
+      map[it.scheduled_date] = (map[it.scheduled_date] || 0) + 1;
+    }
+    return Object.entries(map)
+      .filter(([, n]) => n >= 2)
+      .map(([d, n]) => ({ date: d, count: n }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [items]);
 
   function loadCalendar() {
     setLoading(true);
@@ -67,13 +90,31 @@ export default function CalendarPage() {
   function selectItem(item: CalendarItem) {
     if (selected?.id === item.id) {
       setSelected(null);
+      setSuggestData(null);
+      setSuggestErr("");
     } else {
       setSelected(item);
       setRescheduleDate(item.scheduled_date);
       setRescheduleMsg("");
       setCopied(false);
+      setSuggestData(null);
+      setSuggestErr("");
     }
   }
+
+  useEffect(() => {
+    if (!selected) {
+      setSuggestLoading(false);
+      return;
+    }
+    setSuggestLoading(true);
+    setSuggestErr("");
+    api
+      .get<SuggestDatesResponse>(`/calendar/items/${selected.id}/suggest-dates`)
+      .then(setSuggestData)
+      .catch(() => setSuggestErr("Không tải được gợi ý ngày."))
+      .finally(() => setSuggestLoading(false));
+  }, [selected?.id]);
 
   function handleCopy() {
     if (!selected) return;
@@ -139,9 +180,6 @@ export default function CalendarPage() {
             <CalendarDays size={20} className="text-gray-500" />
             Lịch đăng nội dung
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            Lịch này lấy từ nội dung đã duyệt của chiến dịch; hệ thống phân tích lịch ngay từ lúc tạo chiến dịch.
-          </p>
         </div>
         <div className="flex items-center gap-3">
           <HelpDialogButton
@@ -150,8 +188,8 @@ export default function CalendarPage() {
             steps={[
               "Dùng bộ lọc để xem theo kênh hoặc trạng thái.",
               "Đổi chế độ Tháng/Tuần để quan sát theo nhu cầu.",
-              "Bấm vào một nội dung để xem chi tiết và dời lịch.",
-              "Sau khi dời lịch thành công, dữ liệu được lưu và không mất khi F5.",
+              "Bấm một nội dung: cột phải hiện gợi ý ngày (theo kênh + deadline + tránh trùng bài cùng chiến dịch).",
+              "Bấm ngày gợi ý hoặc chọn ngày tay rồi Lưu; dữ liệu giữ sau F5.",
             ]}
           />
           <div className="flex items-center gap-2">
@@ -191,6 +229,18 @@ export default function CalendarPage() {
       {!loading && items.length === 0 && (
         <div className="mb-4 text-sm text-gray-400 px-1">
           Chưa có nội dung nào được lên lịch cho tháng này. Tạo và duyệt chiến dịch để nội dung xuất hiện ở đây.
+        </div>
+      )}
+
+      {!loading && overloadedDays.length > 0 && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+          <span className="font-medium">Nhiều bài cùng một ngày trong tháng này:</span>{" "}
+          {overloadedDays.map(({ date, count }) => (
+            <span key={date} className="ml-1">
+              {format(parseISO(date), "d/M", { locale: vi })} ({count} bài)
+            </span>
+          ))}
+          . Cân nhắc dời lịch để tránh dồn đăng.
         </div>
       )}
 
@@ -253,6 +303,11 @@ export default function CalendarPage() {
               <div>
                 <p className="text-xs text-gray-500">Chiến dịch</p>
                 <p className="text-sm font-medium">{selected.campaign_name}</p>
+                {selected.campaign_deadline && (
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Deadline: {formatDate(selected.campaign_deadline)}
+                  </p>
+                )}
               </div>
 
               <div className="flex gap-2 items-center flex-wrap">
@@ -276,7 +331,56 @@ export default function CalendarPage() {
               </button>
 
               <div className="border-t border-gray-100 pt-3 space-y-2">
-                <p className="text-xs text-gray-500 font-medium">Dời lịch đăng</p>
+                <p className="text-xs text-gray-500 font-medium flex items-center gap-1">
+                  <Sparkles size={12} className="text-amber-600" />
+                  Gợi ý ngày đăng
+                </p>
+                {suggestLoading && <p className="text-xs text-gray-400">Đang phân tích…</p>}
+                {suggestErr && <p className="text-xs text-red-600">{suggestErr}</p>}
+                {suggestData && !suggestLoading && (
+                  <div className="space-y-2">
+                    {suggestData.horizon_days <= 1 && (
+                      <p className="text-xs text-amber-800 bg-amber-50 rounded px-2 py-1">
+                        Khoảng tới deadline rất ngắn — AI có thể đã xếp nhiều kênh cùng ngày. Nên đặt deadline xa
+                        hơn vài ngày ở chiến dịch sau để dàn đều tự động.
+                      </p>
+                    )}
+                    {suggestData.avoid_dates.length > 0 && (
+                      <p className="text-xs text-gray-500">
+                        Tránh trùng với {suggestData.avoid_dates.length} ngày đã có bài khác trong cùng chiến dịch.
+                      </p>
+                    )}
+                    <p className="text-[11px] leading-snug text-gray-500">{suggestData.rules_summary}</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {suggestData.suggestions.map((s) => (
+                        <button
+                          key={s.date}
+                          type="button"
+                          onClick={() => {
+                            setRescheduleDate(s.date);
+                            setRescheduleMsg("");
+                          }}
+                          className={cn(
+                            "rounded border px-2 py-1 text-[11px] transition-colors",
+                            rescheduleDate === s.date
+                              ? "border-blue-500 bg-blue-50 text-blue-900"
+                              : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                          )}
+                          title={s.reasons.slice(0, 3).join(" ")}
+                        >
+                          {format(parseISO(s.date), "EEE d/M", { locale: vi })}
+                        </button>
+                      ))}
+                    </div>
+                    {suggestData.suggestions[0] && (
+                      <p className="text-[11px] text-gray-500 leading-relaxed">
+                        {suggestData.suggestions[0].reasons.slice(0, 2).join(" ")}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <p className="text-xs text-gray-500 font-medium pt-1">Dời lịch đăng</p>
                 <input
                   type="date"
                   value={rescheduleDate}

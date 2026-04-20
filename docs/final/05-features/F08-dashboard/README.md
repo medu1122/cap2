@@ -28,3 +28,34 @@ Tinh nang nay tong hop so lieu dot quang ba va noi dung, giup nguoi dung theo do
 - Them bieu do truc quan hon cho xu huong theo thoi gian.
 - Bo sung cache ngan cho endpoint thong ke de giam tai.
 - Tach ro vai tro: dashboard cho tong quan marketing, insights cho phan tich bao cao da nap.
+
+---
+
+## Dinh huong san pham moi (`toanbotinhnang-updatemoi.md`)
+
+| Muc §1 “Dashboard phan tich” | Giai phap | Giu / Bo |
+|---|---|---|
+| KPI tong quan + huong nguoi dung den insight | F08 = **van hanh marketing**; phan tich file = **/insights** | **Giu** tach bach |
+
+**Plan coding:** them 1-2 widget “Huong dan hanh dong” (link toi `/insights`, `/customer-lists`) thay vi nhan insight nang tren dashboard. Xoa code dead neu con endpoint/widget AI summary khong dung.
+
+**Khong can:** nhan ban pipeline F11 tren dashboard.
+
+## 9) Pham vi user-facing
+
+- User vao dashboard de nam nhanh KPI van hanh marketing.
+- User duoc dieu huong sang `/insights` va `/customer-lists` khi can hanh dong tiep.
+- User khong phai xu ly phan tich file nang ngay tren dashboard.
+- Ngoai pham vi dot nay: xay dashboard data science phuc tap.
+
+## 10) Clean code checklist
+
+- [ ] Xoa widget/endpoint AI summary cu khong con su dung.
+- [ ] Tach ro API KPI tong quan va API channel insights.
+- [ ] Toi uu query thong ke va bo sung cache ngan.
+- [ ] Chuan hoa ten chi so hien thi giua FE va BE.
+
+## 11) Cau hinh env lien quan
+
+- Khong co env rieng cho F08.
+- Neu co widget AI tom tat tro lai, phai tai su dung dung model router hien tai (khong hardcode model rieng).

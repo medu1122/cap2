@@ -39,3 +39,45 @@ SMB thuong mo ta campaign bang cach roi rac (chat, ghi chu, file). Tinh nang nay
 - [ ] User tao duoc campaign voi dau vao hop le.
 - [ ] Input sai duoc bao loi ro ngay tren form.
 - [ ] Campaign van duoc theo doi dung trang thai neu AI dispatch co van de.
+
+---
+
+## 8) Dinh huong san pham moi — *Campaign + Smart Planner + Execution* (`toanbotinhnang-updatemoi.md`)
+
+| Muc trong tai lieu moi | Trang thai vs F03 | Giu / Bo |
+|---|---|---|
+| §4 Tao noi dung email / caption (AI) | Luong brief -> F04 da phu hop | **Giu** |
+| §5 Smart Campaign Planner (goi y lich theo rule khach) | Brief + deadline co; **chua** goi y lich tu segment inactive/VIP | **Can lam moi** (gan F07 + F10) |
+| §4 / §6 Hinh anh | Tao/upload anh campaign da co (Cloudinary / local) | **Giu**; mo rong “caption tu anh” la optional sau |
+
+**Plan coding:**
+1. Optional fields campaign: `source_insight_run_id`, `source_customer_segment` (JSON) de trace “tu dau ra campaign”.
+2. Wizard buoc 2: “Goi y lich” — doc rule tu F10 segment + map sang `scheduled_date` goi y (user confirm).
+3. Clean code: thong nhat message loi validation (api + fe); xoa dead code path preview anh neu khong dung.
+
+**Khong can:** mo hinh “template campaign” phuc tap neu chua co user test — uu tien noi insight + segment truoc.
+
+## 9) Pham vi user-facing
+
+- User tao campaign tu form brief co cau truc.
+- User co the tao campaign tu action goi y (insight/segment) thay vi nhap tu dau.
+- User thay ro trang thai campaign neu AI dispatch tre/that bai.
+- Ngoai pham vi dot nay: builder template campaign phuc tap.
+
+## 10) Clean code checklist
+
+- [ ] Chuan hoa 1 format error response cho validation + dispatch.
+- [ ] Tach logic mapping payload campaign tu form/action thanh service dung chung.
+- [ ] Xoa code path media preview khong con dung (neu co).
+- [ ] Dong bo enum/channel list giua FE form va BE schema.
+
+## 11) Cau hinh env lien quan
+
+- Media:
+  - `CLOUDINARY_CLOUD_NAME`
+  - `CLOUDINARY_API_KEY`
+  - `CLOUDINARY_API_SECRET`
+- Model dispatch/fallback:
+  - `QWEN_MODEL=qwen2.5:14b`
+  - `DEEPSEEK_MODEL=qwen2.5:14b` (compat)
+  - `OPENAI_API_KEY`

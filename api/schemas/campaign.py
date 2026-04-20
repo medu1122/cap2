@@ -7,6 +7,7 @@ VALID_STATUSES = ["pending_agent", "running", "pending_approval", "approved", "p
 
 
 class CampaignCreate(BaseModel):
+    brand_id: uuid.UUID
     campaign_name: str
     objective: str
     product_or_service: str
@@ -15,6 +16,8 @@ class CampaignCreate(BaseModel):
     deadline: date
     channels: list[str]
     additional_notes: str | None = None
+    source_insight_run_id: uuid.UUID | None = None
+    source_customer_segment: str | None = None
 
     @field_validator("deadline")
     @classmethod
@@ -31,9 +34,21 @@ class CampaignCreate(BaseModel):
             raise ValueError(f"Kênh không hợp lệ: {invalid}")
         return value
 
+    @field_validator("source_customer_segment")
+    @classmethod
+    def validate_source_customer_segment(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        allowed = {"vip", "potential", "inactive", "unknown"}
+        normalized = value.strip().lower()
+        if normalized not in allowed:
+            raise ValueError(f"Segment không hợp lệ: {value}")
+        return normalized
+
 
 class CampaignListItem(BaseModel):
     id: uuid.UUID
+    brand_id: uuid.UUID | None = None
     campaign_name: str
     objective: str
     status: str
@@ -42,6 +57,8 @@ class CampaignListItem(BaseModel):
     created_at: datetime
     content_count: int = 0
     pending_count: int = 0
+    source_insight_run_id: str | None = None
+    source_customer_segment: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -80,6 +97,7 @@ class ContentItemOut(BaseModel):
 
 class CampaignDetail(BaseModel):
     id: uuid.UUID
+    brand_id: uuid.UUID | None = None
     campaign_name: str
     objective: str
     product_or_service: str

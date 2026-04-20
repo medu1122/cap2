@@ -2,7 +2,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Megaphone, CalendarDays, Workflow, Users, LogOut, BarChart3 } from "lucide-react";
+import { LayoutDashboard, Megaphone, CalendarDays, Workflow, Users, LogOut, BarChart3, ListChecks } from "lucide-react";
 import { clearToken } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
@@ -10,9 +10,10 @@ const NAV = [
   { href: "/dashboard",   label: "Tổng quan",          icon: LayoutDashboard },
   { href: "/campaigns",   label: "Chiến dịch",          icon: Megaphone },
   { href: "/calendar",    label: "Lịch marketing",      icon: CalendarDays },
-  { href: "/workflow",    label: "Tự động hoá",         icon: Workflow },
+  { href: "/workflow",    label: "Tạo kịch bản nhanh",  icon: Workflow },
   { href: "/customer-lists", label: "Danh sách khách",  icon: Users },
-  { href: "/insights", label: "Trợ lý phân tích", icon: BarChart3 },
+  { href: "/insights", label: "Hỗ trợ phân tích", icon: BarChart3 },
+  { href: "/insights/actions", label: "Hàng đợi action", icon: ListChecks },
 ];
 
 export default function Sidebar() {

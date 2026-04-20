@@ -280,7 +280,7 @@ sequenceDiagram
     Server->>Qwen: Gửi dữ liệu tuần, yêu cầu viết nhận xét bằng tiếng Việt tự nhiên
     Qwen-->>Server: Đoạn nhận xét 2-3 câu + gợi ý hành động
 
-    alt Qwen không phản hồi trong 15 giây
+    alt Qwen lỗi hoặc phản hồi quá chậm
         Server->>Server: Chuyển sang OpenAI để tạo tóm tắt (fallback)
         Server-->>Web: Tóm tắt từ OpenAI
     else Qwen phản hồi bình thường
@@ -385,7 +385,7 @@ sequenceDiagram
 
 ---
 
-## SD-09: Insight Copilot Deep Analysis (CSV/Excel -> DeepSeek -> Qwen -> GPT fallback)
+## SD-09: Insight Copilot Deep Analysis (có tiến trình theo bước)
 
 ```mermaid
 sequenceDiagram
@@ -397,18 +397,28 @@ sequenceDiagram
     participant GPT as GPT Fallback
     participant DB as PostgreSQL
 
-    Owner->>Web: Upload 1 sheet CSV/Excel báo cáo
-    Web->>API: POST /insights/a2a/deep-analysis
-    API->>DS: Classify loại báo cáo + map cột + lập plan
-    DS-->>API: report_type + schema_map + analysis_plan
-    API->>API: Tính KPI deterministic (python/pandas)
-    API->>QW: Viết insight + action theo business language
+    Owner->>Web: Upload CSV/Excel báo cáo
+    Web->>API: POST /insights/a2a/deep-analysis-stream
+    API-->>Web: Bắt đầu stream tiến trình (step-by-step)
+
+    API->>DS: Bước 1-2: phân loại file + ánh xạ cột cần thiết
+    DS-->>API: report_type + schema_map + confidence
+    API-->>Web: Cập nhật tiến trình "Phân loại/Ánh xạ"
+
+    API->>API: Bước 3: tính toán chỉ số và thống kê khám phá
+    API-->>Web: Cập nhật tiến trình "Tính toán"
+
+    API->>QW: Bước 4: diễn giải kết quả theo ngôn ngữ dễ hiểu
     QW-->>API: insight_json
-    alt quality gate fail hoặc timeout
-        API->>GPT: fallback reasoning
+    alt Qwen lỗi hoặc timeout
+        API->>GPT: fallback diễn giải
         GPT-->>API: fallback_insight_json
     end
-    API->>DB: Lưu run trace + schema mapping confidence + result snapshot + fallback reason
-    API-->>Web: Trả KPI + data quality score + limitations + friendly model trace
-    Web-->>Owner: Hiển thị luồng pipeline + biểu đồ chất lượng dữ liệu + bảng kết quả đã lưu
+
+    API->>DS: Bước 5: chuẩn hóa tiếng Việt (polish)
+    DS-->>API: phiên bản diễn giải đã chuẩn hóa
+
+    API->>DB: Lưu run trace + mapping + result snapshot
+    API-->>Web: Gửi kết quả cuối cùng
+    Web-->>Owner: Hiển thị điểm chất lượng dữ liệu + tin nhắn phân tích + lịch sử run
 ```

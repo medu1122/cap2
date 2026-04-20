@@ -12,11 +12,13 @@ class Settings(BaseSettings):
 
     OPENAI_API_KEY: str = ""
     DEEPSEEK_BASE_URL: str = "http://171.238.156.10:11434/v1"
-    DEEPSEEK_MODEL: str = "deepseek-coder:6.7b"
+    DEEPSEEK_MODEL: str = "qwen2.5:14b"
     QWEN_BASE_URL: str = "http://171.238.156.10:11434/v1"
-    QWEN_MODEL: str = "qwen2.5:7b"
+    QWEN_MODEL: str = "qwen2.5:14b"
     # Giay: timeout doc mot lan completion Qwen/Ollama (VPS cham nen mac dinh cao hon).
-    QWEN_TIMEOUT: int = 120
+    QWEN_TIMEOUT: int = 180
+    CUSTOMER_TABLE_ALLOWED_EXTENSIONS: str = ".csv,.xlsx"
+    CUSTOMER_TABLE_MAX_ROWS: int = 5000
 
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587

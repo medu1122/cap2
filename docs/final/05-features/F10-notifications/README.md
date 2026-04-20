@@ -40,3 +40,40 @@ SMB can duoc nhac viec dung luc (campaign loi, sap den lich, can review) va tan 
 - [ ] User nhan duoc thong bao trong app cho su kien quan trong.
 - [ ] CSV import tra ve bao cao ro rang so dong thanh cong/that bai.
 - [ ] Tu danh sach khach co the tao campaign tu dong co trace day du.
+
+---
+
+## 8) Dinh huong san pham moi — *Smart CRM Lite + Action + Email* (`toanbotinhnang-updatemoi.md`)
+
+| Muc trong tai lieu moi | Trang thai vs F10 | Giu / Bo |
+|---|---|---|
+| §2 Quan ly / import khach, loc nhom | Co MVP: upload CSV, luu customer, UI lists | **Giu** |
+| §2 Phan loai VIP / tiem nang / inactive | Chua thay rule ro trong code (segment) | **Can lam moi** |
+| §3 Hanh dong tu du lieu (vi du: mail inactive) | Co “auto campaign tu list” (email) — gan voi action | **Giu + mo rong** |
+| §4 Gui email SMTP marketing | SMTP trong repo hien phuc vu **calendar reminder**, chua phai bulk marketing tu app | **Can quyet dinh:** mo rong F10 hoac service rieng, tranh nham SMTP calendar vs campaign |
+
+**Plan coding:**
+1. Them field hoac bang `segment` / `tags` (hoac tinh runtime tu spend, last_purchase) — uu tien **tinh runtime** truoc, tranh migration neu backlog chat.
+2. UI: filter tabs VIP / inactive / potential + badge.
+3. Noi F11: tu insight run chon “danh sach khach tac dong” (join customer_list_id).
+4. Clean code: gom route customer list + notification draft vao service layer; bot logic lap trong `workflow.py` neu co cho tao campaign trung lap.
+
+**Khong can:** xay CRM day du (ticket, pipeline ban hang) — ngoai pham vi “Lite”.
+
+---
+
+## 9) Luu y env cho email execution va notifications
+
+- Tach ro 2 luong:
+  - `SMTP_*` hien uu tien cho calendar reminder / notification emails.
+  - Email marketing bulk (neu mo rong) nen di qua service rieng de tranh nham voi reminder.
+- Cau hinh toi thieu:
+  - `SMTP_HOST`
+  - `SMTP_PORT`
+  - `SMTP_USER`
+  - `SMTP_PASSWORD`
+  - `SMTP_FROM_EMAIL`
+- Policy de xuat:
+  1. Notification in-app la kenh chinh.
+  2. SMTP la kenh bo tro cho reminder va su kien quan trong.
+  3. Bulk campaign email chi bat sau khi F06/F12 co audit + retry ro rang.

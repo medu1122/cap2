@@ -16,6 +16,8 @@ interface Campaign {
   created_at: string;
   content_count: number;
   pending_count: number;
+  source_insight_run_id?: string | null;
+  source_customer_segment?: string | null;
 }
 
 const TABS = ["all", "running", "pending_approval", "approved", "failed"];
@@ -99,6 +101,16 @@ export default function CampaignsPage() {
                   <td className="px-4 py-3">
                     <p className="font-medium text-gray-900">{c.campaign_name}</p>
                     <p className="text-xs text-gray-400 truncate max-w-xs">{c.objective}</p>
+                    {c.source_insight_run_id ? (
+                      <div className="mt-1 flex flex-wrap items-center gap-1">
+                        <span className="badge bg-blue-50 text-blue-700">Insight Action</span>
+                        {c.source_customer_segment ? (
+                          <span className="badge bg-gray-100 text-gray-600">
+                            Segment: {c.source_customer_segment}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1 flex-wrap">
