@@ -1161,3 +1161,35 @@ async def upsert_priority_customer(
         "customer_name": target.full_name or "",
         "is_priority": bool(extra.get("is_priority")),
     }
+
+
+@router.delete("/customer-lists/{customer_list_id}/priority-customers")
+async def clear_priority_customers(
+    customer_list_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    list_result = await db.execute(
+        select(CustomerList).where(
+            CustomerList.id == customer_list_id,
+            CustomerList.user_id == current_user.id,
+        )
+    )
+    customer_list = list_result.scalar_one_or_none()
+    if not customer_list:
+        raise HTTPException(404, "Customer list không tồn tại")
+
+    rows_result = await db.execute(
+        select(Customer).where(Customer.customer_list_id == customer_list.id)
+    )
+    customers = rows_result.scalars().all()
+    updated_count = 0
+    for customer in customers:
+        extra = dict(customer.extra_fields or {})
+        if not extra.get("is_priority"):
+            continue
+        extra["is_priority"] = False
+        customer.extra_fields = extra
+        updated_count += 1
+    await db.commit()
+    return {"cleared_count": updated_count}

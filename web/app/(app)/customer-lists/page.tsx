@@ -201,6 +201,12 @@ export default function CustomerListsPage() {
   const [errorPopover, setErrorPopover] = useState<{ rowIdx: number; x: number; y: number } | null>(null);
   const [priorityCustomers, setPriorityCustomers] = useState<string[]>([]);
   const [onlyPriorityView, setOnlyPriorityView] = useState(false);
+  const [onlyPriorityTableView, setOnlyPriorityTableView] = useState(false);
+  const [sortPriorityFirst, setSortPriorityFirst] = useState(true);
+  const [showPrioritySuggestion, setShowPrioritySuggestion] = useState(false);
+  const [selectedRowIndexes, setSelectedRowIndexes] = useState<number[]>([]);
+  const [analysisModalOpen, setAnalysisModalOpen] = useState(false);
+  const [analysisByList, setAnalysisByList] = useState<Record<string, CustomerAnalysisResponse>>({});
 
   const allColumns = useMemo(() => {
     const extra = new Set<string>();
@@ -229,6 +235,12 @@ export default function CustomerListsPage() {
       const rowErr: string[] = [];
       const email = String(row.Email || "").trim();
       const fullName = String(row.HoVaTen || "").trim();
+      const phone = String(row.SDT || "").trim();
+      const customerType = String(row.LoaiKhachHang || "").trim();
+      const lastPaid = String(row.LanCuoiChiTra || "").trim();
+      const totalSpend = String(row.TongSoTienDaChiTra || "").trim();
+      const hasAnyData = Boolean(fullName || email || phone || customerType || lastPaid || totalSpend);
+      if (!hasAnyData) return;
       if (!fullName) rowErr.push("Thiếu họ tên");
       if (!email) rowErr.push("Thiếu email");
       else if (!isValidEmail(email)) rowErr.push("Email không hợp lệ");
@@ -249,6 +261,58 @@ export default function CustomerListsPage() {
   }, [rows]);
 
   const hasRowErrors = Object.keys(rowErrors).length > 0;
+  const displayedRows = useMemo(() => {
+    let mapped = rows.map((row, rowIdx) => ({ row, rowIdx }));
+    if (sortPriorityFirst) {
+      mapped = [...mapped].sort((a, b) => {
+        const aPriority = priorityCustomers.includes(
+          toPriorityKey(String(a.row.HoVaTen || ""), String(a.row.Email || ""), String(a.row.SDT || "")),
+        );
+        const bPriority = priorityCustomers.includes(
+          toPriorityKey(String(b.row.HoVaTen || ""), String(b.row.Email || ""), String(b.row.SDT || "")),
+        );
+        if (aPriority === bPriority) return a.rowIdx - b.rowIdx;
+        return aPriority ? -1 : 1;
+      });
+    }
+    if (!onlyPriorityTableView) return mapped;
+    return mapped.filter(({ row }) =>
+      priorityCustomers.includes(
+        toPriorityKey(String(row.HoVaTen || ""), String(row.Email || ""), String(row.SDT || "")),
+      ),
+    );
+  }, [rows, onlyPriorityTableView, priorityCustomers, sortPriorityFirst]);
+
+  useEffect(() => {
+    if (!analysisResult) return;
+    const total = analysisResult.analysis.overview.total_customers || 0;
+    const churnRisk = analysisResult.analysis.segmentation.summary.churn_risk || 0;
+    if (total <= 0) {
+      setShowPrioritySuggestion(false);
+      return;
+    }
+    const churnRate = churnRisk / total;
+    setShowPrioritySuggestion(churnRate >= 0.2);
+  }, [analysisResult]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("customer-analysis-cache-v1");
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Record<string, CustomerAnalysisResponse>;
+      setAnalysisByList(parsed);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("customer-analysis-cache-v1", JSON.stringify(analysisByList));
+    } catch {
+      // ignore
+    }
+  }, [analysisByList]);
 
   async function loadLists() {
     setLoading(true);
@@ -273,7 +337,7 @@ export default function CustomerListsPage() {
       setActiveListId(res.table.id);
       setActiveListName(res.table.name);
       setRows(normalizeRows(res.rows as Record<string, unknown>[]));
-      setAnalysisResult(null);
+      setAnalysisResult(analysisByList[res.table.id] || null);
       setShowTableEditor(true);
       setExpandedRowIndex(null);
       const priority = await api
@@ -358,7 +422,12 @@ export default function CustomerListsPage() {
   }
 
   function addRow() {
+    const nextIndex = rows.length;
     setRows((prev) => [...prev, { ...emptyRow(), ID: String(prev.length + 1) }]);
+    setTimeout(() => {
+      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+      setEditingCell({ rowIdx: nextIndex, col: "HoVaTen" });
+    }, 80);
   }
 
   function deleteRow(index: number) {
@@ -366,6 +435,7 @@ export default function CustomerListsPage() {
     setExpandedRowIndex((prev) => (prev === index ? null : prev));
     setEditingCell(null);
     setErrorPopover(null);
+    setSelectedRowIndexes((prev) => prev.filter((i) => i !== index).map((i) => (i > index ? i - 1 : i)));
   }
 
   async function handleImportToCurrentTable(event: React.ChangeEvent<HTMLInputElement>) {
@@ -384,7 +454,7 @@ export default function CustomerListsPage() {
       }
       const normalized = normalizeRows(imported as Record<string, unknown>[]);
       setRows(normalized);
-      setMessage(`Đã nạp ${normalized.length} dòng vào bảng đang mở. Nhấn "Lưu bảng" để ghi xuống hệ thống.`);
+      setMessage(`Đã nạp ${normalized.length} dòng vào danh sách đang mở. Nhấn "Lưu list" để ghi xuống hệ thống.`);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Không đọc được file");
     } finally {
@@ -394,7 +464,22 @@ export default function CustomerListsPage() {
 
   async function saveCurrentTable() {
     if (!activeListId) {
-      setMessage("Chọn bảng trước khi lưu.");
+      setMessage("Chọn danh sách trước khi lưu.");
+      return;
+    }
+    const emptyRows = rows.filter((row) => {
+      const hasAnyData = Boolean(
+        String(row.HoVaTen || "").trim() ||
+          String(row.Email || "").trim() ||
+          String(row.SDT || "").trim() ||
+          String(row.LoaiKhachHang || "").trim() ||
+          String(row.LanCuoiChiTra || "").trim() ||
+          String(row.TongSoTienDaChiTra || "").trim(),
+      );
+      return !hasAnyData;
+    }).length;
+    if (emptyRows > 0) {
+      setMessage(`Còn ${emptyRows} dòng trống. Vui lòng nhập đủ hoặc xóa trước khi lưu.`);
       return;
     }
     if (hasRowErrors) {
@@ -432,6 +517,8 @@ export default function CustomerListsPage() {
     try {
       const result = await api.post<CustomerAnalysisResponse>(`/workflow/customer-lists/${activeListId}/analyze`, { rows });
       setAnalysisResult(result);
+      setAnalysisByList((prev) => ({ ...prev, [activeListId]: result }));
+      setAnalysisModalOpen(true);
       setMessage("Phân tích hoàn tất. Kết quả mới đã thay thế kết quả trước.");
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Phân tích thất bại");
@@ -503,6 +590,68 @@ export default function CustomerListsPage() {
       );
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Không cập nhật được trạng thái ưu tiên");
+    }
+  }
+
+  async function clearAllPriorityCustomers() {
+    if (!activeListId) return;
+    if (!confirm("Bạn có chắc muốn bỏ tất cả khách ưu tiên trong danh sách này?")) return;
+    try {
+      const result = await api.delete<{ cleared_count: number }>(`/workflow/customer-lists/${activeListId}/priority-customers`);
+      setPriorityCustomers([]);
+      setOnlyPriorityTableView(false);
+      setOnlyPriorityView(false);
+      setMessage(`Đã bỏ ưu tiên ${result.cleared_count} khách.`);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Không thể bỏ tất cả ưu tiên");
+    }
+  }
+
+  async function bulkTogglePriority(isPriority: boolean) {
+    if (!activeListId) return;
+    const targets = selectedRowIndexes
+      .map((rowIdx) => rows[rowIdx])
+      .filter(Boolean)
+      .map((row) => ({
+        customer_name: String(row.HoVaTen || "").trim(),
+        email: String(row.Email || "").trim(),
+        phone: String(row.SDT || "").trim(),
+      }))
+      .filter((item) => item.customer_name);
+    if (targets.length === 0) {
+      setMessage("Bạn chưa chọn dòng nào để thao tác.");
+      return;
+    }
+    try {
+      await Promise.all(
+        targets.map((item) =>
+          api.post(`/workflow/customer-lists/${activeListId}/priority-customers`, {
+            customer_name: item.customer_name,
+            email: item.email || null,
+            phone: item.phone || null,
+            is_priority: isPriority,
+          }),
+        ),
+      );
+      const targetKeys = targets.map((item) => toPriorityKey(item.customer_name, item.email, item.phone));
+      setPriorityCustomers((prev) => {
+        if (isPriority) {
+          const next = [...prev];
+          targetKeys.forEach((key) => {
+            if (!next.includes(key)) next.push(key);
+          });
+          return next;
+        }
+        return prev.filter((key) => !targetKeys.includes(key));
+      });
+      setMessage(
+        isPriority
+          ? `Đã đánh dấu ưu tiên ${targets.length} khách đã chọn.`
+          : `Đã bỏ ưu tiên ${targets.length} khách đã chọn.`,
+      );
+      setSelectedRowIndexes([]);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Không cập nhật được ưu tiên hàng loạt");
     }
   }
 
@@ -645,13 +794,26 @@ export default function CustomerListsPage() {
               <button className="btn-primary text-xs" onClick={saveCurrentTable} disabled={!activeListId || saving}>
                 {saving ? "Đang lưu..." : "Lưu list"}
               </button>
-              <button className="btn-primary text-xs" onClick={analyzeCurrentTable} disabled={!activeListId || analyzing}>
-                {analyzing ? "Đang phân tích..." : "Phân tích"}
+              <button
+                className="btn-primary text-xs"
+                onClick={() => {
+                  if (analysisResult) {
+                    void analyzeCurrentTable();
+                  } else {
+                    setAnalysisModalOpen(true);
+                  }
+                }}
+                disabled={!activeListId || analyzing}
+              >
+                {analyzing ? "Đang phân tích..." : analysisResult ? "Phân tích lại" : "Xem phân tích"}
               </button>
+              {analysisResult ? (
+                <button className="btn-secondary text-xs" onClick={() => setAnalysisModalOpen(true)}>
+                  Xem kết quả
+                </button>
+              ) : null}
             </div>
           </div>
-
-          {analyzing ? <div className="border border-blue-200 bg-blue-50 p-2 text-xs text-blue-800">Đang phân tích dữ liệu customer...</div> : null}
 
           {tableLoading ? (
             <p className="text-sm text-gray-500">Đang tải dữ liệu danh sách...</p>
@@ -661,17 +823,96 @@ export default function CustomerListsPage() {
             <div className="space-y-2">
               {hasRowErrors ? (
                 <div className="border border-red-200 bg-red-50 p-2 text-xs text-red-700">
-                  Có {Object.keys(rowErrors).length} dòng đang lỗi dữ liệu. Xem cột "Lỗi dòng" để chỉnh.
+                  Có {Object.keys(rowErrors).length} dòng đang lỗi dữ liệu. Bấm biểu tượng cảnh báo trước tên khách để xem lỗi.
                 </div>
               ) : (
                 <div className="border border-green-200 bg-green-50 p-2 text-xs text-green-700">
                   Dữ liệu hợp lệ, có thể lưu và phân tích.
                 </div>
               )}
+              <div className="flex items-center justify-end">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-[11px] border border-amber-300 bg-amber-50 px-2 py-[2px] text-amber-800">
+                    Khách ưu tiên: {priorityCustomers.length}
+                  </span>
+                  <label className="text-[11px] inline-flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={sortPriorityFirst}
+                      onChange={(e) => setSortPriorityFirst(e.target.checked)}
+                    />
+                    Sắp xếp ưu tiên lên đầu
+                  </label>
+                  <label className="text-[11px] inline-flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={onlyPriorityTableView}
+                      onChange={(e) => setOnlyPriorityTableView(e.target.checked)}
+                    />
+                    Chỉ hiện khách ưu tiên trong bảng
+                  </label>
+                  <button
+                    className="btn-secondary text-[11px]"
+                    disabled={priorityCustomers.length === 0}
+                    onClick={() => void clearAllPriorityCustomers()}
+                  >
+                    Bỏ tất cả ưu tiên
+                  </button>
+                  <button
+                    className="btn-secondary text-[11px]"
+                    disabled={selectedRowIndexes.length === 0}
+                    onClick={() => void bulkTogglePriority(true)}
+                  >
+                    Đánh dấu ưu tiên ({selectedRowIndexes.length})
+                  </button>
+                  <button
+                    className="btn-secondary text-[11px]"
+                    disabled={selectedRowIndexes.length === 0}
+                    onClick={() => void bulkTogglePriority(false)}
+                  >
+                    Bỏ ưu tiên đã chọn
+                  </button>
+                </div>
+              </div>
+              {showPrioritySuggestion ? (
+                <div className="border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800 flex items-center justify-between gap-2">
+                  <span>Nhóm nguy cơ rời bỏ đang cao. Gợi ý bật lọc khách ưu tiên để xử lý nhanh.</span>
+                  <button
+                    className="btn-secondary text-[11px]"
+                    onClick={() => {
+                      setOnlyPriorityTableView(true);
+                      setSortPriorityFirst(true);
+                    }}
+                  >
+                    Bật lọc ưu tiên
+                  </button>
+                </div>
+              ) : null}
               <div className="overflow-x-auto border border-gray-200">
               <table className="min-w-full text-xs">
                 <thead className="bg-gray-50">
                   <tr>
+                    <th className="text-left px-2 py-1 border w-10">
+                      <input
+                        type="checkbox"
+                        checked={displayedRows.length > 0 && displayedRows.every(({ rowIdx }) => selectedRowIndexes.includes(rowIdx))}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedRowIndexes((prev) => {
+                              const next = [...prev];
+                              displayedRows.forEach(({ rowIdx }) => {
+                                if (!next.includes(rowIdx)) next.push(rowIdx);
+                              });
+                              return next;
+                            });
+                          } else {
+                            setSelectedRowIndexes((prev) =>
+                              prev.filter((idx) => !displayedRows.map(({ rowIdx }) => rowIdx).includes(idx)),
+                            );
+                          }
+                        }}
+                      />
+                    </th>
                     {columns.map((col) => (
                       <th key={col} className="text-left px-2 py-1 border">
                         <span className="whitespace-normal leading-tight">
@@ -680,14 +921,25 @@ export default function CustomerListsPage() {
                       </th>
                     ))}
                     <th className="text-left px-2 py-1 border">Thao tác</th>
-                    <th className="text-left px-2 py-1 border w-12">!</th>
                     <th className="text-left px-2 py-1 border w-12">...</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row, rowIdx) => (
+                  {displayedRows.map(({ row, rowIdx }) => (
                     <Fragment key={`row-${rowIdx}`}>
                       <tr className={`border-t ${rowErrors[rowIdx] ? "bg-red-50/40" : "border-gray-100"}`}>
+                        <td className="border px-1 py-1 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedRowIndexes.includes(rowIdx)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedRowIndexes((prev) => (prev.includes(rowIdx) ? prev : [...prev, rowIdx]));
+                              }
+                              else setSelectedRowIndexes((prev) => prev.filter((idx) => idx !== rowIdx));
+                            }}
+                          />
+                        </td>
                         {columns.map((col) => (
                           <td key={`${rowIdx}-${col}`} className="border px-1 py-1">
                             {editingCell?.rowIdx === rowIdx && editingCell.col === col ? (
@@ -706,7 +958,33 @@ export default function CustomerListsPage() {
                                 className="w-full text-left px-1 py-1 min-h-7 border border-transparent hover:border-gray-200"
                                 onClick={() => setEditingCell({ rowIdx, col })}
                               >
-                                {row[col] || "-"}
+                                {col === "HoVaTen" ? (
+                                  <span className="inline-flex items-center gap-1">
+                                    {rowErrors[rowIdx]?.length ? (
+                                      <button
+                                        className="text-amber-700"
+                                        title="Xem lỗi dòng"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const rect = e.currentTarget.getBoundingClientRect();
+                                          setErrorPopover({ rowIdx, x: rect.left, y: rect.bottom + 6 });
+                                        }}
+                                      >
+                                        ⚠
+                                      </button>
+                                    ) : null}
+                                    <span>{row[col] || "-"}</span>
+                                    {priorityCustomers.includes(
+                                      toPriorityKey(String(row.HoVaTen || ""), String(row.Email || ""), String(row.SDT || "")),
+                                    ) ? (
+                                      <span className="border border-amber-300 bg-amber-50 px-1 text-[10px] text-amber-700">
+                                        Ưu tiên
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                ) : (
+                                  (row[col] || "-")
+                                )}
                               </button>
                             )}
                           </td>
@@ -715,20 +993,6 @@ export default function CustomerListsPage() {
                           <button className="btn-secondary text-[11px] px-2 py-1" title="Xóa dòng" onClick={() => deleteRow(rowIdx)}>
                             🗑
                           </button>
-                        </td>
-                        <td className="border px-1 py-1 text-center">
-                          {rowErrors[rowIdx]?.length ? (
-                            <button
-                              className="btn-secondary text-[11px] px-2 py-1 text-amber-700"
-                              title="Xem lỗi dòng"
-                              onClick={(e) => {
-                                const rect = e.currentTarget.getBoundingClientRect();
-                                setErrorPopover({ rowIdx, x: rect.left, y: rect.bottom + 6 });
-                              }}
-                            >
-                              ⚠
-                            </button>
-                          ) : null}
                         </td>
                         <td className="border px-1 py-1 text-center">
                           <button
@@ -780,6 +1044,11 @@ export default function CustomerListsPage() {
                 </tbody>
               </table>
               </div>
+              <div className="flex justify-end">
+                <button className="btn-secondary text-sm px-2 py-1" title="Thêm dòng" onClick={addRow}>
+                  +
+                </button>
+              </div>
               {errorPopover ? (
                 <div
                   className="fixed z-40 w-72 border border-amber-300 bg-white p-2 shadow-lg"
@@ -801,218 +1070,100 @@ export default function CustomerListsPage() {
             </div>
           )}
 
-          {analysisResult ? (
-            <div className="space-y-3">
-              {analysisResult.analysis.narrative ? (
-                <div className="border border-indigo-200 bg-indigo-50 p-2 text-xs whitespace-pre-line">
-                  {analysisResult.analysis.narrative}
+          {analysisModalOpen ? (
+            <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+              <div className="w-full max-w-5xl max-h-[90vh] overflow-y-auto bg-white border border-gray-200 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold">Kết quả phân tích danh sách khách hàng</h3>
+                  <button className="btn-secondary text-xs" onClick={() => setAnalysisModalOpen(false)}>
+                    Đóng
+                  </button>
                 </div>
-              ) : null}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                <div className="border border-gray-200 bg-white p-2">
-                  <p className="text-[11px] text-gray-500">Tổng khách</p>
-                  <p className="text-lg font-semibold">{analysisResult.analysis.overview.total_customers}</p>
-                </div>
-                <div className="border border-gray-200 bg-white p-2">
-                  <p className="text-[11px] text-gray-500">Tổng doanh thu</p>
-                  <p className="text-lg font-semibold">{analysisResult.analysis.overview.total_revenue}</p>
-                </div>
-                <div className="border border-gray-200 bg-white p-2">
-                  <p className="text-[11px] text-gray-500">Retention</p>
-                  <p className="text-lg font-semibold">{analysisResult.analysis.overview.retention_rate_percent}%</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <div className="border border-gray-200 bg-white p-2">
-                  <p className="font-medium text-sm">Top chi tiêu</p>
-                  <p className="text-[11px] text-gray-500 mb-1">
-                    Top 20% đóng góp {analysisResult.analysis.customer_value.revenue_share_of_top_group}% doanh thu
-                  </p>
-                  <div className="space-y-1 text-xs">
-                    {(onlyPriorityView
-                      ? analysisResult.analysis.customer_value.top_spenders.filter((item) =>
-                          priorityCustomers.includes(toPriorityKey(item.customer_name, item.email, item.phone)),
-                        )
-                      : analysisResult.analysis.customer_value.top_spenders
-                    )
-                      .slice(0, 5)
-                      .map((item, idx) => (
-                      <div key={idx} className="border-b border-gray-100 pb-1">
-                        <div className="flex items-center justify-between">
-                          <span>{item.customer_name}</span>
-                          <span className="font-medium">{item.amount}</span>
-                        </div>
-                        <div className="mt-1 h-1.5 w-full bg-gray-100">
-                          <div
-                            className="h-1.5 bg-blue-600"
-                            style={{
-                              width: `${Math.min(
-                                100,
-                                (item.amount / Math.max(analysisResult.analysis.customer_value.top_spenders[0]?.amount || 1, 1)) * 100,
-                              )}%`,
-                            }}
-                          />
-                        </div>
-                        <div className="mt-1 flex items-center gap-1">
-                          <button
-                            className="btn-secondary text-[10px] px-2 py-[2px]"
-                            onClick={() =>
-                              void togglePriorityCustomer(
-                                { customer_name: item.customer_name, email: item.email, phone: item.phone },
-                                !priorityCustomers.includes(toPriorityKey(item.customer_name, item.email, item.phone)),
-                              )
-                            }
-                          >
-                            {priorityCustomers.includes(toPriorityKey(item.customer_name, item.email, item.phone))
-                              ? "Bỏ ưu tiên"
-                              : "Ưu tiên"}
-                          </button>
-                          <button
-                            className="btn-primary text-[10px] px-2 py-[2px]"
-                            disabled={creatingCampaign}
-                            onClick={() => void createCampaignFromCustomer(item.customer_name, "vip")}
-                          >
-                            Tạo campaign
-                          </button>
+                {!analysisResult ? (
+                  <div className="border border-gray-200 bg-gray-50 p-3 text-sm space-y-2">
+                    <p>Danh sách này chưa có kết quả phân tích.</p>
+                    <button className="btn-primary text-xs" onClick={() => void analyzeCurrentTable()} disabled={analyzing}>
+                      {analyzing ? "Đang phân tích..." : "Phân tích ngay"}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {analysisResult.analysis.narrative ? (
+                      <div className="border border-indigo-200 bg-indigo-50 p-2 text-xs whitespace-pre-line">
+                        {analysisResult.analysis.narrative}
+                      </div>
+                    ) : null}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                      <div className="border border-gray-200 bg-white p-2">
+                        <p className="text-[11px] text-gray-500">Tổng khách</p>
+                        <p className="text-lg font-semibold">{analysisResult.analysis.overview.total_customers}</p>
+                      </div>
+                      <div className="border border-gray-200 bg-white p-2">
+                        <p className="text-[11px] text-gray-500">Tổng doanh thu</p>
+                        <p className="text-lg font-semibold">{analysisResult.analysis.overview.total_revenue}</p>
+                      </div>
+                      <div className="border border-gray-200 bg-white p-2">
+                        <p className="text-[11px] text-gray-500">Retention</p>
+                        <p className="text-lg font-semibold">{analysisResult.analysis.overview.retention_rate_percent}%</p>
+                      </div>
+                    </div>
+                    <div className="border border-gray-200 bg-white p-2 text-xs">
+                      <p className="font-medium mb-1">Phân nhóm khách hàng</p>
+                      <p>
+                        VIP: {analysisResult.analysis.segmentation.summary.vip} - Tiềm năng:{" "}
+                        {analysisResult.analysis.segmentation.summary.potential} - Nguy cơ rời bỏ:{" "}
+                        {analysisResult.analysis.segmentation.summary.churn_risk} - Mới:{" "}
+                        {analysisResult.analysis.segmentation.summary.new}
+                      </p>
+                    </div>
+                    {analysisResult.analysis.suggested_actions.length ? (
+                      <div className="border border-green-200 bg-green-50 p-2">
+                        <p className="font-medium text-sm mb-1">Hành động đề xuất</p>
+                        <div className="space-y-2">
+                          {analysisResult.analysis.suggested_actions.map((a, idx) => (
+                            <div key={idx} className="border border-green-200 bg-white p-2 text-xs">
+                              <p className="font-medium">
+                                {a.title} ({a.priority})
+                              </p>
+                              <p className="text-gray-600">
+                                Nhóm: {a.target_segment} - Mục tiêu: {a.goal}
+                              </p>
+                              {a.reason ? <p className="text-gray-600">Lý do: {a.reason}</p> : null}
+                              <button
+                                className="btn-primary text-[11px] mt-1"
+                                disabled={creatingCampaign}
+                                onClick={() => void createCampaignFromAction(a)}
+                              >
+                                {creatingCampaign ? "Đang tạo..." : "Tạo campaign từ action"}
+                              </button>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    ))}
+                    ) : null}
+                    <div className="flex justify-end">
+                      <button className="btn-primary text-xs" onClick={() => void analyzeCurrentTable()} disabled={analyzing}>
+                        {analyzing ? "Đang phân tích..." : "Phân tích lại"}
+                      </button>
+                    </div>
                   </div>
-                </div>
-                <div className="border border-gray-200 bg-white p-2">
-                  <p className="font-medium text-sm">Nguy cơ rời bỏ</p>
-                  <div className="text-xs space-y-1">
-                    <p>&gt; 30 ngày: {analysisResult.analysis.churn_risk.inactive_over_30_days} khách</p>
-                    <p>&gt; 60 ngày: {analysisResult.analysis.churn_risk.inactive_over_60_days} khách</p>
-                    {(onlyPriorityView
-                      ? analysisResult.analysis.churn_risk.high_risk_customers.filter((item) =>
-                          priorityCustomers.includes(toPriorityKey(item.customer_name, item.email, item.phone)),
-                        )
-                      : analysisResult.analysis.churn_risk.high_risk_customers
-                    )
-                      .slice(0, 3)
-                      .map((item, idx) => (
-                      <div key={idx} className="border border-red-100 bg-red-50 p-1">
-                        <p className="text-red-700">
-                          {item.customer_name} - {item.days_since_last_payment} ngày
-                        </p>
-                        <div className="mt-1 flex items-center gap-1">
-                          <button
-                            className="btn-secondary text-[10px] px-2 py-[2px]"
-                            onClick={() =>
-                              void togglePriorityCustomer(
-                                { customer_name: item.customer_name, email: item.email, phone: item.phone },
-                                !priorityCustomers.includes(toPriorityKey(item.customer_name, item.email, item.phone)),
-                              )
-                            }
-                          >
-                            {priorityCustomers.includes(toPriorityKey(item.customer_name, item.email, item.phone))
-                              ? "Bỏ ưu tiên"
-                              : "Ưu tiên"}
-                          </button>
-                          <button
-                            className="btn-primary text-[10px] px-2 py-[2px]"
-                            disabled={creatingCampaign}
-                            onClick={() => void createCampaignFromCustomer(item.customer_name, "churn_risk")}
-                          >
-                            Tạo campaign
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                )}
               </div>
-
-              <div className="border border-gray-200 bg-white p-2">
-                <p className="font-medium text-sm mb-1">Phân nhóm khách hàng</p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-                  <div className="border border-blue-200 bg-blue-50 p-2">
-                    VIP: {analysisResult.analysis.segmentation.summary.vip}
-                    <div className="mt-1 h-1.5 bg-blue-100">
-                      <div
-                        className="h-1.5 bg-blue-700"
-                        style={{
-                          width: `${Math.min(100, (analysisResult.analysis.segmentation.summary.vip / Math.max(analysisResult.analysis.overview.total_customers, 1)) * 100)}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div className="border border-sky-200 bg-sky-50 p-2">
-                    Tiềm năng: {analysisResult.analysis.segmentation.summary.potential}
-                    <div className="mt-1 h-1.5 bg-sky-100">
-                      <div
-                        className="h-1.5 bg-sky-600"
-                        style={{
-                          width: `${Math.min(100, (analysisResult.analysis.segmentation.summary.potential / Math.max(analysisResult.analysis.overview.total_customers, 1)) * 100)}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div className="border border-red-200 bg-red-50 p-2">
-                    Nguy cơ rời bỏ: {analysisResult.analysis.segmentation.summary.churn_risk}
-                    <div className="mt-1 h-1.5 bg-red-100">
-                      <div
-                        className="h-1.5 bg-red-600"
-                        style={{
-                          width: `${Math.min(
-                            100,
-                            (analysisResult.analysis.segmentation.summary.churn_risk / Math.max(analysisResult.analysis.overview.total_customers, 1)) * 100,
-                          )}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div className="border border-green-200 bg-green-50 p-2">
-                    Mới: {analysisResult.analysis.segmentation.summary.new}
-                    <div className="mt-1 h-1.5 bg-green-100">
-                      <div
-                        className="h-1.5 bg-green-600"
-                        style={{
-                          width: `${Math.min(100, (analysisResult.analysis.segmentation.summary.new / Math.max(analysisResult.analysis.overview.total_customers, 1)) * 100)}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {analysisResult.analysis.suggested_actions.length ? (
-                <div className="border border-green-200 bg-green-50 p-2">
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <p className="font-medium text-sm">Hành động đề xuất</p>
-                    <label className="text-[11px] inline-flex items-center gap-1">
-                      <input type="checkbox" checked={onlyPriorityView} onChange={(e) => setOnlyPriorityView(e.target.checked)} />
-                      Chỉ xem khách ưu tiên
-                    </label>
-                  </div>
-                  <div className="space-y-2">
-                    {analysisResult.analysis.suggested_actions.map((a, idx) => (
-                      <div key={idx} className="border border-green-200 bg-white p-2 text-xs">
-                        <p className="font-medium">
-                          {a.title} ({a.priority})
-                        </p>
-                        <p className="text-gray-600">
-                          Nhóm: {a.target_segment} - Mục tiêu: {a.goal}
-                        </p>
-                        {a.reason ? <p className="text-gray-600">Lý do: {a.reason}</p> : null}
-                        <button
-                          className="btn-primary text-[11px] mt-1"
-                          disabled={creatingCampaign}
-                          onClick={() => void createCampaignFromAction(a)}
-                        >
-                          {creatingCampaign ? "Đang tạo..." : "Tạo campaign từ action"}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
             </div>
           ) : null}
         </div>
       )}
+      {analyzing ? (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white border border-gray-200 p-4 space-y-2">
+            <p className="font-medium">Đang phân tích dữ liệu...</p>
+            <p className="text-sm text-gray-600">Model đang dùng: Qwen 2.5 14B (local), fallback GPT khi cần.</p>
+            <div className="h-2 bg-gray-100">
+              <div className="h-2 bg-blue-600 animate-pulse w-3/4" />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
