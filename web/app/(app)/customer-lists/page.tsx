@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
-import { api, postNdjsonStream, type DeepAnalysisStreamEvent } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
 
 type Segment = "vip" | "potential" | "inactive" | "unknown";
 
@@ -22,17 +22,62 @@ interface CustomerTableRowsResponse {
   rows: Record<string, string | number>[];
 }
 
-interface DeepAnalysisResultLite {
-  run_id: string;
-  data_quality_score?: number;
-  issues?: string[];
-  insights?: Array<{ title: string; recommendation: string }>;
-  suggested_actions?: Array<{ title: string; priority: string; target_segment: string }>;
+interface CustomerAnalysisResponse {
+  list_id: string;
+  list_name: string;
+  analysis: {
+    overview: {
+      total_customers: number;
+      total_revenue: number;
+      retention_rate_percent: number;
+    };
+    customer_value: {
+      total_revenue: number;
+      top_20_percent_count: number;
+      revenue_share_of_top_group: number;
+      top_spenders: Array<{ customer_name: string; amount: number; email?: string; phone?: string }>;
+    };
+    retention: {
+      total_customers: number;
+      returning_customers: number;
+      new_customers: number;
+      retention_rate_percent: number;
+      top_returning_customers: Array<{ customer_name: string; return_count: number }>;
+    };
+    churn_risk: {
+      inactive_over_30_days: number;
+      inactive_over_60_days: number;
+      high_risk_customers: Array<{ customer_name: string; days_since_last_payment: number; email?: string; phone?: string }>;
+      medium_risk_customers: Array<{ customer_name: string; days_since_last_payment: number; email?: string; phone?: string }>;
+    };
+    segmentation: {
+      summary: { vip: number; potential: number; churn_risk: number; new: number };
+      customers: Array<{ customer_name: string; segment: string }>;
+    };
+    suggested_actions: Array<{
+      title: string;
+      priority: string;
+      target_segment: string;
+      goal: string;
+      reason?: string;
+      expected_impact: string;
+      recommended_channels: string[];
+    }>;
+    narrative?: string;
+    ai_meta?: { model_used?: string; fallback_used?: boolean };
+  };
 }
 
 interface BrandOption {
   id: string;
   brand_name: string;
+}
+
+interface PriorityCustomer {
+  customer_id: string;
+  customer_name: string;
+  email?: string | null;
+  phone?: string | null;
 }
 
 const TEMPLATE_COLUMNS = [
@@ -71,14 +116,6 @@ const COLUMN_LABELS: Record<string, string> = {
   LoaiKhachHang: "Loại khách hàng",
   DichVuLanCuoiSuDung: "Dịch vụ lần cuối sử dụng",
   DichVuSuDungNhieuNhat: "Dịch vụ sử dụng nhiều nhất",
-};
-
-const STREAM_STEP_LABEL_VI: Record<string, string> = {
-  classify_report: "Bot Classifier đang phân loại dữ liệu",
-  map_schema: "Bot Mapper đang ánh xạ cột",
-  compute_metrics: "Bot Metrics đang tính KPI",
-  narrative: "Bot Narrator đang diễn giải",
-  polish_result: "Bot Polisher đang chuẩn hóa kết quả",
 };
 
 function emptyRow(): Record<string, string> {
@@ -154,8 +191,7 @@ export default function CustomerListsPage() {
   const [tableLoading, setTableLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
-  const [streamHint, setStreamHint] = useState("");
-  const [analysisResult, setAnalysisResult] = useState<DeepAnalysisResultLite | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<CustomerAnalysisResponse | null>(null);
   const [message, setMessage] = useState("");
   const [newTableName, setNewTableName] = useState("");
   const [creatingCampaign, setCreatingCampaign] = useState(false);
@@ -163,6 +199,8 @@ export default function CustomerListsPage() {
   const [expandedRowIndex, setExpandedRowIndex] = useState<number | null>(null);
   const [editingCell, setEditingCell] = useState<{ rowIdx: number; col: string } | null>(null);
   const [errorPopover, setErrorPopover] = useState<{ rowIdx: number; x: number; y: number } | null>(null);
+  const [priorityCustomers, setPriorityCustomers] = useState<string[]>([]);
+  const [onlyPriorityView, setOnlyPriorityView] = useState(false);
 
   const allColumns = useMemo(() => {
     const extra = new Set<string>();
@@ -238,6 +276,11 @@ export default function CustomerListsPage() {
       setAnalysisResult(null);
       setShowTableEditor(true);
       setExpandedRowIndex(null);
+      const priority = await api
+        .get<PriorityCustomer[]>(`/workflow/customer-lists/${res.table.id}/priority-customers`)
+        .catch(() => []);
+      const keys = priority.map((item) => (item.email || item.phone || item.customer_name).toLowerCase());
+      setPriorityCustomers(keys);
     } catch (e) {
       setRows([]);
       setMessage(e instanceof Error ? e.message : "Không mở được bảng");
@@ -371,12 +414,6 @@ export default function CustomerListsPage() {
     }
   }
 
-  function onStreamEvent(evt: DeepAnalysisStreamEvent) {
-    if (evt.type !== "progress") return;
-    const label = STREAM_STEP_LABEL_VI[evt.step_key] ?? evt.step_key;
-    setStreamHint(`${label} (${evt.status})`);
-  }
-
   async function analyzeCurrentTable() {
     if (!rows.length) {
       setMessage("Bảng đang trống. Hãy nhập dữ liệu trước khi phân tích.");
@@ -386,32 +423,32 @@ export default function CustomerListsPage() {
       setMessage("Bảng đang có lỗi dữ liệu. Sửa lỗi trước khi phân tích để kết quả chính xác.");
       return;
     }
+    if (!activeListId) {
+      setMessage("Chọn list trước khi phân tích.");
+      return;
+    }
     setAnalyzing(true);
-    setStreamHint("Khởi động pipeline phân tích...");
     setMessage("");
     try {
-      const raw = await postNdjsonStream(
-        "/insights/a2a/deep-analysis-stream",
-        {
-          business_name: activeListName || "Bang du lieu khach hang",
-          industry: "tong_hop",
-          source_filename: `${activeListName || "table"}.xlsx`,
-          report_rows: rows,
-        },
-        { signal: new AbortController().signal, onEvent: onStreamEvent },
-      );
-      setAnalysisResult(raw as DeepAnalysisResultLite);
+      const result = await api.post<CustomerAnalysisResponse>(`/workflow/customer-lists/${activeListId}/analyze`, { rows });
+      setAnalysisResult(result);
       setMessage("Phân tích hoàn tất. Kết quả mới đã thay thế kết quả trước.");
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Phân tích thất bại");
     } finally {
       setAnalyzing(false);
-      setStreamHint("");
     }
   }
 
-  async function createCampaignFromAction(action: { title: string; target_segment: string; priority: string }) {
-    if (!analysisResult?.run_id) return;
+  async function createCampaignFromAction(action: {
+    title: string;
+    target_segment: string;
+    priority: string;
+    goal?: string;
+    expected_impact?: string;
+    recommended_channels?: string[];
+  }) {
+    if (!analysisResult) return;
     if (brands.length === 0) {
       setMessage("Chưa có Brand Vault. Vui lòng tạo brand trước khi tạo campaign.");
       return;
@@ -422,14 +459,19 @@ export default function CustomerListsPage() {
       const payload = {
         brand_id: brands[0].id,
         campaign_name: `Action: ${action.title}`.slice(0, 120),
-        objective: action.title,
+        objective: action.goal || action.title,
         product_or_service: "Danh sách khách hàng",
         target_audience: `Khách hàng nhóm ${action.target_segment}`,
-        offer_or_hook: `Ưu tiên ${action.priority}`,
+        offer_or_hook: action.expected_impact || `Ưu tiên ${action.priority}`,
         deadline: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-        channels: action.target_segment === "inactive" || action.target_segment === "vip" ? ["email"] : ["facebook_post"],
+        channels:
+          action.recommended_channels && action.recommended_channels.length > 0
+            ? action.recommended_channels
+            : action.target_segment === "churn_risk" || action.target_segment === "vip"
+              ? ["email"]
+              : ["facebook_post"],
         additional_notes: `[INSIGHT_ACTION] Tạo từ customer table ${activeListName}`,
-        source_insight_run_id: analysisResult.run_id,
+        source_insight_run_id: undefined,
         source_customer_segment: action.target_segment,
       };
       const created = await api.post<{ id: string }>("/campaigns", payload);
@@ -442,6 +484,39 @@ export default function CustomerListsPage() {
     }
   }
 
+  function toPriorityKey(customerName: string, email?: string, phone?: string): string {
+    return (email || phone || customerName).toLowerCase();
+  }
+
+  async function togglePriorityCustomer(input: { customer_name: string; email?: string; phone?: string }, isPriority: boolean) {
+    if (!activeListId) return;
+    const key = toPriorityKey(input.customer_name, input.email, input.phone);
+    try {
+      await api.post(`/workflow/customer-lists/${activeListId}/priority-customers`, {
+        customer_name: input.customer_name,
+        email: input.email || null,
+        phone: input.phone || null,
+        is_priority: isPriority,
+      });
+      setPriorityCustomers((prev) =>
+        isPriority ? (prev.includes(key) ? prev : [...prev, key]) : prev.filter((item) => item !== key),
+      );
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Không cập nhật được trạng thái ưu tiên");
+    }
+  }
+
+  async function createCampaignFromCustomer(customerName: string, segment: string) {
+    await createCampaignFromAction({
+      title: `Chăm sóc khách ${customerName}`,
+      target_segment: segment,
+      priority: segment === "churn_risk" ? "high" : "medium",
+      goal: `Triển khai chăm sóc cho khách ${customerName}`,
+      expected_impact: "Tăng tỉ lệ quay lại",
+      recommended_channels: segment === "churn_risk" || segment === "vip" ? ["email"] : ["facebook_post"],
+    });
+  }
+
   return (
     <div className="p-6 space-y-6 [&_.card]:!rounded-none [&_.input]:!rounded-none [&_.select]:!rounded-none [&_.btn-primary]:!rounded-none [&_.btn-secondary]:!rounded-none">
       <div className="flex items-start justify-between gap-4">
@@ -450,13 +525,13 @@ export default function CustomerListsPage() {
         </div>
         <div className="flex items-center gap-2">
           <HelpDialogButton
-            title="Hướng dẫn list user"
-            summary="Mỗi list user là một danh sách khách hàng riêng. Bạn nạp file vào list đang mở, chỉnh sửa và chỉ lưu khi bấm Lưu list."
+            title="Hướng dẫn danh sách người dùng"
+            summary="Mỗi danh sách là một tập khách hàng riêng. Bạn nạp file vào danh sách đang mở, chỉnh sửa và chỉ lưu khi bấm Lưu danh sách."
             steps={[
-              "Tạo hoặc chọn list user.",
-              "Nạp file CSV/XLSX vào đúng list đang mở.",
+              "Tạo hoặc chọn danh sách.",
+              "Nạp file CSV/XLSX vào đúng danh sách đang mở.",
               "Chỉnh sửa thêm/xóa dòng.",
-              "Bấm Lưu list để ghi dữ liệu.",
+              "Bấm Lưu danh sách để ghi dữ liệu.",
               "Bấm Phân tích để chạy pipeline bot và lấy kết quả.",
             ]}
           />
@@ -478,7 +553,7 @@ export default function CustomerListsPage() {
           <div className="flex gap-2">
             <input
               className="input text-sm"
-              placeholder="Tên list user mới"
+              placeholder="Tên danh sách mới"
               value={newTableName}
               onChange={(e) => setNewTableName(e.target.value)}
             />
@@ -549,13 +624,13 @@ export default function CustomerListsPage() {
       {showTableEditor && (
         <div className="card space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2>{activeListName ? `Danh sách khách hàng - ${activeListName}` : "Chọn list user để thao tác"}</h2>
+            <h2>{activeListName ? `Danh sách khách hàng - ${activeListName}` : "Chọn danh sách để thao tác"}</h2>
             <div className="flex items-center gap-2">
               <button className="btn-secondary text-xs" onClick={() => setShowTableEditor(false)}>
                 Quay lại các danh sách hiện có
               </button>
               <label className="btn-secondary text-xs cursor-pointer">
-                upload data
+                Tải dữ liệu
                 <input
                   type="file"
                   accept=".csv,.xlsx,.xls"
@@ -576,16 +651,12 @@ export default function CustomerListsPage() {
             </div>
           </div>
 
-          {analyzing ? (
-            <div className="border border-blue-200 bg-blue-50 p-2 text-xs text-blue-800">
-              Quy trình bot: {streamHint || "Đang chạy..."}
-            </div>
-          ) : null}
+          {analyzing ? <div className="border border-blue-200 bg-blue-50 p-2 text-xs text-blue-800">Đang phân tích dữ liệu customer...</div> : null}
 
           {tableLoading ? (
-            <p className="text-sm text-gray-500">Đang tải dữ liệu list user...</p>
+            <p className="text-sm text-gray-500">Đang tải dữ liệu danh sách...</p>
           ) : !activeListId ? (
-            <p className="text-sm text-gray-500">Hãy chọn hoặc tạo list user ở trên.</p>
+            <p className="text-sm text-gray-500">Hãy chọn hoặc tạo danh sách ở trên.</p>
           ) : (
             <div className="space-y-2">
               {hasRowErrors ? (
@@ -731,25 +802,201 @@ export default function CustomerListsPage() {
           )}
 
           {analysisResult ? (
-            <div className="border border-green-200 bg-green-50 p-3 text-sm space-y-2">
-              <p className="font-medium">Kết quả phân tích mới nhất (run: {analysisResult.run_id})</p>
-              <p>Điểm chất lượng dữ liệu: {Math.round((analysisResult.data_quality_score ?? 0) * 100)}%</p>
-              {analysisResult.issues?.length ? (
-                <ul className="list-disc list-inside text-xs">
-                  {analysisResult.issues.slice(0, 3).map((issue, idx) => (
-                    <li key={idx}>{issue}</li>
-                  ))}
-                </ul>
+            <div className="space-y-3">
+              {analysisResult.analysis.narrative ? (
+                <div className="border border-indigo-200 bg-indigo-50 p-2 text-xs whitespace-pre-line">
+                  {analysisResult.analysis.narrative}
+                </div>
               ) : null}
-              {analysisResult.suggested_actions?.length ? (
-                <div className="text-xs">
-                  <p className="font-medium">Action đề xuất:</p>
-                  <div className="space-y-2 mt-1">
-                    {analysisResult.suggested_actions.slice(0, 3).map((a, idx) => (
-                      <div key={idx} className="border border-green-200 bg-white p-2">
-                        <p>
-                          {a.title} ({a.priority}, {a.target_segment})
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <div className="border border-gray-200 bg-white p-2">
+                  <p className="text-[11px] text-gray-500">Tổng khách</p>
+                  <p className="text-lg font-semibold">{analysisResult.analysis.overview.total_customers}</p>
+                </div>
+                <div className="border border-gray-200 bg-white p-2">
+                  <p className="text-[11px] text-gray-500">Tổng doanh thu</p>
+                  <p className="text-lg font-semibold">{analysisResult.analysis.overview.total_revenue}</p>
+                </div>
+                <div className="border border-gray-200 bg-white p-2">
+                  <p className="text-[11px] text-gray-500">Retention</p>
+                  <p className="text-lg font-semibold">{analysisResult.analysis.overview.retention_rate_percent}%</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <div className="border border-gray-200 bg-white p-2">
+                  <p className="font-medium text-sm">Top chi tiêu</p>
+                  <p className="text-[11px] text-gray-500 mb-1">
+                    Top 20% đóng góp {analysisResult.analysis.customer_value.revenue_share_of_top_group}% doanh thu
+                  </p>
+                  <div className="space-y-1 text-xs">
+                    {(onlyPriorityView
+                      ? analysisResult.analysis.customer_value.top_spenders.filter((item) =>
+                          priorityCustomers.includes(toPriorityKey(item.customer_name, item.email, item.phone)),
+                        )
+                      : analysisResult.analysis.customer_value.top_spenders
+                    )
+                      .slice(0, 5)
+                      .map((item, idx) => (
+                      <div key={idx} className="border-b border-gray-100 pb-1">
+                        <div className="flex items-center justify-between">
+                          <span>{item.customer_name}</span>
+                          <span className="font-medium">{item.amount}</span>
+                        </div>
+                        <div className="mt-1 h-1.5 w-full bg-gray-100">
+                          <div
+                            className="h-1.5 bg-blue-600"
+                            style={{
+                              width: `${Math.min(
+                                100,
+                                (item.amount / Math.max(analysisResult.analysis.customer_value.top_spenders[0]?.amount || 1, 1)) * 100,
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                        <div className="mt-1 flex items-center gap-1">
+                          <button
+                            className="btn-secondary text-[10px] px-2 py-[2px]"
+                            onClick={() =>
+                              void togglePriorityCustomer(
+                                { customer_name: item.customer_name, email: item.email, phone: item.phone },
+                                !priorityCustomers.includes(toPriorityKey(item.customer_name, item.email, item.phone)),
+                              )
+                            }
+                          >
+                            {priorityCustomers.includes(toPriorityKey(item.customer_name, item.email, item.phone))
+                              ? "Bỏ ưu tiên"
+                              : "Ưu tiên"}
+                          </button>
+                          <button
+                            className="btn-primary text-[10px] px-2 py-[2px]"
+                            disabled={creatingCampaign}
+                            onClick={() => void createCampaignFromCustomer(item.customer_name, "vip")}
+                          >
+                            Tạo campaign
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="border border-gray-200 bg-white p-2">
+                  <p className="font-medium text-sm">Nguy cơ rời bỏ</p>
+                  <div className="text-xs space-y-1">
+                    <p>&gt; 30 ngày: {analysisResult.analysis.churn_risk.inactive_over_30_days} khách</p>
+                    <p>&gt; 60 ngày: {analysisResult.analysis.churn_risk.inactive_over_60_days} khách</p>
+                    {(onlyPriorityView
+                      ? analysisResult.analysis.churn_risk.high_risk_customers.filter((item) =>
+                          priorityCustomers.includes(toPriorityKey(item.customer_name, item.email, item.phone)),
+                        )
+                      : analysisResult.analysis.churn_risk.high_risk_customers
+                    )
+                      .slice(0, 3)
+                      .map((item, idx) => (
+                      <div key={idx} className="border border-red-100 bg-red-50 p-1">
+                        <p className="text-red-700">
+                          {item.customer_name} - {item.days_since_last_payment} ngày
                         </p>
+                        <div className="mt-1 flex items-center gap-1">
+                          <button
+                            className="btn-secondary text-[10px] px-2 py-[2px]"
+                            onClick={() =>
+                              void togglePriorityCustomer(
+                                { customer_name: item.customer_name, email: item.email, phone: item.phone },
+                                !priorityCustomers.includes(toPriorityKey(item.customer_name, item.email, item.phone)),
+                              )
+                            }
+                          >
+                            {priorityCustomers.includes(toPriorityKey(item.customer_name, item.email, item.phone))
+                              ? "Bỏ ưu tiên"
+                              : "Ưu tiên"}
+                          </button>
+                          <button
+                            className="btn-primary text-[10px] px-2 py-[2px]"
+                            disabled={creatingCampaign}
+                            onClick={() => void createCampaignFromCustomer(item.customer_name, "churn_risk")}
+                          >
+                            Tạo campaign
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="border border-gray-200 bg-white p-2">
+                <p className="font-medium text-sm mb-1">Phân nhóm khách hàng</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                  <div className="border border-blue-200 bg-blue-50 p-2">
+                    VIP: {analysisResult.analysis.segmentation.summary.vip}
+                    <div className="mt-1 h-1.5 bg-blue-100">
+                      <div
+                        className="h-1.5 bg-blue-700"
+                        style={{
+                          width: `${Math.min(100, (analysisResult.analysis.segmentation.summary.vip / Math.max(analysisResult.analysis.overview.total_customers, 1)) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="border border-sky-200 bg-sky-50 p-2">
+                    Tiềm năng: {analysisResult.analysis.segmentation.summary.potential}
+                    <div className="mt-1 h-1.5 bg-sky-100">
+                      <div
+                        className="h-1.5 bg-sky-600"
+                        style={{
+                          width: `${Math.min(100, (analysisResult.analysis.segmentation.summary.potential / Math.max(analysisResult.analysis.overview.total_customers, 1)) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="border border-red-200 bg-red-50 p-2">
+                    Nguy cơ rời bỏ: {analysisResult.analysis.segmentation.summary.churn_risk}
+                    <div className="mt-1 h-1.5 bg-red-100">
+                      <div
+                        className="h-1.5 bg-red-600"
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            (analysisResult.analysis.segmentation.summary.churn_risk / Math.max(analysisResult.analysis.overview.total_customers, 1)) * 100,
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="border border-green-200 bg-green-50 p-2">
+                    Mới: {analysisResult.analysis.segmentation.summary.new}
+                    <div className="mt-1 h-1.5 bg-green-100">
+                      <div
+                        className="h-1.5 bg-green-600"
+                        style={{
+                          width: `${Math.min(100, (analysisResult.analysis.segmentation.summary.new / Math.max(analysisResult.analysis.overview.total_customers, 1)) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {analysisResult.analysis.suggested_actions.length ? (
+                <div className="border border-green-200 bg-green-50 p-2">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <p className="font-medium text-sm">Hành động đề xuất</p>
+                    <label className="text-[11px] inline-flex items-center gap-1">
+                      <input type="checkbox" checked={onlyPriorityView} onChange={(e) => setOnlyPriorityView(e.target.checked)} />
+                      Chỉ xem khách ưu tiên
+                    </label>
+                  </div>
+                  <div className="space-y-2">
+                    {analysisResult.analysis.suggested_actions.map((a, idx) => (
+                      <div key={idx} className="border border-green-200 bg-white p-2 text-xs">
+                        <p className="font-medium">
+                          {a.title} ({a.priority})
+                        </p>
+                        <p className="text-gray-600">
+                          Nhóm: {a.target_segment} - Mục tiêu: {a.goal}
+                        </p>
+                        {a.reason ? <p className="text-gray-600">Lý do: {a.reason}</p> : null}
                         <button
                           className="btn-primary text-[11px] mt-1"
                           disabled={creatingCampaign}

@@ -26,6 +26,7 @@ from models.user import User
 from models.workflow_job import WorkflowJob
 from models.workflow_schedule import WorkflowSchedule
 from services.agent_dispatcher import dispatch_campaign
+from services.customer_analysis_service import analyze_customer_rows
 
 router = APIRouter()
 
@@ -246,6 +247,50 @@ async def _generate_brief(preset: dict, brand: Brand) -> dict:
         return json.loads(resp.choices[0].message.content)
 
 
+async def _generate_customer_analysis_narrative(analysis: dict) -> tuple[str, dict]:
+    """
+    Dung 1 model local de tom tat ket qua phan tich customer thanh doan ngan gon.
+    Neu local loi/timeout thi fallback GPT.
+    """
+    overview = analysis.get("overview", {})
+    segment_summary = (analysis.get("segmentation") or {}).get("summary", {})
+    churn = analysis.get("churn_risk", {})
+    prompt = (
+        "Tom tat ket qua phan tich customer bang tieng Viet, toi da 3 bullet, ngan gon va hanh dong duoc.\n"
+        f"- Tong khach: {overview.get('total_customers', 0)}\n"
+        f"- Tong doanh thu: {overview.get('total_revenue', 0)}\n"
+        f"- Retention (%): {overview.get('retention_rate_percent', 0)}\n"
+        f"- Segment: VIP {segment_summary.get('vip', 0)}, Potential {segment_summary.get('potential', 0)}, "
+        f"ChurnRisk {segment_summary.get('churn_risk', 0)}, New {segment_summary.get('new', 0)}\n"
+        f"- Churn >30: {churn.get('inactive_over_30_days', 0)}, >60: {churn.get('inactive_over_60_days', 0)}\n"
+        "Output chi la plain text, moi dong bat dau bang '- '."
+    )
+    messages = [{"role": "user", "content": prompt}]
+    try:
+        resp = await asyncio.wait_for(
+            _qwen.chat.completions.create(
+                model=QWEN_MODEL,
+                messages=messages,
+                temperature=0.2,
+            ),
+            timeout=min(QWEN_TIMEOUT, 60),
+        )
+        content = resp.choices[0].message.content.strip()
+        return content, {"model_used": QWEN_MODEL, "fallback_used": False, "fallback_reason": None}
+    except Exception:
+        resp = await _openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            temperature=0.2,
+        )
+        content = resp.choices[0].message.content.strip()
+        return content, {
+            "model_used": "gpt-4o-mini",
+            "fallback_used": True,
+            "fallback_reason": "qwen_failed_or_timeout",
+        }
+
+
 # ---------------------------------------------------------------------------
 # Background task: set running → dispatch pipeline → set done/failed
 # ---------------------------------------------------------------------------
@@ -305,6 +350,17 @@ class CustomerListUpdatePayload(BaseModel):
 
 class CustomerRowsUpsertPayload(BaseModel):
     rows: list[dict]
+
+
+class CustomerAnalyzePayload(BaseModel):
+    rows: list[dict]
+
+
+class CustomerPriorityUpsertPayload(BaseModel):
+    customer_name: str
+    email: str | None = None
+    phone: str | None = None
+    is_priority: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -992,3 +1048,116 @@ async def list_customers(
             raise HTTPException(400, f"Segment không hợp lệ: {segment}")
         payload = [item for item in payload if item["segment"] == normalized_segment]
     return payload[offset : offset + limit]
+
+
+@router.post("/customer-lists/{customer_list_id}/analyze")
+async def analyze_customer_list_rows(
+    customer_list_id: uuid.UUID,
+    payload: CustomerAnalyzePayload,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    list_result = await db.execute(
+        select(CustomerList).where(
+            CustomerList.id == customer_list_id,
+            CustomerList.user_id == current_user.id,
+        )
+    )
+    customer_list = list_result.scalar_one_or_none()
+    if not customer_list:
+        raise HTTPException(404, "Customer list không tồn tại")
+    rows = payload.rows or []
+    if len(rows) == 0:
+        raise HTTPException(400, "Danh sách đang trống, không thể phân tích")
+    analysis = analyze_customer_rows(rows)
+    narrative, ai_meta = await _generate_customer_analysis_narrative(analysis)
+    analysis["narrative"] = narrative
+    analysis["ai_meta"] = ai_meta
+    return {
+        "list_id": str(customer_list.id),
+        "list_name": customer_list.list_name,
+        "analysis": analysis,
+    }
+
+
+@router.get("/customer-lists/{customer_list_id}/priority-customers")
+async def list_priority_customers(
+    customer_list_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    list_result = await db.execute(
+        select(CustomerList).where(
+            CustomerList.id == customer_list_id,
+            CustomerList.user_id == current_user.id,
+        )
+    )
+    customer_list = list_result.scalar_one_or_none()
+    if not customer_list:
+        raise HTTPException(404, "Customer list không tồn tại")
+
+    rows_result = await db.execute(
+        select(Customer).where(Customer.customer_list_id == customer_list.id)
+    )
+    customers = rows_result.scalars().all()
+    payload: list[dict] = []
+    for customer in customers:
+        extra = customer.extra_fields or {}
+        if bool(extra.get("is_priority")):
+            payload.append(
+                {
+                    "customer_id": str(customer.id),
+                    "customer_name": customer.full_name or "",
+                    "email": customer.email,
+                    "phone": customer.phone,
+                    "priority_note": extra.get("priority_note"),
+                }
+            )
+    return payload
+
+
+@router.post("/customer-lists/{customer_list_id}/priority-customers")
+async def upsert_priority_customer(
+    customer_list_id: uuid.UUID,
+    payload: CustomerPriorityUpsertPayload,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    list_result = await db.execute(
+        select(CustomerList).where(
+            CustomerList.id == customer_list_id,
+            CustomerList.user_id == current_user.id,
+        )
+    )
+    customer_list = list_result.scalar_one_or_none()
+    if not customer_list:
+        raise HTTPException(404, "Customer list không tồn tại")
+
+    rows_result = await db.execute(
+        select(Customer).where(Customer.customer_list_id == customer_list.id)
+    )
+    candidates = rows_result.scalars().all()
+    target: Customer | None = None
+    email_norm = (payload.email or "").strip().lower()
+    phone_norm = (payload.phone or "").strip()
+    name_norm = payload.customer_name.strip().lower()
+
+    if email_norm:
+        target = next((c for c in candidates if (c.email or "").strip().lower() == email_norm), None)
+    if target is None and phone_norm:
+        target = next((c for c in candidates if (c.phone or "").strip() == phone_norm), None)
+    if target is None:
+        target = next((c for c in candidates if (c.full_name or "").strip().lower() == name_norm), None)
+
+    if target is None:
+        raise HTTPException(404, "Không tìm thấy customer để cập nhật ưu tiên")
+
+    extra = dict(target.extra_fields or {})
+    extra["is_priority"] = bool(payload.is_priority)
+    target.extra_fields = extra
+    await db.commit()
+    return {
+        "customer_id": str(target.id),
+        "customer_name": target.full_name or "",
+        "is_priority": bool(extra.get("is_priority")),
+    }

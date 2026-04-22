@@ -1,0 +1,222 @@
+from __future__ import annotations
+
+from collections import Counter
+from datetime import datetime, timezone
+import math
+from typing import Any
+
+
+def _to_float(value: object) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().replace(" ", "").replace(",", "")
+    if not text:
+        return 0.0
+    try:
+        return float(text)
+    except ValueError:
+        return 0.0
+
+
+def _to_int(value: object) -> int:
+    return int(_to_float(value))
+
+
+def _to_date(value: object) -> datetime | None:
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    formats = [
+        "%Y-%m-%d",
+        "%m/%d/%y",
+        "%m/%d/%Y",
+        "%d/%m/%Y",
+        "%d/%m/%y",
+        "%Y/%m/%d",
+    ]
+    for fmt in formats:
+        try:
+            return datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def _segment_label(spend: float, repeat_count: int, days_since_last: int | None) -> str:
+    if days_since_last is not None and days_since_last >= 60:
+        return "churn_risk"
+    if spend >= 30 and repeat_count >= 3:
+        return "vip"
+    if repeat_count >= 2 and spend < 30:
+        return "potential"
+    return "new"
+
+
+def analyze_customer_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    normalized: list[dict[str, Any]] = []
+    now = datetime.now(timezone.utc)
+    invalid_rows: list[dict[str, Any]] = []
+
+    for idx, row in enumerate(rows):
+        name = str(row.get("HoVaTen", "")).strip() or f"Khach {idx + 1}"
+        spend = max(0.0, _to_float(row.get("TongSoTienDaChiTra")))
+        repeat_count = max(0, _to_int(row.get("TongSoLanQuayLai")))
+        last_paid_at = _to_date(row.get("LanCuoiChiTra"))
+        days_since_last = (now - last_paid_at).days if last_paid_at else None
+        phone = str(row.get("SDT", "")).strip()
+        email = str(row.get("Email", "")).strip()
+
+        if not str(row.get("HoVaTen", "")).strip():
+            invalid_rows.append({"row_index": idx, "reason": "Thiếu họ tên"})
+        if not email:
+            invalid_rows.append({"row_index": idx, "reason": "Thiếu email"})
+
+        segment = _segment_label(spend, repeat_count, days_since_last)
+        normalized.append(
+            {
+                "name": name,
+                "spend": spend,
+                "repeat_count": repeat_count,
+                "days_since_last": days_since_last,
+                "segment": segment,
+                "phone": phone,
+                "email": email,
+            }
+        )
+
+    total_customers = len(normalized)
+    total_revenue = round(sum(item["spend"] for item in normalized), 2)
+
+    sorted_by_spend = sorted(normalized, key=lambda x: x["spend"], reverse=True)
+    top_n = max(1, math.ceil(total_customers * 0.2)) if total_customers > 0 else 0
+    top_group = sorted_by_spend[:top_n]
+    top_group_revenue = sum(item["spend"] for item in top_group)
+    revenue_share = round((top_group_revenue / total_revenue) * 100, 2) if total_revenue > 0 else 0.0
+
+    returning_customers = sum(1 for item in normalized if item["repeat_count"] >= 1)
+    retention_rate = round((returning_customers / total_customers) * 100, 2) if total_customers > 0 else 0.0
+    top_returning = sorted(normalized, key=lambda x: x["repeat_count"], reverse=True)[:5]
+
+    over_30 = [item for item in normalized if item["days_since_last"] is not None and item["days_since_last"] >= 30]
+    over_60 = [item for item in normalized if item["days_since_last"] is not None and item["days_since_last"] >= 60]
+
+    segment_counts = Counter(item["segment"] for item in normalized)
+    segment_summary = {
+        "vip": segment_counts.get("vip", 0),
+        "potential": segment_counts.get("potential", 0),
+        "churn_risk": segment_counts.get("churn_risk", 0),
+        "new": segment_counts.get("new", 0),
+    }
+
+    suggested_actions: list[dict[str, Any]] = []
+    if segment_summary["churn_risk"] > 0:
+        suggested_actions.append(
+            {
+                "title": "Kích hoạt lại nhóm nguy cơ rời bỏ",
+                "priority": "high",
+                "target_segment": "churn_risk",
+                "goal": "Tăng khách quay lại trong 7 ngày",
+                "reason": "Nhóm này đã lâu chưa phát sinh giao dịch, cần tái kích hoạt sớm.",
+                "expected_impact": "Tăng retention",
+                "recommended_channels": ["email"],
+            }
+        )
+    if segment_summary["vip"] > 0:
+        suggested_actions.append(
+            {
+                "title": "Chăm sóc và upsell nhóm VIP",
+                "priority": "medium",
+                "target_segment": "vip",
+                "goal": "Tăng doanh thu trên mỗi khách VIP",
+                "reason": "Khách VIP có khả năng chi trả cao, phù hợp upsell/chăm sóc riêng.",
+                "expected_impact": "Tăng doanh thu",
+                "recommended_channels": ["email", "facebook_post"],
+            }
+        )
+    if segment_summary["new"] > 0:
+        suggested_actions.append(
+            {
+                "title": "Onboarding nhóm khách mới",
+                "priority": "medium",
+                "target_segment": "new",
+                "goal": "Tăng chuyển đổi mua lần 2",
+                "reason": "Khách mới cần chuỗi onboarding để tạo thói quen quay lại.",
+                "expected_impact": "Tăng repeat order",
+                "recommended_channels": ["email"],
+            }
+        )
+
+    return {
+        "overview": {
+            "total_customers": total_customers,
+            "total_revenue": total_revenue,
+            "retention_rate_percent": retention_rate,
+        },
+        "customer_value": {
+            "total_revenue": total_revenue,
+            "top_20_percent_count": top_n,
+            "revenue_share_of_top_group": revenue_share,
+            "top_spenders": [
+                {
+                    "customer_name": item["name"],
+                    "amount": item["spend"],
+                    "email": item["email"],
+                    "phone": item["phone"],
+                }
+                for item in top_group[:10]
+            ],
+        },
+        "retention": {
+            "total_customers": total_customers,
+            "returning_customers": returning_customers,
+            "new_customers": max(total_customers - returning_customers, 0),
+            "retention_rate_percent": retention_rate,
+            "top_returning_customers": [
+                {"customer_name": item["name"], "return_count": item["repeat_count"]}
+                for item in top_returning
+            ],
+        },
+        "churn_risk": {
+            "inactive_over_30_days": len(over_30),
+            "inactive_over_60_days": len(over_60),
+            "high_risk_customers": [
+                {
+                    "customer_name": item["name"],
+                    "days_since_last_payment": item["days_since_last"],
+                    "email": item["email"],
+                    "phone": item["phone"],
+                }
+                for item in over_60[:10]
+            ],
+            "medium_risk_customers": [
+                {
+                    "customer_name": item["name"],
+                    "days_since_last_payment": item["days_since_last"],
+                    "email": item["email"],
+                    "phone": item["phone"],
+                }
+                for item in over_30[:10]
+            ],
+        },
+        "segmentation": {
+            "summary": segment_summary,
+            "customers": [
+                {"customer_name": item["name"], "segment": item["segment"]}
+                for item in normalized[:100]
+            ],
+        },
+        "suggested_actions": suggested_actions[:3],
+        "data_quality": {
+            "invalid_row_count": len(invalid_rows),
+            "invalid_rows": invalid_rows[:20],
+        },
+        "ai_meta": {
+            "model_used": "rule-engine",
+            "fallback_used": False,
+            "fallback_reason": None,
+        },
+    }

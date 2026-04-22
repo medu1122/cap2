@@ -21,8 +21,10 @@ interface SuggestedAction {
   title: string;
   priority: string;
   target_segment: string;
-  reason: string;
+  reason?: string;
+  goal?: string;
   expected_impact?: string;
+  recommended_channels?: string[];
 }
 
 interface InsightRunResult {
@@ -38,13 +40,18 @@ const STATUS_LABELS: Record<string, string> = {
 
 function toCampaignFromActionHref(runId: string, action: SuggestedAction): string {
   const normalizedSegment = (action.target_segment || "unknown").toLowerCase();
-  const channels = normalizedSegment === "inactive" || normalizedSegment === "vip" ? "email" : "facebook_post";
+  const channels =
+    action.recommended_channels && action.recommended_channels.length > 0
+      ? action.recommended_channels.join(",")
+      : normalizedSegment === "inactive" || normalizedSegment === "churn_risk" || normalizedSegment === "vip"
+        ? "email"
+        : "facebook_post";
   const params = new URLSearchParams({
     source_insight_run_id: runId,
     source_customer_segment: normalizedSegment,
     channels,
     campaign_name: `Action: ${action.title}`.slice(0, 120),
-    objective: action.reason || action.title,
+    objective: action.goal || action.reason || action.title,
     offer_or_hook: action.expected_impact || "",
     additional_notes: `[INSIGHT_ACTION] ${action.title}`,
   });
@@ -180,7 +187,7 @@ export default function InsightActionsPage() {
                               Tạo campaign
                             </a>
                           </div>
-                          <p className="mt-2 text-sm text-gray-700">{action.reason}</p>
+                          <p className="mt-2 text-sm text-gray-700">{action.goal || action.reason || "Chưa có mô tả chi tiết."}</p>
                         </li>
                       ))}
                     </ul>
