@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
 import { api } from "@/lib/api-client";
@@ -207,6 +207,10 @@ export default function CustomerListsPage() {
   const [selectedRowIndexes, setSelectedRowIndexes] = useState<number[]>([]);
   const [analysisModalOpen, setAnalysisModalOpen] = useState(false);
   const [analysisByList, setAnalysisByList] = useState<Record<string, CustomerAnalysisResponse>>({});
+  const [autoSaving, setAutoSaving] = useState(false);
+  const [rowsDirty, setRowsDirty] = useState(false);
+  const isHydratingRowsRef = useRef(false);
+  const prevHasRowErrorsRef = useRef<boolean>(false);
 
   const allColumns = useMemo(() => {
     const extra = new Set<string>();
@@ -296,6 +300,17 @@ export default function CustomerListsPage() {
   }, [analysisResult]);
 
   useEffect(() => {
+    if (rows.length === 0) {
+      prevHasRowErrorsRef.current = false;
+      return;
+    }
+    if (prevHasRowErrorsRef.current && !hasRowErrors) {
+      setMessage("Dữ liệu hợp lệ.");
+    }
+    prevHasRowErrorsRef.current = hasRowErrors;
+  }, [hasRowErrors, rows.length]);
+
+  useEffect(() => {
     try {
       const raw = localStorage.getItem("customer-analysis-cache-v1");
       if (!raw) return;
@@ -334,21 +349,27 @@ export default function CustomerListsPage() {
     setMessage("");
     try {
       const res = await api.get<CustomerTableRowsResponse>(`/workflow/customer-lists/${listId}/rows`);
+      isHydratingRowsRef.current = true;
       setActiveListId(res.table.id);
       setActiveListName(res.table.name);
       setRows(normalizeRows(res.rows as Record<string, unknown>[]));
       setAnalysisResult(analysisByList[res.table.id] || null);
       setShowTableEditor(true);
       setExpandedRowIndex(null);
+      setOnlyPriorityTableView(false);
       const priority = await api
         .get<PriorityCustomer[]>(`/workflow/customer-lists/${res.table.id}/priority-customers`)
         .catch(() => []);
       const keys = priority.map((item) => (item.email || item.phone || item.customer_name).toLowerCase());
       setPriorityCustomers(keys);
+      setRowsDirty(false);
     } catch (e) {
       setRows([]);
       setMessage(e instanceof Error ? e.message : "Không mở được bảng");
     } finally {
+      setTimeout(() => {
+        isHydratingRowsRef.current = false;
+      }, 0);
       setTableLoading(false);
     }
   }
@@ -419,11 +440,13 @@ export default function CustomerListsPage() {
       next[rowIdx] = { ...next[rowIdx], [col]: value };
       return next;
     });
+    setRowsDirty(true);
   }
 
   function addRow() {
     const nextIndex = rows.length;
     setRows((prev) => [...prev, { ...emptyRow(), ID: String(prev.length + 1) }]);
+    setRowsDirty(true);
     setTimeout(() => {
       window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
       setEditingCell({ rowIdx: nextIndex, col: "HoVaTen" });
@@ -436,6 +459,7 @@ export default function CustomerListsPage() {
     setEditingCell(null);
     setErrorPopover(null);
     setSelectedRowIndexes((prev) => prev.filter((i) => i !== index).map((i) => (i > index ? i - 1 : i)));
+    setRowsDirty(true);
   }
 
   async function handleImportToCurrentTable(event: React.ChangeEvent<HTMLInputElement>) {
@@ -454,11 +478,30 @@ export default function CustomerListsPage() {
       }
       const normalized = normalizeRows(imported as Record<string, unknown>[]);
       setRows(normalized);
-      setMessage(`Đã nạp ${normalized.length} dòng vào danh sách đang mở. Nhấn "Lưu list" để ghi xuống hệ thống.`);
+      setRowsDirty(true);
+      setOnlyPriorityTableView(false);
+      setMessage(`Đã nạp ${normalized.length} dòng vào danh sách đang mở.`);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Không đọc được file");
     } finally {
       event.target.value = "";
+    }
+  }
+
+  async function persistRowsNow(showToast: boolean) {
+    if (!activeListId) return;
+    setSaving(showToast);
+    setAutoSaving(true);
+    try {
+      await api.put(`/workflow/customer-lists/${activeListId}/rows`, { rows });
+      setRowsDirty(false);
+      if (showToast) setMessage("Đã lưu danh sách.");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Lưu tự động thất bại";
+      if (showToast) setMessage(msg);
+    } finally {
+      setSaving(false);
+      setAutoSaving(false);
     }
   }
 
@@ -467,36 +510,7 @@ export default function CustomerListsPage() {
       setMessage("Chọn danh sách trước khi lưu.");
       return;
     }
-    const emptyRows = rows.filter((row) => {
-      const hasAnyData = Boolean(
-        String(row.HoVaTen || "").trim() ||
-          String(row.Email || "").trim() ||
-          String(row.SDT || "").trim() ||
-          String(row.LoaiKhachHang || "").trim() ||
-          String(row.LanCuoiChiTra || "").trim() ||
-          String(row.TongSoTienDaChiTra || "").trim(),
-      );
-      return !hasAnyData;
-    }).length;
-    if (emptyRows > 0) {
-      setMessage(`Còn ${emptyRows} dòng trống. Vui lòng nhập đủ hoặc xóa trước khi lưu.`);
-      return;
-    }
-    if (hasRowErrors) {
-      setMessage("Bảng còn lỗi dữ liệu theo từng dòng. Sửa lỗi trước khi lưu.");
-      return;
-    }
-    setSaving(true);
-    setMessage("");
-    try {
-      await api.put(`/workflow/customer-lists/${activeListId}/rows`, { rows });
-      await loadLists();
-      setMessage("Đã lưu bảng thành công.");
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Lưu bảng thất bại");
-    } finally {
-      setSaving(false);
-    }
+    await persistRowsNow(true);
   }
 
   async function analyzeCurrentTable() {
@@ -526,6 +540,18 @@ export default function CustomerListsPage() {
       setAnalyzing(false);
     }
   }
+
+  useEffect(() => {
+    if (!activeListId) return;
+    if (!rowsDirty) return;
+    if (tableLoading) return;
+    if (isHydratingRowsRef.current) return;
+    const timeout = window.setTimeout(() => {
+      void persistRowsNow(false);
+    }, 700);
+    return () => window.clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, rowsDirty, activeListId, tableLoading]);
 
   async function createCampaignFromAction(action: {
     title: string;
@@ -776,7 +802,7 @@ export default function CustomerListsPage() {
             <h2>{activeListName ? `Danh sách khách hàng - ${activeListName}` : "Chọn danh sách để thao tác"}</h2>
             <div className="flex items-center gap-2">
               <button className="btn-secondary text-xs" onClick={() => setShowTableEditor(false)}>
-                Quay lại các danh sách hiện có
+                Quay lại
               </button>
               <label className="btn-secondary text-xs cursor-pointer">
                 Tải dữ liệu
@@ -812,6 +838,7 @@ export default function CustomerListsPage() {
                   Xem kết quả
                 </button>
               ) : null}
+              {autoSaving ? <span className="text-[11px] text-gray-500">Saving...</span> : null}
             </div>
           </div>
 
@@ -825,11 +852,7 @@ export default function CustomerListsPage() {
                 <div className="border border-red-200 bg-red-50 p-2 text-xs text-red-700">
                   Có {Object.keys(rowErrors).length} dòng đang lỗi dữ liệu. Bấm biểu tượng cảnh báo trước tên khách để xem lỗi.
                 </div>
-              ) : (
-                <div className="border border-green-200 bg-green-50 p-2 text-xs text-green-700">
-                  Dữ liệu hợp lệ, có thể lưu và phân tích.
-                </div>
-              )}
+              ) : null}
               <div className="flex items-center justify-end">
                 <div className="flex flex-wrap items-center gap-3">
                   <span className="text-[11px] border border-amber-300 bg-amber-50 px-2 py-[2px] text-amber-800">
@@ -1157,7 +1180,7 @@ export default function CustomerListsPage() {
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-white border border-gray-200 p-4 space-y-2">
             <p className="font-medium">Đang phân tích dữ liệu...</p>
-            <p className="text-sm text-gray-600">Model đang dùng: Qwen 2.5 14B (local), fallback GPT khi cần.</p>
+            <p className="text-sm text-gray-600">Đang phân tích</p>
             <div className="h-2 bg-gray-100">
               <div className="h-2 bg-blue-600 animate-pulse w-3/4" />
             </div>

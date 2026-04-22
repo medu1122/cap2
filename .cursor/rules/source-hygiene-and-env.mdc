@@ -28,6 +28,7 @@ alwaysApply: true
 - Không thêm đoạn mô tả phụ dài nhiều dòng ngay dưới label (kiểu “giải thích quá tay” trên form).
 - Ưu tiên: label rõ + placeholder gọn; chi tiết nghiệp vụ đưa vào Help dialog hoặc tài liệu `docs/final`, không nhồi vào giao diện.
 - Tất cả micro-text hiển thị trên giao diện phải rõ ràng, ưu tiên tiếng Việt có dấu; không dùng tiếng Việt không dấu.
+- Hạn chế hiển thị các câu mô tả hiển nhiên hoặc lặp lại trạng thái hệ thống; ưu tiên tín hiệu ngắn gọn, trực quan (icon/loading nhỏ) thay vì diễn giải dài.
 
 # Quy tắc migration / database
 
