@@ -58,6 +58,20 @@ const PRIMARY_COLUMNS = [
   { key: "LanCuoiChiTra", label: "Lần cuối chi trả" },
   { key: "TongSoTienDaChiTra", label: "Tổng số tiền đã chi trả" },
 ] as const;
+const COLUMN_LABELS: Record<string, string> = {
+  ID: "ID",
+  HoVaTen: "Họ và tên",
+  Tuoi: "Tuổi",
+  SDT: "SĐT",
+  Email: "Email",
+  LinkFB: "Link Facebook",
+  LanCuoiChiTra: "Lần cuối chi trả",
+  TongSoTienDaChiTra: "Tổng số tiền đã chi trả",
+  TongSoLanQuayLai: "Tổng số lần quay lại",
+  LoaiKhachHang: "Loại khách hàng",
+  DichVuLanCuoiSuDung: "Dịch vụ lần cuối sử dụng",
+  DichVuSuDungNhieuNhat: "Dịch vụ sử dụng nhiều nhất",
+};
 
 const STREAM_STEP_LABEL_VI: Record<string, string> = {
   classify_report: "Bot Classifier đang phân loại dữ liệu",
@@ -147,6 +161,8 @@ export default function CustomerListsPage() {
   const [creatingCampaign, setCreatingCampaign] = useState(false);
   const [showTableEditor, setShowTableEditor] = useState(false);
   const [expandedRowIndex, setExpandedRowIndex] = useState<number | null>(null);
+  const [editingCell, setEditingCell] = useState<{ rowIdx: number; col: string } | null>(null);
+  const [errorPopover, setErrorPopover] = useState<{ rowIdx: number; x: number; y: number } | null>(null);
 
   const allColumns = useMemo(() => {
     const extra = new Set<string>();
@@ -304,6 +320,9 @@ export default function CustomerListsPage() {
 
   function deleteRow(index: number) {
     setRows((prev) => prev.filter((_, i) => i !== index).map((r, idx) => ({ ...r, ID: String(idx + 1) })));
+    setExpandedRowIndex((prev) => (prev === index ? null : prev));
+    setEditingCell(null);
+    setErrorPopover(null);
   }
 
   async function handleImportToCurrentTable(event: React.ChangeEvent<HTMLInputElement>) {
@@ -536,7 +555,7 @@ export default function CustomerListsPage() {
                 Quay lại các danh sách hiện có
               </button>
               <label className="btn-secondary text-xs cursor-pointer">
-                Nhập file vào list user này
+                upload data
                 <input
                   type="file"
                   accept=".csv,.xlsx,.xls"
@@ -585,12 +604,12 @@ export default function CustomerListsPage() {
                     {columns.map((col) => (
                       <th key={col} className="text-left px-2 py-1 border">
                         <span className="whitespace-normal leading-tight">
-                          {PRIMARY_COLUMNS.find((item) => item.key === col)?.label ?? col}
+                          {PRIMARY_COLUMNS.find((item) => item.key === col)?.label ?? COLUMN_LABELS[col] ?? col}
                         </span>
                       </th>
                     ))}
                     <th className="text-left px-2 py-1 border">Thao tác</th>
-                    <th className="text-left px-2 py-1 border">Lỗi dòng</th>
+                    <th className="text-left px-2 py-1 border w-12">!</th>
                     <th className="text-left px-2 py-1 border w-12">...</th>
                   </tr>
                 </thead>
@@ -600,20 +619,45 @@ export default function CustomerListsPage() {
                       <tr className={`border-t ${rowErrors[rowIdx] ? "bg-red-50/40" : "border-gray-100"}`}>
                         {columns.map((col) => (
                           <td key={`${rowIdx}-${col}`} className="border px-1 py-1">
-                            <input
-                              className={`input text-xs py-1 px-1 h-7 ${rowErrors[rowIdx] ? "border-red-300" : ""}`}
-                              value={row[col] ?? ""}
-                              onChange={(e) => updateCell(rowIdx, col, e.target.value)}
-                            />
+                            {editingCell?.rowIdx === rowIdx && editingCell.col === col ? (
+                              <input
+                                autoFocus
+                                className={`input text-xs py-1 px-1 h-7 ${rowErrors[rowIdx] ? "border-red-300" : ""}`}
+                                value={row[col] ?? ""}
+                                onChange={(e) => updateCell(rowIdx, col, e.target.value)}
+                                onBlur={() => setEditingCell(null)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" || e.key === "Escape") setEditingCell(null);
+                                }}
+                              />
+                            ) : (
+                              <button
+                                className="w-full text-left px-1 py-1 min-h-7 border border-transparent hover:border-gray-200"
+                                onClick={() => setEditingCell({ rowIdx, col })}
+                              >
+                                {row[col] || "-"}
+                              </button>
+                            )}
                           </td>
                         ))}
                         <td className="border px-1 py-1">
-                          <button className="btn-secondary text-[11px]" onClick={() => deleteRow(rowIdx)}>
-                            Xóa
+                          <button className="btn-secondary text-[11px] px-2 py-1" title="Xóa dòng" onClick={() => deleteRow(rowIdx)}>
+                            🗑
                           </button>
                         </td>
-                        <td className="border px-1 py-1 text-[11px] text-red-700">
-                          {(rowErrors[rowIdx] || []).join(", ")}
+                        <td className="border px-1 py-1 text-center">
+                          {rowErrors[rowIdx]?.length ? (
+                            <button
+                              className="btn-secondary text-[11px] px-2 py-1 text-amber-700"
+                              title="Xem lỗi dòng"
+                              onClick={(e) => {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                setErrorPopover({ rowIdx, x: rect.left, y: rect.bottom + 6 });
+                              }}
+                            >
+                              ⚠
+                            </button>
+                          ) : null}
                         </td>
                         <td className="border px-1 py-1 text-center">
                           <button
@@ -631,12 +675,26 @@ export default function CustomerListsPage() {
                               {extraColumns.length > 0 ? (
                                 extraColumns.map((col) => (
                                   <div key={`${rowIdx}-extra-${col}`} className="border border-gray-200 bg-white px-2 py-1">
-                                    <p className="text-[11px] text-gray-500">{col}</p>
-                                    <input
-                                      className="input text-xs py-1 px-1 h-7 mt-1"
-                                      value={row[col] ?? ""}
-                                      onChange={(e) => updateCell(rowIdx, col, e.target.value)}
-                                    />
+                                    <p className="text-[11px] text-gray-500">{COLUMN_LABELS[col] ?? col}</p>
+                                    {editingCell?.rowIdx === rowIdx && editingCell.col === col ? (
+                                      <input
+                                        autoFocus
+                                        className="input text-xs py-1 px-1 h-7 mt-1"
+                                        value={row[col] ?? ""}
+                                        onChange={(e) => updateCell(rowIdx, col, e.target.value)}
+                                        onBlur={() => setEditingCell(null)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter" || e.key === "Escape") setEditingCell(null);
+                                        }}
+                                      />
+                                    ) : (
+                                      <button
+                                        className="w-full text-left px-1 py-1 h-7 mt-1 border border-transparent hover:border-gray-200"
+                                        onClick={() => setEditingCell({ rowIdx, col })}
+                                      >
+                                        {row[col] || "-"}
+                                      </button>
+                                    )}
                                   </div>
                                 ))
                               ) : (
@@ -651,6 +709,24 @@ export default function CustomerListsPage() {
                 </tbody>
               </table>
               </div>
+              {errorPopover ? (
+                <div
+                  className="fixed z-40 w-72 border border-amber-300 bg-white p-2 shadow-lg"
+                  style={{ left: errorPopover.x, top: errorPopover.y }}
+                >
+                  <p className="text-xs font-medium text-amber-700 mb-1">Lý do lỗi dòng</p>
+                  <ul className="list-disc pl-4 text-xs text-gray-700">
+                    {(rowErrors[errorPopover.rowIdx] || []).map((err, idx) => (
+                      <li key={idx}>{err}</li>
+                    ))}
+                  </ul>
+                  <div className="mt-2 flex justify-end">
+                    <button className="btn-secondary text-[11px]" onClick={() => setErrorPopover(null)}>
+                      Đóng
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           )}
 
