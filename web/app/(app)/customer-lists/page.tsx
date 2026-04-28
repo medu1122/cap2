@@ -21,8 +21,14 @@ import {
   Crown,
   Eraser,
   Filter,
+  LayoutTemplate,
   Loader2,
+  Mail,
+  MessageSquare,
+  PenLine,
   RefreshCw,
+  Send,
+  Sparkles,
   Star,
   StarOff,
   TrendingUp,
@@ -1207,15 +1213,24 @@ export default function CustomerListsPage() {
     setSmartComposeLoading(true);
     try {
       const first = quickOutreachRecipients?.[0];
-      const contextOne =
-        first &&
-        `Tên: ${first.name}, chưa quay lại ~${first.variables.days_since_last || "—"} ngày, dịch vụ gần nhất: ${first.variables.DichVuLanCuoiSuDung || "—"}`;
+      const v = first?.variables;
+      const contextParts = first
+        ? [
+            (v?.HoVaTen || first.name) && `Tên: ${v?.HoVaTen || first.name}`,
+            v?.days_since_last && `Chưa quay lại ~${v.days_since_last} ngày`,
+            v?.DichVuLanCuoiSuDung && `Dịch vụ gần nhất: ${v.DichVuLanCuoiSuDung}`,
+            v?.DichVuSuDungNhieuNhat && `Dịch vụ dùng nhiều: ${v.DichVuSuDungNhieuNhat}`,
+            v?.LanCuoiChiTra && `Lần chi trả cuối (cột): ${v.LanCuoiChiTra}`,
+            v?.TongSoLanQuayLai && `Tổng lần quay lại: ${v.TongSoLanQuayLai}`,
+          ].filter(Boolean)
+        : [];
+      const contextOne = contextParts.length ? contextParts.join(" · ") : null;
       const res = await api.post<{ text: string }>(
         `/workflow/customer-lists/${activeListId}/smart-contact-compose`,
         {
           user_prompt: prompt,
           mode: quickOutreachMode,
-          context_one_liner: contextOne || null,
+          context_one_liner: contextOne,
         },
       );
       setQuickOutreachBody(res.text);
@@ -1304,7 +1319,6 @@ export default function CustomerListsPage() {
         return next;
       });
       setOnlyPriorityTableView(true);
-      setSortPriorityFirst(true);
       setAnalysisTableSegmentFilter("churn_risk");
       setMessage(`Đã đánh dấu ưu tiên ${targets.length} khách (nhóm nguy cơ theo phân tích) và bật lọc bảng.`);
     } catch (e) {
@@ -2263,10 +2277,11 @@ export default function CustomerListsPage() {
             </div>
           ) : null}
         </div>
+        </div>
       )}
       {quickOutreachOpen ? (
         <div
-          className="fixed inset-0 z-[55] flex items-center justify-center bg-black/45 p-4"
+          className="fixed inset-0 z-[55] flex items-center justify-center bg-slate-900/45 p-3 backdrop-blur-[2px] sm:p-4"
           role="presentation"
           onClick={() => {
             if (!quickOutreachSending) {
@@ -2276,194 +2291,298 @@ export default function CustomerListsPage() {
           }}
         >
           <div
-            className="max-h-[90vh] w-full max-w-lg overflow-y-auto border border-gray-200 bg-white p-4 shadow-xl space-y-3"
+            className="flex max-h-[min(92vh,720px)] w-full max-w-[26rem] flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_25px_50px_-12px_rgba(15,23,42,0.28)] sm:max-w-xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="quick-outreach-title"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-2">
-              <h3 id="quick-outreach-title" className="text-base font-semibold text-gray-900">
-                Liên hệ nhanh — {quickOutreachMode === "email" ? "Email" : "SMS (mô phỏng)"}
-              </h3>
-              <button
-                type="button"
-                className="btn-secondary text-xs shrink-0"
-                disabled={quickOutreachSending}
-                onClick={() => {
-                  setQuickOutreachOpen(false);
-                  setQuickOutreachResults(null);
-                }}
-              >
-                Đóng
-              </button>
-            </div>
-            <p className="text-xs text-gray-600">
-              <span className="tabular-nums font-medium text-gray-900">{quickOutreachRecipients?.length ?? 0}</span> người
-              nhận · Smart Contact: biến từ bảng + gửi không cần campaign.
-            </p>
-            <div className="flex flex-wrap gap-1 border-b border-gray-100 pb-2">
-              {(
-                [
-                  { id: "template" as const, label: "Mẫu nhanh" },
-                  { id: "ai" as const, label: "AI soạn" },
-                  { id: "manual" as const, label: "Viết tay" },
-                ] as const
-              ).map((t) => (
+            <header className="shrink-0 border-b border-slate-100 bg-gradient-to-b from-slate-50 to-white px-4 pb-3 pt-4 sm:px-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                        quickOutreachMode === "email"
+                          ? "bg-sky-100 text-sky-700"
+                          : "bg-violet-100 text-violet-700"
+                      }`}
+                    >
+                      {quickOutreachMode === "email" ? (
+                        <Mail className="h-[18px] w-[18px]" strokeWidth={2} />
+                      ) : (
+                        <MessageSquare className="h-[18px] w-[18px]" strokeWidth={2} />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <h3 id="quick-outreach-title" className="text-[15px] font-semibold leading-tight text-slate-900">
+                        Smart Contact
+                      </h3>
+                      <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
+                        <span className="tabular-nums font-medium text-slate-700">{quickOutreachRecipients?.length ?? 0}</span>{" "}
+                        người nhận · biến từ bảng, không cần campaign.
+                      </p>
+                    </div>
+                  </div>
+                </div>
                 <button
-                  key={t.id}
                   type="button"
-                  className={`text-[10px] px-2 py-1 border ${quickOutreachTab === t.id ? "border-blue-600 bg-blue-50 text-blue-900" : "border-gray-200 bg-white text-gray-700"}`}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800 disabled:opacity-50"
                   disabled={quickOutreachSending}
-                  onClick={() => setQuickOutreachTab(t.id)}
+                  title="Đóng"
+                  aria-label="Đóng"
+                  onClick={() => {
+                    setQuickOutreachOpen(false);
+                    setQuickOutreachResults(null);
+                  }}
                 >
-                  {t.label}
+                  <X className="h-4 w-4" />
                 </button>
-              ))}
-            </div>
-            {quickOutreachMode === "email" ? (
-              <div>
-                <label className="text-[10px] font-medium text-gray-600 uppercase tracking-wide">Tiêu đề</label>
-                <input
-                  type="text"
-                  className="input w-full text-sm mt-0.5"
-                  value={quickOutreachSubject}
-                  onChange={(e) => setQuickOutreachSubject(e.target.value)}
-                  disabled={quickOutreachSending}
-                />
               </div>
-            ) : null}
-            {quickOutreachTab === "template" ? (
-              <div>
-                <p className="text-[10px] font-medium text-gray-600 uppercase tracking-wide mb-1">Mẫu theo mục đích</p>
-                <div className="flex flex-wrap gap-1">
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Kênh</span>
+                <div className="inline-flex rounded-lg border border-slate-200/90 bg-slate-100/80 p-0.5">
                   <button
                     type="button"
-                    className="btn-secondary text-[10px] py-0.5"
                     disabled={quickOutreachSending}
-                    onClick={() => setQuickOutreachBody(OUTREACH_TEMPLATES.nhac_nhe)}
+                    onClick={() => setQuickOutreachMode("email")}
+                    className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition ${
+                      quickOutreachMode === "email"
+                        ? "bg-white text-sky-800 shadow-sm ring-1 ring-slate-200/80"
+                        : "text-slate-600 hover:text-slate-900"
+                    } disabled:opacity-50`}
                   >
-                    Nhắc quay lại
+                    <Mail className="h-3.5 w-3.5 shrink-0" />
+                    Email
                   </button>
                   <button
                     type="button"
-                    className="btn-secondary text-[10px] py-0.5"
                     disabled={quickOutreachSending}
-                    onClick={() => setQuickOutreachBody(OUTREACH_TEMPLATES.cham_soc)}
+                    onClick={() => setQuickOutreachMode("sms")}
+                    className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition ${
+                      quickOutreachMode === "sms"
+                        ? "bg-white text-violet-800 shadow-sm ring-1 ring-slate-200/80"
+                        : "text-slate-600 hover:text-slate-900"
+                    } disabled:opacity-50`}
                   >
-                    Chăm sóc
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary text-[10px] py-0.5"
-                    disabled={quickOutreachSending}
-                    onClick={() => setQuickOutreachBody(OUTREACH_TEMPLATES.kich_hoat)}
-                  >
-                    Kích hoạt
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary text-[10px] py-0.5"
-                    disabled={quickOutreachSending}
-                    onClick={() => setQuickOutreachBody(OUTREACH_TEMPLATES.khach_moi)}
-                  >
-                    Khách mới
+                    <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+                    SMS (mô phỏng)
                   </button>
                 </div>
               </div>
-            ) : null}
-            {quickOutreachTab === "ai" ? (
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-medium text-gray-600 uppercase tracking-wide">Yêu cầu AI</label>
-                <textarea
-                  className="input w-full text-sm min-h-[72px]"
-                  placeholder='Ví dụ: nhắc khách lâu chưa quay lại, không nhắc ưu đãi, giọng thân thiện.'
-                  value={smartComposePrompt}
-                  onChange={(e) => setSmartComposePrompt(e.target.value)}
-                  disabled={quickOutreachSending || smartComposeLoading}
-                />
-                <button
-                  type="button"
-                  className="btn-primary text-[10px]"
-                  disabled={quickOutreachSending || smartComposeLoading}
-                  onClick={() => void runSmartContactCompose()}
+            </header>
+
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5">
+              <div>
+                <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-slate-400">Nguồn nội dung</p>
+                <div
+                  className="grid grid-cols-3 gap-1 rounded-xl border border-slate-200 bg-slate-50/80 p-1"
+                  role="tablist"
+                  aria-label="Chế độ soạn thảo"
                 >
-                  {smartComposeLoading ? "Đang tạo…" : "Tạo nội dung"}
-                </button>
+                  {(
+                    [
+                      { id: "template" as const, label: "Mẫu nhanh", Icon: LayoutTemplate },
+                      { id: "ai" as const, label: "AI soạn", Icon: Sparkles },
+                      { id: "manual" as const, label: "Viết tay", Icon: PenLine },
+                    ] as const
+                  ).map((t) => {
+                    const Icon = t.Icon;
+                    const on = quickOutreachTab === t.id;
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={on}
+                        className={`flex flex-col items-center gap-0.5 rounded-lg px-1 py-2 text-center transition sm:flex-row sm:justify-center sm:gap-1.5 sm:py-1.5 ${
+                          on
+                            ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/90"
+                            : "text-slate-500 hover:bg-white/60 hover:text-slate-800"
+                        } disabled:opacity-50`}
+                        disabled={quickOutreachSending}
+                        onClick={() => setQuickOutreachTab(t.id)}
+                      >
+                        <Icon className="h-3.5 w-3.5 shrink-0 opacity-80" strokeWidth={2} />
+                        <span className="text-[10px] font-medium leading-none sm:text-[11px]">{t.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            ) : null}
-            {quickOutreachTab === "manual" ? (
-              <p className="text-[10px] text-gray-500">Soạn trực tiếp hoặc chèn biến bên dưới.</p>
-            ) : null}
-            <div>
-              <p className="text-[10px] font-medium text-gray-600 uppercase tracking-wide mb-1">Chèn biến</p>
-              <div className="flex flex-wrap gap-1">
-                {SMART_CONTACT_VARIABLES.map((v) => (
-                  <button
-                    key={v.key}
-                    type="button"
-                    className="border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] text-gray-800 hover:bg-gray-100"
+
+              {quickOutreachMode === "email" ? (
+                <div className="rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2.5">
+                  <label className="text-[11px] font-medium text-slate-600">Tiêu đề email</label>
+                  <input
+                    type="text"
+                    className="input mt-1 w-full text-sm"
+                    value={quickOutreachSubject}
+                    onChange={(e) => setQuickOutreachSubject(e.target.value)}
                     disabled={quickOutreachSending}
-                    onClick={() => insertOutreachVariable(v.key)}
-                    title={`{{${v.key}}}`}
-                  >
-                    {v.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="text-[10px] font-medium text-gray-600 uppercase tracking-wide">Nội dung</label>
-              <textarea
-                ref={quickOutreachTextareaRef}
-                className="input w-full text-sm mt-0.5 min-h-[120px] font-mono"
-                value={quickOutreachBody}
-                onChange={(e) => setQuickOutreachBody(e.target.value)}
-                disabled={quickOutreachSending}
-              />
-            </div>
-            <div>
-              <p className="text-[10px] font-medium text-gray-600 uppercase tracking-wide mb-1">Xem trước (tối đa 3 khách)</p>
-              <ul className="space-y-2 text-[10px] text-gray-800 border border-gray-100 bg-gray-50/80 p-2 max-h-40 overflow-y-auto">
-                {quickOutreachPreviewSamples.length === 0 ? (
-                  <li className="text-gray-500">—</li>
-                ) : (
-                  quickOutreachPreviewSamples.map((s, i) => (
-                    <li key={i}>
-                      <span className="font-semibold text-gray-900">{s.name}:</span>
-                      <span className="block whitespace-pre-wrap text-gray-800 mt-0.5">{s.text}</span>
-                    </li>
-                  ))
-                )}
-              </ul>
-            </div>
-            {quickOutreachResults ? (
-              <div className="border border-gray-200 bg-gray-50 max-h-36 overflow-y-auto p-2 text-[10px] space-y-0.5">
-                {quickOutreachResults.map((r, i) => (
-                  <div key={i} className="flex flex-wrap gap-x-1">
-                    <span className="font-mono text-gray-800">{r.to}</span>
-                    <span
-                      className={
-                        r.status === "sent" ? "text-emerald-700" : r.status === "failed" ? "text-red-700" : "text-amber-800"
-                      }
-                    >
-                      {r.status === "sent" ? "✓" : r.status === "failed" ? "✗" : "○"} {r.status}
-                    </span>
-                    {r.detail ? <span className="text-gray-600">— {r.detail}</span> : null}
+                    placeholder="Ví dụ: Lời nhắn từ cửa hàng"
+                  />
+                </div>
+              ) : null}
+
+              {quickOutreachTab === "template" ? (
+                <div className="rounded-xl border border-slate-100 bg-white px-3 py-3 shadow-sm">
+                  <p className="mb-2 text-[11px] font-medium text-slate-600">Mẫu theo mục đích</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(
+                      [
+                        { key: "nhac_nhe" as const, label: "Nhắc quay lại" },
+                        { key: "cham_soc" as const, label: "Chăm sóc" },
+                        { key: "kich_hoat" as const, label: "Kích hoạt" },
+                        { key: "khach_moi" as const, label: "Khách mới" },
+                      ] as const
+                    ).map((item) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        className="rounded-lg border border-slate-200 bg-slate-50/90 px-2.5 py-1.5 text-[11px] font-medium text-slate-800 transition hover:border-sky-200 hover:bg-sky-50/80 hover:text-sky-900 disabled:opacity-50"
+                        disabled={quickOutreachSending}
+                        onClick={() => setQuickOutreachBody(OUTREACH_TEMPLATES[item.key])}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
                   </div>
-                ))}
+                </div>
+              ) : null}
+
+              {quickOutreachTab === "ai" ? (
+                <div className="space-y-2 rounded-xl border border-violet-100 bg-violet-50/40 px-3 py-3">
+                  <label className="text-[11px] font-medium text-slate-700">Yêu cầu cho AI</label>
+                  <textarea
+                    className="input min-h-[88px] w-full resize-y text-sm"
+                    placeholder="Ví dụ: nhắc khách lâu chưa quay lại, không nhắc ưu đãi, giọng thân thiện."
+                    value={smartComposePrompt}
+                    onChange={(e) => setSmartComposePrompt(e.target.value)}
+                    disabled={quickOutreachSending || smartComposeLoading}
+                  />
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-[11px] font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:opacity-50"
+                    disabled={quickOutreachSending || smartComposeLoading}
+                    onClick={() => void runSmartContactCompose()}
+                  >
+                    {smartComposeLoading ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Đang tạo…
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-3.5 w-3.5" />
+                        Tạo nội dung
+                      </>
+                    )}
+                  </button>
+                </div>
+              ) : null}
+
+              {quickOutreachTab === "manual" ? (
+                <p className="text-[11px] leading-snug text-slate-500">
+                  Soạn trực tiếp hoặc chèn biến ở khối bên dưới.
+                </p>
+              ) : null}
+
+              <div className="rounded-xl border border-slate-100 bg-white px-3 py-3 shadow-sm">
+                <p className="mb-2 text-[11px] font-medium text-slate-600">Chèn biến</p>
+                <div className="flex flex-wrap gap-1">
+                  {SMART_CONTACT_VARIABLES.map((v) => (
+                    <button
+                      key={v.key}
+                      type="button"
+                      className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-medium text-slate-800 transition hover:border-slate-300 hover:bg-white"
+                      disabled={quickOutreachSending}
+                      onClick={() => insertOutreachVariable(v.key)}
+                      title={`Chèn {{${v.key}}}`}
+                    >
+                      {v.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            ) : null}
-            <div className="flex justify-end gap-2 pt-1">
+
+              <div>
+                <div className="mb-1 flex items-baseline justify-between gap-2">
+                  <label className="text-[11px] font-medium text-slate-600">Nội dung gửi</label>
+                  {quickOutreachMode === "sms" ? (
+                    <span className="text-[10px] tabular-nums text-slate-400">{quickOutreachBody.length} ký tự</span>
+                  ) : null}
+                </div>
+                <textarea
+                  ref={quickOutreachTextareaRef}
+                  className="input min-h-[128px] w-full resize-y font-mono text-[13px] leading-relaxed"
+                  value={quickOutreachBody}
+                  onChange={(e) => setQuickOutreachBody(e.target.value)}
+                  disabled={quickOutreachSending}
+                  placeholder="Nội dung… Có thể dùng {{HoVaTen}} và các biến khác."
+                />
+              </div>
+
+              <div className="rounded-xl border border-slate-200/80 bg-slate-50/90 px-3 py-2.5">
+                <p className="mb-2 text-[11px] font-medium text-slate-600">Xem trước (tối đa 3 khách)</p>
+                <ul className="max-h-36 space-y-2.5 overflow-y-auto text-[11px] text-slate-800">
+                  {quickOutreachPreviewSamples.length === 0 ? (
+                    <li className="text-slate-400">—</li>
+                  ) : (
+                    quickOutreachPreviewSamples.map((s, i) => (
+                      <li key={i} className="border-b border-slate-200/60 pb-2 last:border-0 last:pb-0">
+                        <span className="font-semibold text-slate-900">{s.name}</span>
+                        <span className="mt-1 block whitespace-pre-wrap leading-snug text-slate-700">{s.text}</span>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              </div>
+
+              {quickOutreachResults ? (
+                <div className="max-h-32 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[10px]">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Kết quả gửi</p>
+                  {quickOutreachResults.map((r, i) => (
+                    <div key={i} className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 border-t border-slate-100 pt-1 first:border-0 first:pt-0">
+                      <span className="font-mono text-slate-800">{r.to}</span>
+                      <span
+                        className={
+                          r.status === "sent"
+                            ? "font-medium text-emerald-700"
+                            : r.status === "failed"
+                              ? "font-medium text-red-700"
+                              : "font-medium text-amber-700"
+                        }
+                      >
+                        {r.status === "sent" ? "Đã gửi" : r.status === "failed" ? "Lỗi" : "Bỏ qua"}
+                      </span>
+                      {r.detail ? <span className="text-slate-500">— {r.detail}</span> : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-slate-100 bg-slate-50/90 px-4 py-3 sm:px-5">
               <button
                 type="button"
-                className="btn-primary text-xs"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:opacity-50"
                 disabled={quickOutreachSending || !quickOutreachRecipients?.length}
                 onClick={() => void submitQuickOutreach()}
               >
-                {quickOutreachSending ? "Đang gửi…" : "Gửi ngay"}
+                {quickOutreachSending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Đang gửi…
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-4 w-4" />
+                    Gửi ngay
+                  </>
+                )}
               </button>
-            </div>
+            </footer>
           </div>
         </div>
       ) : null}
@@ -2679,7 +2798,6 @@ export default function CustomerListsPage() {
                             disabled={applyingChurnPriority}
                             onClick={() => {
                               setOnlyPriorityTableView(true);
-                              setSortPriorityFirst(true);
                               setMessage("Đã bật lọc khách ưu tiên (giữ nguyên đánh dấu hiện có).");
                             }}
                           >
@@ -2730,7 +2848,6 @@ export default function CustomerListsPage() {
                       disabled={priorityCustomers.length === 0}
                       onClick={() => {
                         setOnlyPriorityTableView(true);
-                        setSortPriorityFirst(true);
                         setMessage("Đã bật lọc khách ưu tiên.");
                       }}
                       className={`flex w-full items-center gap-2 border border-gray-300 bg-white p-2 text-left hover:bg-[#eef4ff] disabled:cursor-not-allowed disabled:opacity-50 ${showPrioritySuggestion ? "ring-2 ring-amber-400" : ""}`}

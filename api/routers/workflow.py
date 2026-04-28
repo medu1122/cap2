@@ -403,6 +403,73 @@ def _render_smart_contact_template(text: str, r: QuickOutreachRecipient) -> str:
     return out
 
 
+def _normalize_smart_contact_compose_output(raw: str, mode: str) -> str:
+    """Bỏ fence markdown / lời dẫn thừa model hay thêm."""
+    t = (raw or "").strip()
+    if not t:
+        return t
+    if t.startswith("```"):
+        lines = t.splitlines()
+        if lines and lines[0].strip().startswith("```"):
+            lines = lines[1:]
+        while lines and lines[-1].strip() == "```":
+            lines.pop()
+        t = "\n".join(lines).strip()
+    lower_start = t[:48].lower()
+    for prefix in (
+        "nội dung:",
+        "nội dung gợi ý:",
+        "đây là nội dung:",
+        "dưới đây là nội dung",
+        "email:",
+        "tin nhắn:",
+    ):
+        if lower_start.startswith(prefix):
+            t = t[len(prefix) :].lstrip(" \n:：-")
+            break
+    if mode == "sms" and len(t) > 360:
+        t = t[:357].rstrip() + "…"
+    return t.strip()
+
+
+def _smart_contact_compose_system_prompt(mode: str, context_one_liner: str | None) -> str:
+    channel_rules = (
+        "ĐỊNH DẠNG SMS:\n"
+        "- Tối đa khoảng 300 ký tự (Unicode); 1–2 câu ngắn; ít xuống dòng; không chèn URL dài.\n"
+        "- Không mở đầu «Kính gửi» dài dòng.\n"
+        if mode == "sms"
+        else "ĐỊNH DẠNG EMAIL:\n"
+        "- 2–5 câu ngắn; có thể ngắt đoạn bằng một dòng trống; không lan man.\n"
+        "- Không ghi dòng «Tiêu đề:» (tiêu đề do người dùng nhập riêng trên giao diện).\n"
+    )
+    base = (
+        "Bạn là trợ lý soạn tin chăm sóc khách bằng tiếng Việt (có dấu), phong cách chủ spa / cửa hàng SME.\n\n"
+        "ĐẦU RA (bắt buộc):\n"
+        "- Chỉ trả về đúng nội dung gửi khách, plain text.\n"
+        "- Không markdown, không bullet, không đánh số, không khung code.\n"
+        "- Không thêm lời dẫn («Dưới đây là…», «Nội dung:», «Chào bạn, đây là…» trước bản thân nội dung).\n"
+        "- Giọng thân thiện, tự nhiên; tránh cứng nhắc.\n"
+        "- Có thể giữ biến để cá nhân hóa khi hợp lý (đúng chính tả, hai ngoặc nhọn mỗi bên): "
+        "{{HoVaTen}}, {{phone}}, {{LanCuoiChiTra}}, {{days_since_last}}, "
+        "{{DichVuLanCuoiSuDung}}, {{DichVuSuDungNhieuNhat}}, {{TongSoLanQuayLai}}.\n\n"
+        "CẤM (trừ khi trong YÊU CẦU người dùng nói rõ muốn nhắc khuyến mãi):\n"
+        "- Hứa giảm giá, voucher, tặng kèm, flash sale, «ưu đãi đặc biệt».\n\n"
+        "DỮ LIỆU:\n"
+        "- Không bịa ngày, số tiền, tên dịch vụ cụ thể nếu không có trong ngữ cảnh; "
+        "khi thiếu thì viết chung chung hoặc dùng placeholder ở trên.\n\n"
+        f"{channel_rules}\n"
+    )
+    if context_one_liner:
+        base += (
+            "Ngữ cảnh một khách mẫu (chỉ tham khảo, không tự thêm chi tiết không có): "
+            f"{context_one_liner[:500]}\n"
+        )
+    base += (
+        "\nTuân thủ toàn bộ quy tắc. Trả lời bằng đúng một khối nội dung gửi khách.\n"
+    )
+    return base
+
+
 async def _smart_contact_compose_text(payload: SmartContactComposePayload) -> str:
     up = (payload.user_prompt or "").strip()
     if not up:
@@ -412,38 +479,34 @@ async def _smart_contact_compose_text(payload: SmartContactComposePayload) -> st
     mode = (payload.mode or "email").strip().lower()
     if mode not in ("email", "sms"):
         mode = "email"
-    sys = (
-        "Bạn là trợ lý viết nội dung tiếng Việt (chuẩn dấu) cho chủ spa/SME gửi khách.\n"
-        "Chỉ trả về nội dung tin nhắn/email (plain text), không giải thích, không tiêu đề, không markdown.\n"
-        "Có thể dùng placeholder: {{HoVaTen}}, {{phone}}, {{LanCuoiChiTra}}, {{days_since_last}}, "
-        "{{DichVuLanCuoiSuDung}}, {{DichVuSuDungNhieuNhat}}, {{TongSoLanQuayLai}} khi phù hợp.\n"
-        "Không hứa ưu đãi/giảm giá trừ khi người dùng yêu cầu rõ.\n"
-        f"Kênh: {'SMS ngắn gọn' if mode == 'sms' else 'Email có thể 2–4 câu'}."
-    )
-    if payload.context_one_liner:
-        sys += f"\nGợi ý một khách mẫu: {payload.context_one_liner[:500]}"
+    ctx = (payload.context_one_liner or "").strip() or None
+    sys = _smart_contact_compose_system_prompt(mode, ctx)
+    user_block = f"YÊU CẦU CỦA NGƯỜI DÙNG:\n{up}"
     messages = [
         {"role": "system", "content": sys},
-        {"role": "user", "content": up},
+        {"role": "user", "content": user_block},
     ]
+    temp = 0.32 if mode == "sms" else 0.38
     try:
         resp = await asyncio.wait_for(
             _qwen.chat.completions.create(
                 model=QWEN_MODEL,
                 messages=messages,
-                temperature=0.45,
+                temperature=temp,
             ),
             timeout=min(QWEN_TIMEOUT, 90),
         )
-        return (resp.choices[0].message.content or "").strip()
+        out = (resp.choices[0].message.content or "").strip()
+        return _normalize_smart_contact_compose_output(out, mode)
     except Exception:
         try:
             resp = await _openai.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=messages,
-                temperature=0.45,
+                temperature=temp,
             )
-            return (resp.choices[0].message.content or "").strip()
+            out = (resp.choices[0].message.content or "").strip()
+            return _normalize_smart_contact_compose_output(out, mode)
         except Exception as exc:
             raise HTTPException(
                 503,
