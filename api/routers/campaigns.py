@@ -3,7 +3,7 @@ import os
 import asyncio
 import json
 import io
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -15,6 +15,7 @@ try:
     import cloudinary.uploader
 except Exception:  # pragma: no cover - optional dependency
     cloudinary = None
+from core.config import settings
 from core.database import get_db
 from core.deps import get_current_user
 from models.user import User
@@ -22,8 +23,26 @@ from models.brand import Brand
 from models.campaign import Campaign
 from models.content_item import ContentItem
 from models.agent_run_log import AgentRunLog
-from schemas.campaign import CampaignCreate, CampaignListItem, CampaignDetail, ContentItemOut, AgentLogOut, VALID_CHANNELS
+from models.customer_list import CustomerList
+from models.campaign_execution_log import CampaignExecutionLog
+from schemas.campaign import (
+    CampaignCreate,
+    CampaignListItem,
+    CampaignDetail,
+    ContentItemOut,
+    AgentLogOut,
+    VALID_CHANNELS,
+    CampaignExecuteRequest,
+    DeliverySummaryResponse,
+    DeliveryMetricsOut,
+    ExecutionLogOut,
+)
 from services.agent_dispatcher import dispatch_campaign
+from services.campaign_delivery_service import (
+    merge_campaign_delivery,
+    run_email_delivery,
+    run_sms_simulation,
+)
 
 router = APIRouter()
 
@@ -243,6 +262,193 @@ async def get_campaign(
         "agent_logs": agent_logs,
     })
     return detail
+
+
+@router.post("/{campaign_id}/execute", status_code=202)
+async def execute_campaign_delivery(
+    campaign_id: uuid.UUID,
+    body: CampaignExecuteRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Chạy gửi: email thật (SMTP) hoặc SMS mô phỏng. Tracking: GET /campaigns/{id}/delivery-summary."""
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.user_id == current_user.id)
+    )
+    campaign = result.scalar_one_or_none()
+    if not campaign:
+        raise HTTPException(404, "Không tìm thấy chiến dịch")
+
+    delivery = (campaign.campaign_plan_json or {}).get("delivery") or {}
+    if delivery.get("status") == "sending":
+        raise HTTPException(409, "Đang gửi, vui lòng chờ hoàn tất.")
+
+    list_r = await db.execute(
+        select(CustomerList).where(
+            CustomerList.id == body.customer_list_id,
+            CustomerList.user_id == current_user.id,
+        )
+    )
+    if not list_r.scalar_one_or_none():
+        raise HTTPException(400, "Danh sách khách không hợp lệ.")
+
+    if body.mode == "email":
+        if "email" not in (campaign.channels or []):
+            raise HTTPException(400, "Chiến dịch chưa có kênh Email.")
+        if not settings.SMTP_HOST or not settings.SMTP_USER:
+            raise HTTPException(
+                503,
+                "Chưa cấu hình SMTP. Điền SMTP_HOST, SMTP_USER, SMTP_PASSWORD, SMTP_FROM_EMAIL trong .env.",
+            )
+    batch_id = uuid.uuid4()
+    now = datetime.now(timezone.utc).isoformat()
+    await merge_campaign_delivery(
+        db,
+        campaign,
+        {
+            "status": "sending",
+            "mode": body.mode,
+            "customer_list_id": str(body.customer_list_id),
+            "last_batch_id": str(batch_id),
+            "started_at": now,
+            "last_error": None,
+        },
+    )
+
+    if body.mode == "email":
+        background_tasks.add_task(
+            run_email_delivery,
+            campaign_id,
+            body.customer_list_id,
+            current_user.id,
+            batch_id,
+            body.ab_test,
+        )
+    else:
+        hint = (
+            (campaign.offer_or_hook or "")
+            or (campaign.objective or "")
+            or (campaign.campaign_name or "")
+        )[:200]
+        background_tasks.add_task(
+            run_sms_simulation,
+            campaign_id,
+            body.customer_list_id,
+            current_user.id,
+            batch_id,
+            hint,
+        )
+
+    return {
+        "message": "Đã bắt đầu gửi",
+        "campaign_id": str(campaign_id),
+        "batch_id": str(batch_id),
+        "status": "sending",
+    }
+
+
+@router.get("/{campaign_id}/delivery-summary", response_model=DeliverySummaryResponse)
+async def get_campaign_delivery_summary(
+    campaign_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.user_id == current_user.id)
+    )
+    campaign = result.scalar_one_or_none()
+    if not campaign:
+        raise HTTPException(404, "Không tìm thấy chiến dịch")
+
+    batch_sub = await db.execute(
+        select(CampaignExecutionLog.batch_id)
+        .where(CampaignExecutionLog.campaign_id == campaign_id)
+        .order_by(CampaignExecutionLog.created_at.desc())
+        .limit(1)
+    )
+    latest_batch_id = batch_sub.scalar_one_or_none()
+    plan = campaign.campaign_plan_json if isinstance(campaign.campaign_plan_json, dict) else {}
+    delivery_info = plan.get("delivery") if isinstance(plan.get("delivery"), dict) else None
+
+    if not latest_batch_id:
+        return DeliverySummaryResponse(
+            delivery=delivery_info,
+            metrics=DeliveryMetricsOut(
+                total=0,
+                sent=0,
+                failed=0,
+                skipped=0,
+                opened=0,
+                clicked=0,
+                open_rate=0.0,
+                click_rate=0.0,
+                ab_summary=None,
+            ),
+            logs=[],
+            latest_batch_id=None,
+        )
+
+    log_result = await db.execute(
+        select(CampaignExecutionLog)
+        .where(
+            CampaignExecutionLog.campaign_id == campaign_id,
+            CampaignExecutionLog.batch_id == latest_batch_id,
+        )
+        .order_by(CampaignExecutionLog.created_at.asc())
+    )
+    rows = list(log_result.scalars().all())
+    logs_out = [ExecutionLogOut.model_validate(r) for r in rows]
+
+    total = len(rows)
+    sent = sum(1 for r in rows if r.status == "sent")
+    failed = sum(1 for r in rows if r.status == "failed")
+    skipped = sum(
+        1 for r in rows if r.status in ("skipped_no_email", "skipped_no_phone")
+    )
+    opened = sum(1 for r in rows if r.opened_at is not None)
+    clicked = sum(1 for r in rows if r.clicked_at is not None)
+    email_sent = sum(1 for r in rows if r.channel == "email" and r.status == "sent")
+    open_rate = round((opened / email_sent) * 100, 1) if email_sent else 0.0
+    click_rate = round((clicked / email_sent) * 100, 1) if email_sent else 0.0
+
+    ab_summary = None
+    ab_rows = [r for r in rows if r.ab_variant and r.channel == "email"]
+    if ab_rows:
+        ab_summary = {}
+        for v in ("A", "B"):
+            sub = [r for r in ab_rows if r.ab_variant == v]
+            if not sub:
+                continue
+            es = sum(1 for x in sub if x.status == "sent")
+            ab_summary[v] = {
+                "sent": es,
+                "opened": sum(1 for x in sub if x.opened_at),
+                "clicked": sum(1 for x in sub if x.clicked_at),
+                "open_rate_pct": round((sum(1 for x in sub if x.opened_at) / es) * 100, 1)
+                if es
+                else 0.0,
+                "click_rate_pct": round((sum(1 for x in sub if x.clicked_at) / es) * 100, 1)
+                if es
+                else 0.0,
+            }
+
+    return DeliverySummaryResponse(
+        delivery=delivery_info,
+        metrics=DeliveryMetricsOut(
+            total=total,
+            sent=sent,
+            failed=failed,
+            skipped=skipped,
+            opened=opened,
+            clicked=clicked,
+            open_rate=open_rate,
+            click_rate=click_rate,
+            ab_summary=ab_summary,
+        ),
+        logs=logs_out,
+        latest_batch_id=str(latest_batch_id),
+    )
 
 
 @router.post("/{campaign_id}/run", status_code=202)

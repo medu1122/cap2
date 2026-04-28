@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     SMTP_FROM_EMAIL: str = ""
+    # URL gốc của API (trình đọc mail phải truy cập được) — pixel mở / link click.
+    TRACKING_PUBLIC_BASE_URL: str = "http://localhost:8000"
+    # Redirect sau khi ghi nhận click.
+    TRACKING_DEFAULT_REDIRECT_URL: str = "http://localhost:3000"
     CALENDAR_REMINDER_ENABLED: bool = False
     CALENDAR_REMINDER_HOUR: int = 8
     WORKFLOW_SCHEDULER_ENABLED: bool = True

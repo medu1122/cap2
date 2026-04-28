@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Check, Loader2, Clock, AlertCircle, ImagePlus, Upload, Wand2 } from "lucide-react";
+import { ChevronLeft, Check, Loader2, Clock, AlertCircle, ImagePlus, Upload, Wand2, Mail, Smartphone } from "lucide-react";
 import { API_BASE, api } from "@/lib/api-client";
 import { STATUS_LABELS, STATUS_COLORS, CHANNEL_LABELS, formatDate, cn } from "@/lib/utils";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
@@ -53,6 +53,60 @@ interface SourceContext {
   source_insight_run_id?: string;
   source_customer_segment?: string;
 }
+
+interface WorkflowCustomerList {
+  id: string;
+  list_name: string;
+  status: string;
+  total_records: number;
+  valid_records: number;
+}
+
+interface ExecutionLogRow {
+  id: string;
+  batch_id: string;
+  recipient_name: string | null;
+  recipient_email: string | null;
+  recipient_phone: string | null;
+  channel: string;
+  status: string;
+  opened_at: string | null;
+  clicked_at: string | null;
+  sent_at: string | null;
+  ab_variant: string | null;
+  error_message: string | null;
+}
+
+interface DeliverySummary {
+  delivery: Record<string, unknown> | null;
+  metrics: {
+    total: number;
+    sent: number;
+    failed: number;
+    skipped: number;
+    opened: number;
+    clicked: number;
+    open_rate: number;
+    click_rate: number;
+    ab_summary: Record<string, Record<string, number>> | null;
+  };
+  logs: ExecutionLogRow[];
+  latest_batch_id: string | null;
+}
+
+const EXEC_STATUS_LABELS: Record<string, string> = {
+  sending: "Đang gửi",
+  completed: "Đã gửi xong",
+  failed: "Gửi lỗi",
+};
+
+const RECIPIENT_STATUS_LABELS: Record<string, string> = {
+  pending: "Đang chờ",
+  sent: "Đã gửi",
+  failed: "Thất bại",
+  skipped_no_email: "Bỏ qua (không email)",
+  skipped_no_phone: "Bỏ qua (không SĐT)",
+};
 
 // ── Progress model ────────────────────────────────────────────────────────────
 
@@ -835,6 +889,13 @@ export default function CampaignDetailPage() {
   const { id } = useParams();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [loading, setLoading] = useState(true);
+  const [customerLists, setCustomerLists] = useState<WorkflowCustomerList[]>([]);
+  const [deliverySummary, setDeliverySummary] = useState<DeliverySummary | null>(null);
+  const [execMode, setExecMode] = useState<"email" | "sms_demo">("email");
+  const [listId, setListId] = useState("");
+  const [abTest, setAbTest] = useState(false);
+  const [execBusy, setExecBusy] = useState(false);
+  const [execError, setExecError] = useState("");
 
   const load = useCallback(() => {
     api.get<Campaign>(`/campaigns/${id}`)
@@ -842,9 +903,49 @@ export default function CampaignDetailPage() {
       .finally(() => setLoading(false));
   }, [id]);
 
+  const loadDelivery = useCallback(() => {
+    if (!id) return;
+    api
+      .get<DeliverySummary>(`/campaigns/${id}/delivery-summary`)
+      .then(setDeliverySummary)
+      .catch(() => setDeliverySummary(null));
+  }, [id]);
+
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    const isProc = campaign?.status === "running" || campaign?.status === "pending_agent";
+    if (isProc) return;
+    api
+      .get<WorkflowCustomerList[]>("/workflow/customer-lists")
+      .then(setCustomerLists)
+      .catch(() => setCustomerLists([]));
+  }, [campaign?.status]);
+
+  useEffect(() => {
+    const isProc = campaign?.status === "running" || campaign?.status === "pending_agent";
+    if (isProc) return;
+    loadDelivery();
+  }, [campaign?.status, loadDelivery]);
+
+  const deliveryState = deliverySummary?.delivery as
+    | { status?: string; mode?: string; sms_preview?: string; last_error?: string }
+    | undefined;
+  const sendingDelivery = deliveryState?.status === "sending";
+
+  useEffect(() => {
+    if (!sendingDelivery) return;
+    const t = setInterval(loadDelivery, 2000);
+    return () => clearInterval(t);
+  }, [sendingDelivery, loadDelivery]);
+
+  useEffect(() => {
+    if (!listId && customerLists.length > 0) {
+      setListId(customerLists[0].id);
+    }
+  }, [customerLists, listId]);
 
   // Poll every 3s while AI is processing
   useEffect(() => {
@@ -862,6 +963,32 @@ export default function CampaignDetailPage() {
 
   const isProcessing = campaign.status === "running" || campaign.status === "pending_agent";
   const sourceContext = (campaign.campaign_plan_json?.source_context || null) as SourceContext | null;
+  const hasEmailChannel = campaign.channels.includes("email");
+
+  async function runCampaignExecution() {
+    if (!id || !listId) {
+      setExecError("Chọn danh sách khách.");
+      return;
+    }
+    setExecError("");
+    setExecBusy(true);
+    try {
+      await api.post(`/campaigns/${id}/execute`, {
+        mode: execMode,
+        customer_list_id: listId,
+        ab_test: abTest && execMode === "email",
+      });
+      await loadDelivery();
+    } catch (e: unknown) {
+      const msg =
+        e && typeof e === "object" && "message" in e
+          ? String((e as { message: string }).message)
+          : "Không thể chạy gửi.";
+      setExecError(msg);
+    } finally {
+      setExecBusy(false);
+    }
+  }
 
   return (
     <>
@@ -880,6 +1007,7 @@ export default function CampaignDetailPage() {
               "Khi AI đang chạy, màn hình sẽ hiện tiến trình Strategist → Writer → Critic.",
               "Duyệt, từ chối hoặc bấm Tạo lại để sinh bản nội dung mới (khi đang chờ duyệt).",
               "Sau khi duyệt, nội dung sẽ xuất hiện trong Lịch marketing.",
+              "Triển khai: Email gửi thật qua SMTP; SMS chỉ mô phỏng. Theo dõi mở/click trên email.",
             ]}
             buttonClassName="btn-secondary text-xs"
           />
@@ -944,6 +1072,217 @@ export default function CampaignDetailPage() {
                     <ContentCard key={item.id} item={item} onAction={load} />
                   ))}
                 </div>
+              </div>
+            )}
+
+            {!isProcessing && (
+              <div className="card space-y-4">
+                <div className="flex items-center gap-2">
+                  <Mail size={16} className="text-gray-500" />
+                  <h2 className="text-base font-semibold text-gray-800">Triển khai &amp; theo dõi</h2>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Email: gửi thật (SMTP). SMS: mô phỏng trên server, không gửi nhà mạng.
+                </p>
+
+                {deliveryState?.status ? (
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="text-gray-500">Trạng thái gửi:</span>
+                    <span
+                      className={cn(
+                        "badge",
+                        deliveryState.status === "sending" && "bg-blue-50 text-blue-700",
+                        deliveryState.status === "completed" && "bg-green-50 text-green-700",
+                        deliveryState.status === "failed" && "bg-red-50 text-red-700",
+                      )}
+                    >
+                      {EXEC_STATUS_LABELS[deliveryState.status] ?? deliveryState.status}
+                    </span>
+                    {sendingDelivery && <Loader2 size={12} className="animate-spin text-blue-500" />}
+                    {deliveryState.mode === "sms_demo" && deliveryState.sms_preview ? (
+                      <span className="text-gray-400 max-w-full truncate" title={deliveryState.sms_preview}>
+                        SMS (mẫu): {deliveryState.sms_preview}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+                {deliveryState?.last_error ? (
+                  <p className="text-xs text-red-600">{String(deliveryState.last_error)}</p>
+                ) : null}
+
+                {deliverySummary && deliverySummary.metrics.total > 0 ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                    <div className="rounded border border-gray-100 bg-gray-50/80 py-2 px-1">
+                      <p className="text-lg font-semibold tabular-nums">{deliverySummary.metrics.total}</p>
+                      <p className="text-[10px] text-gray-500 uppercase">Tổng dòng</p>
+                    </div>
+                    <div className="rounded border border-gray-100 bg-gray-50/80 py-2 px-1">
+                      <p className="text-lg font-semibold tabular-nums text-green-700">{deliverySummary.metrics.sent}</p>
+                      <p className="text-[10px] text-gray-500 uppercase">Đã gửi</p>
+                    </div>
+                    <div className="rounded border border-gray-100 bg-gray-50/80 py-2 px-1">
+                      <p className="text-lg font-semibold tabular-nums">
+                        {deliverySummary.metrics.opened}
+                        <span className="text-xs font-normal text-gray-500">
+                          {" "}
+                          ({deliverySummary.metrics.open_rate}%)
+                        </span>
+                      </p>
+                      <p className="text-[10px] text-gray-500 uppercase">Mở email</p>
+                    </div>
+                    <div className="rounded border border-gray-100 bg-gray-50/80 py-2 px-1">
+                      <p className="text-lg font-semibold tabular-nums">
+                        {deliverySummary.metrics.clicked}
+                        <span className="text-xs font-normal text-gray-500">
+                          {" "}
+                          ({deliverySummary.metrics.click_rate}%)
+                        </span>
+                      </p>
+                      <p className="text-[10px] text-gray-500 uppercase">Click</p>
+                    </div>
+                  </div>
+                ) : null}
+
+                {deliverySummary?.metrics?.ab_summary &&
+                Object.keys(deliverySummary.metrics.ab_summary).length > 0 ? (
+                  <div className="text-xs space-y-1 border-t border-gray-100 pt-3">
+                    <p className="font-medium text-gray-600">So sánh A/B (email)</p>
+                    {Object.entries(deliverySummary.metrics.ab_summary).map(([k, v]) => (
+                      <p key={k} className="text-gray-500">
+                        Nhóm {k}: đã gửi {v.sent ?? 0}, mở {v.open_rate_pct ?? 0}%, click{" "}
+                        {v.click_rate_pct ?? 0}%
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div className="space-y-2 border-t border-gray-100 pt-3">
+                  <label className="block text-xs font-medium text-gray-600">Danh sách khách</label>
+                  <select
+                    className="input text-sm w-full max-w-md"
+                    value={listId}
+                    onChange={(e) => setListId(e.target.value)}
+                  >
+                    {customerLists.length === 0 ? (
+                      <option value="">Chưa có danh sách</option>
+                    ) : (
+                      customerLists.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.list_name} ({l.valid_records} dòng hợp lệ)
+                        </option>
+                      ))
+                    )}
+                  </select>
+
+                  <p className="text-xs text-gray-500">Kênh gửi</p>
+                  <div className="flex flex-wrap gap-3">
+                    <label
+                      className={cn(
+                        "flex items-center gap-2 text-sm cursor-pointer",
+                        !hasEmailChannel && "opacity-50 cursor-not-allowed",
+                      )}
+                    >
+                      <input
+                        type="radio"
+                        name="execMode"
+                        checked={execMode === "email"}
+                        disabled={!hasEmailChannel}
+                        onChange={() => setExecMode("email")}
+                      />
+                      <Mail size={14} />
+                      Email (thật)
+                    </label>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="radio"
+                        name="execMode"
+                        checked={execMode === "sms_demo"}
+                        onChange={() => setExecMode("sms_demo")}
+                      />
+                      <Smartphone size={14} />
+                      SMS (mô phỏng)
+                    </label>
+                  </div>
+                  {!hasEmailChannel ? (
+                    <p className="text-xs text-amber-700">Chiến dịch chưa gồm kênh Email.</p>
+                  ) : null}
+
+                  {execMode === "email" ? (
+                    <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={abTest}
+                        onChange={(e) => setAbTest(e.target.checked)}
+                      />
+                      Thử A/B trên nội dung email (nhóm A / B ngẫu nhiên)
+                    </label>
+                  ) : null}
+
+                  <button
+                    type="button"
+                    onClick={runCampaignExecution}
+                    disabled={
+                      execBusy ||
+                      sendingDelivery ||
+                      !listId ||
+                      (execMode === "email" && !hasEmailChannel)
+                    }
+                    className="btn-primary text-sm py-1.5 px-4 inline-flex items-center gap-2"
+                  >
+                    {execBusy || sendingDelivery ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : null}
+                    Chạy chiến dịch
+                  </button>
+                  {execError ? <p className="text-xs text-red-600">{execError}</p> : null}
+                </div>
+
+                {deliverySummary && deliverySummary.logs.length > 0 ? (
+                  <div className="overflow-x-auto border border-gray-100 rounded-md">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-gray-50 text-left text-gray-600">
+                          <th className="p-2 font-medium">Tên</th>
+                          <th className="p-2 font-medium">Liên hệ</th>
+                          <th className="p-2 font-medium">Trạng thái</th>
+                          <th className="p-2 font-medium">Mở</th>
+                          <th className="p-2 font-medium">Click</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {deliverySummary.logs.map((row) => (
+                          <tr key={row.id} className="border-t border-gray-100">
+                            <td className="p-2 text-gray-800">{row.recipient_name ?? "—"}</td>
+                            <td className="p-2 text-gray-600">
+                              {row.channel === "sms_simulated"
+                                ? row.recipient_phone ?? "—"
+                                : row.recipient_email ?? "—"}
+                            </td>
+                            <td className="p-2">
+                              <span
+                                className={cn(
+                                  "badge",
+                                  row.status === "sent" && "bg-green-50 text-green-700",
+                                  row.status === "failed" && "bg-red-50 text-red-700",
+                                  row.status === "pending" && "bg-amber-50 text-amber-800",
+                                  (row.status === "skipped_no_email" || row.status === "skipped_no_phone") &&
+                                    "bg-gray-100 text-gray-600",
+                                )}
+                              >
+                                {RECIPIENT_STATUS_LABELS[row.status] ?? row.status}
+                              </span>
+                              {row.ab_variant ? (
+                                <span className="ml-1 text-[10px] text-gray-400">({row.ab_variant})</span>
+                              ) : null}
+                            </td>
+                            <td className="p-2">{row.opened_at ? "Có" : "—"}</td>
+                            <td className="p-2">{row.clicked_at ? "Có" : "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
               </div>
             )}
 

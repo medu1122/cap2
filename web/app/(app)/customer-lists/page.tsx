@@ -2,6 +2,19 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { BarChart3, Filter, RefreshCw, Wrench, X } from "lucide-react";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
 import { api } from "@/lib/api-client";
 
@@ -116,6 +129,58 @@ const COLUMN_LABELS: Record<string, string> = {
   LoaiKhachHang: "Loại khách hàng",
   DichVuLanCuoiSuDung: "Dịch vụ lần cuối sử dụng",
   DichVuSuDungNhieuNhat: "Dịch vụ sử dụng nhiều nhất",
+};
+
+const SEGMENT_FRIENDLY: Record<string, string> = {
+  churn_risk: "Nguy cơ rời bỏ",
+  vip: "VIP",
+  potential: "Tiềm năng",
+  new: "Khách mới",
+  unknown: "Chưa phân loại",
+};
+
+const PRIORITY_FRIENDLY: Record<string, string> = {
+  high: "Ưu tiên cao",
+  medium: "Ưu tiên vừa",
+  low: "Ưu tiên thấp",
+};
+
+function formatMoneyVi(n: number) {
+  return new Intl.NumberFormat("vi-VN").format(Number.isFinite(n) ? n : 0);
+}
+
+function buildKeyInsights(analysis: CustomerAnalysisResponse["analysis"]): string[] {
+  const out: string[] = [];
+  const seg = analysis.segmentation.summary;
+  const churn = seg.churn_risk;
+  const inactive60 = analysis.churn_risk.inactive_over_60_days;
+  if (churn > 0) {
+    out.push(
+      `⚠️ ${churn} khách đang ở nhóm nguy cơ rời bỏ — nên có kế hoạch tái kích hoạt sớm.`,
+    );
+  }
+  if (inactive60 > 0) {
+    out.push(
+      `⏱️ ${inactive60} khách đã hơn 60 ngày chưa phát sinh chi trả — cần chú ý hơn.`,
+    );
+  }
+  if (seg.vip > 0) {
+    out.push(
+      `💰 Nhóm VIP (${seg.vip} khách) thường mang giá trị cao — phù hợp chăm sóc riêng và upsell.`,
+    );
+  } else if (seg.potential > 0) {
+    out.push(
+      `📈 Nhóm tiềm năng (${seg.potential} khách) có thể chuyển hóa thêm với chiến dịch phù hợp.`,
+    );
+  }
+  return out.slice(0, 3);
+}
+
+const SEGMENT_CARD_COPY: Record<string, string> = {
+  vip: "Khách giá trị cao — phù hợp chăm sóc riêng, ưu đãi VIP.",
+  potential: "Còn dư địa tăng tần suất và giá trị đơn hàng.",
+  churn_risk: "Đã lâu không quay lại — ưu tiên kích hoạt lại.",
+  new: "Mới phát sinh — cần onboarding để giữ chân.",
 };
 
 function emptyRow(): Record<string, string> {
@@ -243,9 +308,11 @@ export default function CustomerListsPage() {
   const isHydratingRowsRef = useRef(false);
   const prevHasRowErrorsRef = useRef<boolean>(false);
   const [mappingModalOpen, setMappingModalOpen] = useState(false);
+  const [createListModalOpen, setCreateListModalOpen] = useState(false);
   const [importedRowsPending, setImportedRowsPending] = useState<Record<string, string>[]>([]);
   const [importedHeadersPending, setImportedHeadersPending] = useState<string[]>([]);
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
+  const [quickToolsOpen, setQuickToolsOpen] = useState(false);
 
   const allColumns = useMemo(() => {
     const extra = new Set<string>();
@@ -321,6 +388,27 @@ export default function CustomerListsPage() {
       ),
     );
   }, [rows, onlyPriorityTableView, priorityCustomers, sortPriorityFirst]);
+
+  const segmentChartData = useMemo(() => {
+    if (!analysisResult?.analysis?.segmentation?.summary) return [];
+    const s = analysisResult.analysis.segmentation.summary;
+    return [
+      { name: "VIP", value: s.vip, fill: "#7c3aed" },
+      { name: "Tiềm năng", value: s.potential, fill: "#0ea5e9" },
+      { name: "Nguy cơ rời bỏ", value: s.churn_risk, fill: "#ef4444" },
+      { name: "Khách mới", value: s.new, fill: "#22c55e" },
+    ];
+  }, [analysisResult]);
+
+  const segmentPieData = useMemo(
+    () => segmentChartData.filter((d) => d.value > 0),
+    [segmentChartData],
+  );
+
+  const analysisInsights = useMemo(
+    () => (analysisResult ? buildKeyInsights(analysisResult.analysis) : []),
+    [analysisResult],
+  );
 
   useEffect(() => {
     if (!analysisResult) return;
@@ -432,6 +520,7 @@ export default function CustomerListsPage() {
         list_name: name,
       });
       setNewTableName("");
+      setCreateListModalOpen(false);
       await loadLists();
       await openTable(created.id);
       setMessage("Đã tạo bảng mới.");
@@ -792,16 +881,10 @@ export default function CustomerListsPage() {
 
       {!showTableEditor ? (
         <div className="card space-y-3">
-          <h2>Các danh sách hiện có</h2>
-          <div className="flex gap-2">
-            <input
-              className="input text-sm"
-              placeholder="Tên danh sách mới"
-              value={newTableName}
-              onChange={(e) => setNewTableName(e.target.value)}
-            />
-            <button className="btn-primary text-xs" onClick={createTable}>
-              Tạo
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2>Các danh sách hiện có</h2>
+            <button type="button" className="btn-primary text-xs" onClick={() => setCreateListModalOpen(true)}>
+              Tạo danh sách
             </button>
           </div>
           {loading ? (
@@ -965,20 +1048,6 @@ export default function CustomerListsPage() {
                   </button>
                 </div>
               </div>
-              {showPrioritySuggestion ? (
-                <div className="border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800 flex items-center justify-between gap-2">
-                  <span>Nhóm nguy cơ rời bỏ đang cao. Gợi ý bật lọc khách ưu tiên để xử lý nhanh.</span>
-                  <button
-                    className="btn-secondary text-[11px]"
-                    onClick={() => {
-                      setOnlyPriorityTableView(true);
-                      setSortPriorityFirst(true);
-                    }}
-                  >
-                    Bật lọc ưu tiên
-                  </button>
-                </div>
-              ) : null}
               <div className="overflow-x-auto border border-gray-200">
               <table className="min-w-full text-xs">
                 <thead className="bg-gray-50">
@@ -1162,78 +1231,227 @@ export default function CustomerListsPage() {
           )}
 
           {analysisModalOpen ? (
-            <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-              <div className="w-full max-w-5xl max-h-[90vh] overflow-y-auto bg-white border border-gray-200 p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold">Kết quả phân tích danh sách khách hàng</h3>
-                  <button className="btn-secondary text-xs" onClick={() => setAnalysisModalOpen(false)}>
+            <div
+              className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+              role="presentation"
+              onClick={() => setAnalysisModalOpen(false)}
+            >
+              <div
+                className="w-full max-w-5xl max-h-[92vh] overflow-y-auto bg-white border border-gray-200 shadow-xl p-5 space-y-5"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="analysis-modal-title"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 id="analysis-modal-title" className="text-lg font-semibold text-gray-900">
+                      Tổng quan phân tích
+                    </h3>
+                    {analysisResult ? (
+                      <p className="text-xs text-gray-500 mt-0.5">{analysisResult.list_name}</p>
+                    ) : null}
+                  </div>
+                  <button type="button" className="btn-secondary text-xs shrink-0" onClick={() => setAnalysisModalOpen(false)}>
                     Đóng
                   </button>
                 </div>
                 {!analysisResult ? (
-                  <div className="border border-gray-200 bg-gray-50 p-3 text-sm space-y-2">
-                    <p>Danh sách này chưa có kết quả phân tích.</p>
-                    <button className="btn-primary text-xs" onClick={() => void analyzeCurrentTable()} disabled={analyzing}>
+                  <div className="border border-gray-200 bg-gray-50 p-4 text-sm space-y-3 rounded-none">
+                    <p className="text-gray-700">Danh sách này chưa có kết quả phân tích.</p>
+                    <button type="button" className="btn-primary text-xs" onClick={() => void analyzeCurrentTable()} disabled={analyzing}>
                       {analyzing ? "Đang phân tích..." : "Phân tích ngay"}
                     </button>
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="space-y-5">
+                    {(() => {
+                      const ov = analysisResult.analysis.overview;
+                      const seg = analysisResult.analysis.segmentation.summary;
+                      const churn30 = analysisResult.analysis.churn_risk.inactive_over_30_days;
+                      const retentionPct = ov.retention_rate_percent;
+                      const retentionTone =
+                        retentionPct >= 60
+                          ? "border-emerald-200 bg-emerald-50/90"
+                          : retentionPct >= 35
+                            ? "border-amber-200 bg-amber-50/90"
+                            : "border-red-100 bg-red-50/80";
+                      const riskTone =
+                        seg.churn_risk > 0 ? "border-red-300 bg-red-50/90" : "border-gray-200 bg-gray-50/80";
+                      return (
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                          <div className="border border-gray-200 bg-white p-3 rounded-none">
+                            <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Tổng khách</p>
+                            <p className="text-2xl font-semibold text-gray-900 tabular-nums mt-1">{ov.total_customers}</p>
+                          </div>
+                          <div className="border border-gray-200 bg-white p-3 rounded-none">
+                            <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Tổng doanh thu</p>
+                            <p className="text-2xl font-semibold text-gray-900 tabular-nums mt-1">{formatMoneyVi(ov.total_revenue)}</p>
+                          </div>
+                          <div className={`border p-3 rounded-none ${retentionTone}`}>
+                            <p className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Tỷ lệ giữ chân</p>
+                            <p className="text-2xl font-semibold tabular-nums mt-1">{retentionPct}%</p>
+                          </div>
+                          <div className={`border p-3 rounded-none ${riskTone}`}>
+                            <p className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Nguy cơ rời bỏ (nhóm)</p>
+                            <p className="text-2xl font-semibold tabular-nums mt-1">{seg.churn_risk}</p>
+                            <p className="text-[10px] text-gray-500 mt-1">
+                              &gt;30 ngày: {churn30} khách
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {analysisResult.analysis.narrative ? (
-                      <div className="border border-indigo-200 bg-indigo-50 p-2 text-xs whitespace-pre-line">
-                        {analysisResult.analysis.narrative}
+                      <div className="border border-indigo-100 bg-indigo-50/60 p-3 rounded-none">
+                        <p className="text-[11px] font-medium text-indigo-900 mb-1">Tóm tắt nhanh</p>
+                        <p className="text-sm text-gray-800 whitespace-pre-line line-clamp-4">{analysisResult.analysis.narrative}</p>
                       </div>
                     ) : null}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                      <div className="border border-gray-200 bg-white p-2">
-                        <p className="text-[11px] text-gray-500">Tổng khách</p>
-                        <p className="text-lg font-semibold">{analysisResult.analysis.overview.total_customers}</p>
+
+                    {analysisInsights.length > 0 ? (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold text-gray-700">Điểm cần chú ý</p>
+                        <ul className="space-y-2">
+                          {analysisInsights.map((line, i) => (
+                            <li
+                              key={i}
+                              className="text-sm text-gray-800 border-l-4 border-amber-400 bg-amber-50/50 pl-3 py-2 rounded-none"
+                            >
+                              {line}
+                            </li>
+                          ))}
+                        </ul>
                       </div>
-                      <div className="border border-gray-200 bg-white p-2">
-                        <p className="text-[11px] text-gray-500">Tổng doanh thu</p>
-                        <p className="text-lg font-semibold">{analysisResult.analysis.overview.total_revenue}</p>
+                    ) : null}
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      <div className="border border-gray-100 p-2 min-h-[280px]">
+                        <p className="text-xs font-semibold text-gray-700 px-2 pt-1 pb-2">Phân bổ nhóm (tròn)</p>
+                        {segmentPieData.length === 0 ? (
+                          <p className="text-xs text-gray-500 p-4">Chưa có dữ liệu để vẽ biểu đồ.</p>
+                        ) : (
+                          <ResponsiveContainer width="100%" height={240}>
+                            <PieChart>
+                              <Pie
+                                data={segmentPieData}
+                                dataKey="value"
+                                nameKey="name"
+                                cx="50%"
+                                cy="50%"
+                                outerRadius={88}
+                                label={({ name, percent }) =>
+                                  `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
+                                }
+                              >
+                                {segmentPieData.map((entry) => (
+                                  <Cell key={entry.name} fill={entry.fill} />
+                                ))}
+                              </Pie>
+                              <Tooltip formatter={(v: number) => [`${v} khách`, ""]} />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        )}
                       </div>
-                      <div className="border border-gray-200 bg-white p-2">
-                        <p className="text-[11px] text-gray-500">Retention</p>
-                        <p className="text-lg font-semibold">{analysisResult.analysis.overview.retention_rate_percent}%</p>
+                      <div className="border border-gray-100 p-2 min-h-[280px]">
+                        <p className="text-xs font-semibold text-gray-700 px-2 pt-1 pb-2">Số khách theo nhóm (cột)</p>
+                        <ResponsiveContainer width="100%" height={240}>
+                          <BarChart data={segmentChartData} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                            <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-12} textAnchor="end" height={48} />
+                            <YAxis allowDecimals={false} tick={{ fontSize: 10 }} width={32} />
+                            <Tooltip formatter={(v: number) => [`${v} khách`, "Số lượng"]} />
+                            <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                              {segmentChartData.map((entry) => (
+                                <Cell key={entry.name} fill={entry.fill} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
                       </div>
                     </div>
-                    <div className="border border-gray-200 bg-white p-2 text-xs">
-                      <p className="font-medium mb-1">Phân nhóm khách hàng</p>
-                      <p>
-                        VIP: {analysisResult.analysis.segmentation.summary.vip} - Tiềm năng:{" "}
-                        {analysisResult.analysis.segmentation.summary.potential} - Nguy cơ rời bỏ:{" "}
-                        {analysisResult.analysis.segmentation.summary.churn_risk} - Mới:{" "}
-                        {analysisResult.analysis.segmentation.summary.new}
-                      </p>
+
+                    <div>
+                      <p className="text-xs font-semibold text-gray-700 mb-2">Phân nhóm khách hàng</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {(
+                          [
+                            { id: "vip", label: "VIP", count: analysisResult.analysis.segmentation.summary.vip },
+                            {
+                              id: "potential",
+                              label: "Tiềm năng",
+                              count: analysisResult.analysis.segmentation.summary.potential,
+                            },
+                            {
+                              id: "churn_risk",
+                              label: "Nguy cơ rời bỏ",
+                              count: analysisResult.analysis.segmentation.summary.churn_risk,
+                            },
+                            { id: "new", label: "Khách mới", count: analysisResult.analysis.segmentation.summary.new },
+                          ] as const
+                        ).map((item) => (
+                          <div key={item.id} className="border border-gray-200 bg-white p-3 rounded-none flex flex-col gap-2">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <p className="font-medium text-sm text-gray-900">{item.label}</p>
+                              <span className="text-lg font-semibold tabular-nums text-gray-800">{item.count}</span>
+                            </div>
+                            <p className="text-xs text-gray-600 leading-snug">{SEGMENT_CARD_COPY[item.id]}</p>
+                            <button
+                              type="button"
+                              className="btn-secondary text-[11px] self-start"
+                              onClick={() => setAnalysisModalOpen(false)}
+                            >
+                              Xem trong bảng
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    {analysisResult.analysis.suggested_actions.length ? (
-                      <div className="border border-green-200 bg-green-50 p-2">
-                        <p className="font-medium text-sm mb-1">Hành động đề xuất</p>
-                        <div className="space-y-2">
+
+                    {analysisResult.analysis.suggested_actions.length > 0 ? (
+                      <div className="border border-emerald-100 bg-emerald-50/40 p-3 rounded-none space-y-3">
+                        <p className="text-sm font-semibold text-gray-900">Gợi ý từ hệ thống</p>
+                        <div className="space-y-3">
                           {analysisResult.analysis.suggested_actions.map((a, idx) => (
-                            <div key={idx} className="border border-green-200 bg-white p-2 text-xs">
-                              <p className="font-medium">
-                                {a.title} ({a.priority})
+                            <div key={idx} className="border border-gray-200 bg-white p-3 rounded-none space-y-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="font-medium text-sm text-gray-900">{a.title}</p>
+                                <span className="text-[10px] border border-gray-200 bg-gray-50 px-2 py-0.5 text-gray-700">
+                                  {PRIORITY_FRIENDLY[a.priority] ?? a.priority}
+                                </span>
+                                {a.target_segment ? (
+                                  <span className="text-[10px] text-gray-500">
+                                    Nhóm: {SEGMENT_FRIENDLY[a.target_segment] ?? a.target_segment}
+                                  </span>
+                                ) : null}
+                              </div>
+                              <p className="text-xs text-gray-700">
+                                <span className="font-medium text-gray-600">Mục tiêu: </span>
+                                {a.goal}
                               </p>
-                              <p className="text-gray-600">
-                                Nhóm: {a.target_segment} - Mục tiêu: {a.goal}
-                              </p>
-                              {a.reason ? <p className="text-gray-600">Lý do: {a.reason}</p> : null}
+                              {a.reason ? (
+                                <p className="text-xs text-gray-600">
+                                  <span className="font-medium text-gray-600">Vì sao: </span>
+                                  {a.reason}
+                                </p>
+                              ) : null}
                               <button
+                                type="button"
                                 className="btn-primary text-[11px] mt-1"
                                 disabled={creatingCampaign}
                                 onClick={() => void createCampaignFromAction(a)}
                               >
-                                {creatingCampaign ? "Đang tạo..." : "Tạo chiến dịch từ hành động"}
+                                {creatingCampaign ? "Đang tạo..." : "Tạo chiến dịch"}
                               </button>
                             </div>
                           ))}
                         </div>
                       </div>
                     ) : null}
-                    <div className="flex justify-end">
-                      <button className="btn-primary text-xs" onClick={() => void analyzeCurrentTable()} disabled={analyzing}>
+
+                    <div className="flex justify-end pt-1">
+                      <button type="button" className="btn-primary text-xs" onClick={() => void analyzeCurrentTable()} disabled={analyzing}>
                         {analyzing ? "Đang phân tích..." : "Phân tích lại"}
                       </button>
                     </div>
@@ -1310,6 +1528,193 @@ export default function CustomerListsPage() {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {createListModalOpen ? (
+        <div
+          className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4"
+          role="presentation"
+          onClick={() => {
+            setCreateListModalOpen(false);
+            setNewTableName("");
+          }}
+        >
+          <div
+            className="w-full max-w-md bg-white border border-gray-200 shadow-xl p-5 space-y-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-list-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="create-list-title" className="text-base font-semibold text-gray-900">
+              Tạo danh sách mới
+            </h3>
+            <form
+              className="space-y-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void createTable();
+              }}
+            >
+              <div>
+                <label htmlFor="new-list-name" className="block text-xs font-medium text-gray-600 mb-1">
+                  Tên danh sách
+                </label>
+                <input
+                  id="new-list-name"
+                  className="input text-sm w-full"
+                  placeholder="Ví dụ: Khách tháng 4"
+                  value={newTableName}
+                  onChange={(e) => setNewTableName(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  className="btn-secondary text-xs"
+                  onClick={() => {
+                    setCreateListModalOpen(false);
+                    setNewTableName("");
+                  }}
+                >
+                  Hủy
+                </button>
+                <button type="submit" className="btn-primary text-xs">
+                  Tạo
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {showTableEditor && activeListId ? (
+        <>
+          <button
+            type="button"
+            aria-label="Mở công cụ nhanh"
+            aria-expanded={quickToolsOpen}
+            onClick={() => setQuickToolsOpen((v) => !v)}
+            className={
+              quickToolsOpen
+                ? "hidden"
+                : "fixed bottom-5 right-5 z-[45] flex h-12 w-12 items-center justify-center rounded-full border-2 border-gray-500 bg-gradient-to-b from-[#f5f5f5] to-[#d4d0c8] text-gray-800 shadow-lg hover:brightness-105 active:brightness-95"
+            }
+          >
+            <Wrench size={22} strokeWidth={2} />
+          </button>
+
+          {quickToolsOpen ? (
+            <div
+              className="fixed bottom-5 right-5 z-[45] flex w-[min(92vw,300px)] max-h-[min(72vh,420px)] flex-col overflow-hidden rounded-sm border border-gray-500 bg-[#ece9d8] shadow-[2px_2px_8px_rgba(0,0,0,0.35)]"
+              role="dialog"
+              aria-label="Công cụ nhanh"
+            >
+              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-gray-500 bg-gradient-to-b from-[#ffffff] via-[#ece9d8] to-[#d4d0c8] px-2 py-1.5 text-[11px] font-bold text-gray-900 select-none">
+                <span className="flex min-w-0 items-center gap-1.5 truncate">
+                  <Wrench size={14} className="shrink-0" />
+                  Công cụ nhanh
+                </span>
+                <button
+                  type="button"
+                  aria-label="Đóng"
+                  onClick={() => setQuickToolsOpen(false)}
+                  className="flex h-6 w-6 shrink-0 items-center justify-center border border-gray-500 bg-[#ece9d8] text-base font-bold leading-none text-gray-800 hover:bg-red-100"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto border-x border-gray-400 bg-white p-2.5 text-xs">
+                <p className="mb-2 truncate text-[10px] font-semibold uppercase tracking-wide text-gray-500">Danh sách đang mở</p>
+                <p className="mb-3 truncate font-medium text-gray-900">{activeListName}</p>
+
+                <div className="mb-3 space-y-2 border border-gray-300 bg-[#f8f8f8] p-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-gray-600">Theo phân tích</p>
+                  {!analysisResult ? (
+                    <p className="leading-snug text-gray-700">
+                      Chưa có kết quả phân tích. Chạy phân tích để nhận gợi ý riêng cho danh sách này.
+                    </p>
+                  ) : showPrioritySuggestion ? (
+                    <div className="space-y-2">
+                      <p className="border-l-4 border-amber-500 pl-2 leading-snug text-amber-950">
+                        Nhóm nguy cơ rời bỏ đang cao. Gợi ý bật lọc khách ưu tiên để xử lý nhanh.
+                      </p>
+                      <button
+                        type="button"
+                        className="btn-primary w-full text-[11px]"
+                        onClick={() => {
+                          setOnlyPriorityTableView(true);
+                          setSortPriorityFirst(true);
+                          setMessage("Đã bật lọc khách ưu tiên.");
+                        }}
+                      >
+                        Áp dụng lọc ưu tiên
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="leading-snug text-gray-700">
+                      Tỷ lệ nhóm nguy cơ rời bỏ trong danh sách đang ở mức chưa cần báo động.
+                    </p>
+                  )}
+                </div>
+
+                <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-gray-600">Thao tác</p>
+                <div className="space-y-1.5">
+                  <div className="group relative">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAnalysisModalOpen(true);
+                      }}
+                      className="flex w-full items-center gap-2 border border-gray-300 bg-white p-2 text-left hover:bg-[#eef4ff]"
+                    >
+                      <BarChart3 size={18} className="shrink-0 text-blue-700" />
+                      <span className="font-medium text-gray-900">Tổng quan phân tích</span>
+                    </button>
+                    <div className="pointer-events-none absolute right-full top-1/2 z-10 mr-1 hidden w-48 -translate-y-1/2 rounded border border-gray-800 bg-gray-900 px-2 py-1.5 text-[10px] leading-snug text-white shadow-md group-hover:block">
+                      Mở cửa sổ biểu đồ, phân nhóm và gợi ý chiến dịch cho danh sách này.
+                    </div>
+                  </div>
+
+                  <div className="group relative">
+                    <button
+                      type="button"
+                      disabled={analyzing}
+                      onClick={() => void analyzeCurrentTable()}
+                      className="flex w-full items-center gap-2 border border-gray-300 bg-white p-2 text-left hover:bg-[#eef4ff] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <RefreshCw size={18} className={`shrink-0 text-emerald-700 ${analyzing ? "animate-spin" : ""}`} />
+                      <span className="font-medium text-gray-900">{analyzing ? "Đang phân tích…" : "Phân tích lại"}</span>
+                    </button>
+                    <div className="pointer-events-none absolute right-full top-1/2 z-10 mr-1 hidden w-48 -translate-y-1/2 rounded border border-gray-800 bg-gray-900 px-2 py-1.5 text-[10px] leading-snug text-white shadow-md group-hover:block">
+                      Chạy lại phân tích trên dữ liệu bảng hiện tại (ghi đè kết quả cũ).
+                    </div>
+                  </div>
+
+                  <div className="group relative">
+                    <button
+                      type="button"
+                      disabled={priorityCustomers.length === 0}
+                      onClick={() => {
+                        setOnlyPriorityTableView(true);
+                        setSortPriorityFirst(true);
+                        setMessage("Đã bật lọc khách ưu tiên.");
+                      }}
+                      className={`flex w-full items-center gap-2 border border-gray-300 bg-white p-2 text-left hover:bg-[#eef4ff] disabled:cursor-not-allowed disabled:opacity-50 ${showPrioritySuggestion ? "ring-2 ring-amber-400" : ""}`}
+                    >
+                      <Filter size={18} className="shrink-0 text-amber-800" />
+                      <span className="font-medium text-gray-900">Lọc khách ưu tiên</span>
+                    </button>
+                    <div className="pointer-events-none absolute right-full top-1/2 z-10 mr-1 hidden w-48 -translate-y-1/2 rounded border border-gray-800 bg-gray-900 px-2 py-1.5 text-[10px] leading-snug text-white shadow-md group-hover:block">
+                      Chỉ hiển thị khách đã đánh dấu ưu tiên và đưa họ lên đầu bảng. Cần ít nhất một khách được đánh dấu.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </>
       ) : null}
     </div>
   );

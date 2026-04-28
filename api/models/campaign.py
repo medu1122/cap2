@@ -31,3 +31,6 @@ class Campaign(Base):
     content_items: Mapped[list["ContentItem"]] = relationship("ContentItem", back_populates="campaign", cascade="all, delete-orphan")
     agent_run_logs: Mapped[list["AgentRunLog"]] = relationship("AgentRunLog", back_populates="campaign", cascade="all, delete-orphan")
     workflow_jobs: Mapped[list["WorkflowJob"]] = relationship("WorkflowJob", back_populates="campaign")
+    execution_logs: Mapped[list["CampaignExecutionLog"]] = relationship(
+        "CampaignExecutionLog", back_populates="campaign", cascade="all, delete-orphan"
+    )

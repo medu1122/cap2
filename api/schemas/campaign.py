@@ -1,5 +1,7 @@
 import uuid
 from datetime import datetime, date
+from typing import Any, Literal
+
 from pydantic import BaseModel, ConfigDict, field_validator
 
 VALID_CHANNELS = ["facebook_post", "email", "video_script"]
@@ -114,3 +116,45 @@ class CampaignDetail(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class CampaignExecuteRequest(BaseModel):
+    mode: Literal["email", "sms_demo"]
+    customer_list_id: uuid.UUID
+    ab_test: bool = False
+
+
+class ExecutionLogOut(BaseModel):
+    id: uuid.UUID
+    batch_id: uuid.UUID
+    recipient_name: str | None
+    recipient_email: str | None
+    recipient_phone: str | None
+    channel: str
+    status: str
+    opened_at: datetime | None
+    clicked_at: datetime | None
+    sent_at: datetime | None
+    ab_variant: str | None
+    error_message: str | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DeliveryMetricsOut(BaseModel):
+    total: int
+    sent: int
+    failed: int
+    skipped: int
+    opened: int
+    clicked: int
+    open_rate: float
+    click_rate: float
+    ab_summary: dict[str, Any] | None = None
+
+
+class DeliverySummaryResponse(BaseModel):
+    delivery: dict | None
+    metrics: DeliveryMetricsOut
+    logs: list[ExecutionLogOut]
+    latest_batch_id: str | None
