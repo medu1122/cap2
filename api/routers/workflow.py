@@ -1,11 +1,13 @@
 import asyncio
 import csv
+import html
 import io
 import json
 import os
-import uuid
+import random
 import re
 import unicodedata
+import uuid
 from datetime import date, datetime, timedelta, timezone
 
 from croniter import croniter
@@ -15,6 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import settings
 from core.database import AsyncSessionLocal, get_db
 from core.deps import get_current_user
 from models.brand import Brand
@@ -361,6 +364,91 @@ class CustomerPriorityUpsertPayload(BaseModel):
     email: str | None = None
     phone: str | None = None
     is_priority: bool = True
+
+
+class QuickOutreachRecipient(BaseModel):
+    name: str = ""
+    email: str | None = None
+    phone: str | None = None
+    # variables: HoVaTen, days_since_last, … từ dòng bảng — thay {{key}} khi gửi
+    variables: dict[str, str] | None = None
+
+
+class QuickOutreachPayload(BaseModel):
+    """Gửi nhanh từ bảng khách — email thật (SMTP) hoặc SMS mô phỏng."""
+
+    mode: str
+    subject: str = "Thông báo"
+    message: str
+    recipients: list[QuickOutreachRecipient]
+
+
+class SmartContactComposePayload(BaseModel):
+    """AI soạn nội dung tin nhắn / email (Smart Contact)."""
+
+    user_prompt: str
+    mode: str = "email"
+    context_one_liner: str | None = None
+
+
+def _render_smart_contact_template(text: str, r: QuickOutreachRecipient) -> str:
+    name = (r.name or "").strip() or "bạn"
+    phone = (r.phone or "").strip()
+    merged: dict[str, str] = {"name": name, "phone": phone}
+    if r.variables:
+        merged.update({str(k): str(v) if v is not None else "" for k, v in r.variables.items()})
+    out = text or ""
+    for key in sorted(merged.keys(), key=len, reverse=True):
+        out = out.replace("{{" + key + "}}", merged[key])
+    return out
+
+
+async def _smart_contact_compose_text(payload: SmartContactComposePayload) -> str:
+    up = (payload.user_prompt or "").strip()
+    if not up:
+        raise HTTPException(400, "Nhập yêu cầu soạn nội dung.")
+    if len(up) > 2000:
+        raise HTTPException(400, "Yêu cầu quá dài (tối đa 2000 ký tự).")
+    mode = (payload.mode or "email").strip().lower()
+    if mode not in ("email", "sms"):
+        mode = "email"
+    sys = (
+        "Bạn là trợ lý viết nội dung tiếng Việt (chuẩn dấu) cho chủ spa/SME gửi khách.\n"
+        "Chỉ trả về nội dung tin nhắn/email (plain text), không giải thích, không tiêu đề, không markdown.\n"
+        "Có thể dùng placeholder: {{HoVaTen}}, {{phone}}, {{LanCuoiChiTra}}, {{days_since_last}}, "
+        "{{DichVuLanCuoiSuDung}}, {{DichVuSuDungNhieuNhat}}, {{TongSoLanQuayLai}} khi phù hợp.\n"
+        "Không hứa ưu đãi/giảm giá trừ khi người dùng yêu cầu rõ.\n"
+        f"Kênh: {'SMS ngắn gọn' if mode == 'sms' else 'Email có thể 2–4 câu'}."
+    )
+    if payload.context_one_liner:
+        sys += f"\nGợi ý một khách mẫu: {payload.context_one_liner[:500]}"
+    messages = [
+        {"role": "system", "content": sys},
+        {"role": "user", "content": up},
+    ]
+    try:
+        resp = await asyncio.wait_for(
+            _qwen.chat.completions.create(
+                model=QWEN_MODEL,
+                messages=messages,
+                temperature=0.45,
+            ),
+            timeout=min(QWEN_TIMEOUT, 90),
+        )
+        return (resp.choices[0].message.content or "").strip()
+    except Exception:
+        try:
+            resp = await _openai.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                temperature=0.45,
+            )
+            return (resp.choices[0].message.content or "").strip()
+        except Exception as exc:
+            raise HTTPException(
+                503,
+                "Không soạn được nội dung (LLM lỗi). Hãy thử lại hoặc viết tay.",
+            ) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -1078,6 +1166,91 @@ async def analyze_customer_list_rows(
         "list_name": customer_list.list_name,
         "analysis": analysis,
     }
+
+
+@router.post("/customer-lists/{customer_list_id}/quick-outreach")
+async def customer_list_quick_outreach(
+    customer_list_id: uuid.UUID,
+    payload: QuickOutreachPayload,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if payload.mode not in ("email", "sms"):
+        raise HTTPException(400, "mode phải là email hoặc sms")
+    if len(payload.message) > 8000:
+        raise HTTPException(400, "Nội dung quá dài (tối đa 8000 ký tự).")
+    if len(payload.recipients) > 150:
+        raise HTTPException(400, "Tối đa 150 người nhận mỗi lần.")
+
+    list_result = await db.execute(
+        select(CustomerList).where(
+            CustomerList.id == customer_list_id,
+            CustomerList.user_id == current_user.id,
+        )
+    )
+    if not list_result.scalar_one_or_none():
+        raise HTTPException(404, "Customer list không tồn tại")
+
+    results: list[dict[str, str | None]] = []
+
+    if payload.mode == "email":
+        if not settings.SMTP_HOST or not settings.SMTP_USER:
+            raise HTTPException(
+                503,
+                "Chưa cấu hình SMTP (SMTP_HOST, SMTP_USER trong .env).",
+            )
+        from services.campaign_delivery_service import send_smtp_sync
+
+        for r in payload.recipients:
+            email_addr = (r.email or "").strip()
+            name = (r.name or "").strip() or "bạn"
+            phone = (r.phone or "").strip()
+            if not email_addr:
+                results.append({"to": name or "?", "status": "skipped", "detail": "Thiếu email"})
+                continue
+            text_body = _render_smart_contact_template(payload.message or "", r)
+            subject = _render_smart_contact_template(payload.subject or "Thông báo", r)
+            safe_html = html.escape(text_body).replace("\n", "<br>\n")
+            html_body = f"<!DOCTYPE html><html><body><div>{safe_html}</div></body></html>"
+            try:
+                await asyncio.to_thread(send_smtp_sync, email_addr, subject, text_body, html_body)
+                results.append({"to": email_addr, "status": "sent", "detail": None})
+            except Exception as exc:
+                results.append({"to": email_addr, "status": "failed", "detail": str(exc)[:300]})
+        return {"results": results}
+
+    for r in payload.recipients:
+        phone = (r.phone or "").strip()
+        label = phone or (r.email or "").strip() or (r.name or "?")
+        if not phone:
+            results.append({"to": label, "status": "skipped", "detail": "Thiếu SĐT (SMS mô phỏng)"})
+            continue
+        preview = _render_smart_contact_template(payload.message or "", r)
+        detail_preview = preview if len(preview) <= 160 else preview[:157] + "…"
+        if random.random() < 0.85:
+            results.append({"to": phone, "status": "sent", "detail": f"Mô phỏng · {detail_preview}"})
+        else:
+            results.append({"to": phone, "status": "failed", "detail": "Mô phỏng: lỗi gửi"})
+    return {"results": results}
+
+
+@router.post("/customer-lists/{customer_list_id}/smart-contact-compose")
+async def customer_list_smart_contact_compose(
+    customer_list_id: uuid.UUID,
+    payload: SmartContactComposePayload,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    list_result = await db.execute(
+        select(CustomerList).where(
+            CustomerList.id == customer_list_id,
+            CustomerList.user_id == current_user.id,
+        )
+    )
+    if not list_result.scalar_one_or_none():
+        raise HTTPException(404, "Customer list không tồn tại")
+    text = await _smart_contact_compose_text(payload)
+    return {"text": text}
 
 
 @router.get("/customer-lists/{customer_list_id}/priority-customers")

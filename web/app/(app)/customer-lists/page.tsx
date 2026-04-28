@@ -16,11 +16,15 @@ import {
 } from "recharts";
 import {
   AlertTriangle,
+  ArrowLeft,
   BarChart3,
   Crown,
+  Eraser,
   Filter,
   Loader2,
   RefreshCw,
+  Star,
+  StarOff,
   TrendingUp,
   UserPlus,
   Wrench,
@@ -178,60 +182,29 @@ function formatArpuVi(n: number) {
   );
 }
 
-/** Gợi ý ngắn 1 dòng (dưới KPI) — ưu tiên rủi ro, tránh mâu thuẫn với “tốt 100%”. */
-function buildInsightStrip(analysis: CustomerAnalysisResponse["analysis"]): string[] {
+/** Một dòng = một ý — không lặp, không đoạn văn giải thích. */
+function buildAnalysisInsightBullets(analysis: CustomerAnalysisResponse["analysis"]): string[] {
   const s = analysis.segmentation.summary;
   const inactive30 = analysis.churn_risk.inactive_over_30_days;
+  const inactive60 = analysis.churn_risk.inactive_over_60_days;
   const lines: string[] = [];
   if (inactive30 > 0) {
-    lines.push(`⚠️ ${inactive30} khách đã hơn 30 ngày chưa quay lại — có thể mất khách`);
+    const suffix = inactive60 > 0 ? ` (${inactive60} khách >60 ngày)` : "";
+    lines.push(`⚠️ ${inactive30} khách >30 ngày không quay lại${suffix}`);
   }
   if (s.churn_risk > 0) {
-    lines.push(`🔥 ${s.churn_risk} khách thuộc nhóm nguy cơ rời bỏ — nên xử lý sớm`);
+    lines.push(`🔥 ${s.churn_risk} khách nguy cơ rời bỏ`);
   }
   if (s.vip > 0) {
-    lines.push(`💰 ${s.vip} khách VIP — tập trung giữ chân và upsell`);
+    lines.push(`💰 ${s.vip} khách VIP giá trị cao`);
   }
   if (lines.length < 3 && s.potential > 0) {
-    lines.push(`📈 ${s.potential} khách tiềm năng — còn dư địa tăng trưởng`);
+    lines.push(`📈 ${s.potential} khách tiềm năng`);
   }
   if (lines.length < 3 && s.new > 0) {
-    lines.push(`🌱 ${s.new} khách mới — cần onboarding`);
+    lines.push(`🌱 ${s.new} khách mới`);
   }
   return lines.slice(0, 3);
-}
-
-/** Điểm cần chú ý — thứ tự: rủi ro thời gian → nhóm AI → giá trị. */
-function buildHumanInsights(analysis: CustomerAnalysisResponse["analysis"]): { headline: string; follow: string }[] {
-  const out: { headline: string; follow: string }[] = [];
-  const seg = analysis.segmentation.summary;
-  const inactive30 = analysis.churn_risk.inactive_over_30_days;
-  const inactive60 = analysis.churn_risk.inactive_over_60_days;
-  if (inactive30 > 0) {
-    const extra60 = inactive60 > 0 ? ` Trong đó ${inactive60} khách trên 60 ngày.` : "";
-    out.push({
-      headline: `⚠️ ${inactive30} khách đã hơn 30 ngày chưa quay lại`,
-      follow: `→ Đây là dấu hiệu có thể mất khách — nên lên chiến dịch kích hoạt.${extra60}`,
-    });
-  }
-  if (seg.churn_risk > 0) {
-    out.push({
-      headline: `🔥 ${seg.churn_risk} khách thuộc nhóm nguy cơ rời bỏ`,
-      follow: "→ Nên ưu tiên xử lý sớm (lọc bảng, chạm tới trong vài ngày tới).",
-    });
-  }
-  if (seg.vip > 0) {
-    out.push({
-      headline: `💰 ${seg.vip} khách VIP`,
-      follow: "→ Nhóm mang giá trị cao — giữ chân và upsell có chừng mực.",
-    });
-  } else if (seg.potential > 0) {
-    out.push({
-      headline: `📈 ${seg.potential} khách tiềm năng`,
-      follow: "→ Có thể đẩy chuyển đổi bằng ưu đãi hoặc nội dung phù hợp.",
-    });
-  }
-  return out.slice(0, 3);
 }
 
 /** KPI hoạt động 30 ngày — không dùng “giữ chân %” từ repeat count. */
@@ -243,8 +216,8 @@ function recentActivityKpiCopy(
   if (total <= 0) return { main: "Chưa có khách để tính", sub: "" };
   if (inactiveOver30 > 0) {
     return {
-      main: `⚠️ ${inactiveOver30} khách đã hơn 30 ngày chưa quay lại`,
-      sub: `Trong 30 ngày gần đây có ${recentPct}% khách còn phát sinh (theo ngày chi trả cuối).`,
+      main: `⚠️ ${inactiveOver30} khách >30 ngày không quay lại`,
+      sub: `${recentPct}% khách còn phát sinh trong 30 ngày (theo ngày chi trả cuối).`,
     };
   }
   if (recentPct >= 60) {
@@ -261,9 +234,79 @@ function recentActivityKpiCopy(
   }
   return {
     main: `📉 Hoạt động 30 ngày thấp (${recentPct}%)`,
-    sub: "Nhiều khách đã lâu không phát sinh — cần chiến dịch kích hoạt.",
+    sub: "Nhiều khách lâu không phát sinh.",
   };
 }
+
+const OUTREACH_TEMPLATES = {
+  nhac_nhe:
+    "Chào {{HoVaTen}}, lâu rồi bạn chưa quay lại\nKhông biết bạn còn nhu cầu {{DichVuSuDungNhieuNhat}} không?",
+  cham_soc:
+    "Chào {{HoVaTen}}, lần gần nhất bạn sử dụng {{DichVuLanCuoiSuDung}}, không biết trải nghiệm có ổn không?",
+  kich_hoat:
+    "Chào {{HoVaTen}}, bên mình vừa cập nhật một số cải tiến mới — bạn có thể ghé lại trải nghiệm thử.",
+  khach_moi: "Chào {{HoVaTen}}, cảm ơn bạn đã sử dụng dịch vụ.\nBên mình sẵn sàng hỗ trợ nếu bạn cần.",
+} as const;
+
+const SMART_CONTACT_VARIABLES: { key: string; label: string }[] = [
+  { key: "HoVaTen", label: "Tên" },
+  { key: "LanCuoiChiTra", label: "Lần cuối chi trả" },
+  { key: "days_since_last", label: "Ngày chưa quay lại" },
+  { key: "DichVuLanCuoiSuDung", label: "Dịch vụ lần cuối" },
+  { key: "DichVuSuDungNhieuNhat", label: "Dịch vụ hay dùng" },
+  { key: "TongSoLanQuayLai", label: "Số lần quay lại" },
+  { key: "name", label: "Tên (ngắn)" },
+  { key: "phone", label: "SĐT" },
+];
+
+function parseLastPaymentDate(raw: string): Date | null {
+  const s = raw.trim();
+  if (!s) return null;
+  const ymd = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (ymd) {
+    const d = new Date(Date.UTC(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3])));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (dmy) {
+    let y = Number(dmy[3]);
+    if (y < 100) y += 2000;
+    const d = new Date(y, Number(dmy[2]) - 1, Number(dmy[1]));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const t = Date.parse(s);
+  if (!Number.isNaN(t)) return new Date(t);
+  return null;
+}
+
+function daysSinceLastFromRow(lanCuoi: string): string {
+  const d = parseLastPaymentDate(lanCuoi);
+  if (!d) return "";
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  return String(Math.max(0, days));
+}
+
+function buildSmartVariablesFromRow(row: Record<string, string>): Record<string, string> {
+  const HoVaTen = String(row.HoVaTen || "").trim();
+  const LanCuoiChiTra = String(row.LanCuoiChiTra || "").trim();
+  return {
+    HoVaTen: HoVaTen || "khách",
+    name: HoVaTen || "bạn",
+    phone: String(row.SDT || "").trim(),
+    LanCuoiChiTra,
+    days_since_last: daysSinceLastFromRow(LanCuoiChiTra),
+    DichVuLanCuoiSuDung: String(row.DichVuLanCuoiSuDung || "").trim(),
+    DichVuSuDungNhieuNhat: String(row.DichVuSuDungNhieuNhat || "").trim(),
+    TongSoLanQuayLai: String(row.TongSoLanQuayLai || "").trim(),
+  };
+}
+
+type QuickOutreachRecipientRow = {
+  name: string;
+  email: string;
+  phone: string;
+  variables: Record<string, string>;
+};
 
 function revenueStatement(total: number): string {
   if (total <= 0) return "💰 Chưa ghi nhận doanh thu tích lũy";
@@ -493,7 +536,6 @@ export default function CustomerListsPage() {
   const [priorityCustomers, setPriorityCustomers] = useState<string[]>([]);
   const [onlyPriorityView, setOnlyPriorityView] = useState(false);
   const [onlyPriorityTableView, setOnlyPriorityTableView] = useState(false);
-  const [sortPriorityFirst, setSortPriorityFirst] = useState(true);
   const [showPrioritySuggestion, setShowPrioritySuggestion] = useState(false);
   const [selectedRowIndexes, setSelectedRowIndexes] = useState<number[]>([]);
   const [analysisModalOpen, setAnalysisModalOpen] = useState(false);
@@ -513,6 +555,19 @@ export default function CustomerListsPage() {
   const [segmentHubPanel, setSegmentHubPanel] = useState<AnalysisSegmentId | null>(null);
   /** Lọc bảng theo nhóm phân tích (sau khi đóng modal). */
   const [analysisTableSegmentFilter, setAnalysisTableSegmentFilter] = useState<AnalysisSegmentId | null>(null);
+  const [quickOutreachOpen, setQuickOutreachOpen] = useState(false);
+  const [quickOutreachMode, setQuickOutreachMode] = useState<"email" | "sms">("email");
+  const [quickOutreachSubject, setQuickOutreachSubject] = useState("Thông báo từ cửa hàng");
+  const [quickOutreachBody, setQuickOutreachBody] = useState<string>(OUTREACH_TEMPLATES.nhac_nhe);
+  const [quickOutreachRecipients, setQuickOutreachRecipients] = useState<QuickOutreachRecipientRow[] | null>(null);
+  const [quickOutreachResults, setQuickOutreachResults] = useState<
+    Array<{ to: string; status: string; detail: string | null }> | null
+  >(null);
+  const [quickOutreachSending, setQuickOutreachSending] = useState(false);
+  const [quickOutreachTab, setQuickOutreachTab] = useState<"template" | "ai" | "manual">("template");
+  const [smartComposePrompt, setSmartComposePrompt] = useState("");
+  const [smartComposeLoading, setSmartComposeLoading] = useState(false);
+  const quickOutreachTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const allColumns = useMemo(() => {
     const extra = new Set<string>();
@@ -581,18 +636,16 @@ export default function CustomerListsPage() {
 
   const displayedRows = useMemo(() => {
     let mapped = rows.map((row, rowIdx) => ({ row, rowIdx }));
-    if (sortPriorityFirst) {
-      mapped = [...mapped].sort((a, b) => {
-        const aPriority = priorityCustomers.includes(
-          toPriorityKey(String(a.row.HoVaTen || ""), String(a.row.Email || ""), String(a.row.SDT || "")),
-        );
-        const bPriority = priorityCustomers.includes(
-          toPriorityKey(String(b.row.HoVaTen || ""), String(b.row.Email || ""), String(b.row.SDT || "")),
-        );
-        if (aPriority === bPriority) return a.rowIdx - b.rowIdx;
-        return aPriority ? -1 : 1;
-      });
-    }
+    mapped = [...mapped].sort((a, b) => {
+      const aPriority = priorityCustomers.includes(
+        toPriorityKey(String(a.row.HoVaTen || ""), String(a.row.Email || ""), String(a.row.SDT || "")),
+      );
+      const bPriority = priorityCustomers.includes(
+        toPriorityKey(String(b.row.HoVaTen || ""), String(b.row.Email || ""), String(b.row.SDT || "")),
+      );
+      if (aPriority === bPriority) return a.rowIdx - b.rowIdx;
+      return aPriority ? -1 : 1;
+    });
     if (onlyPriorityTableView) {
       mapped = mapped.filter(({ row }) =>
         priorityCustomers.includes(
@@ -606,7 +659,7 @@ export default function CustomerListsPage() {
       );
     }
     return mapped;
-  }, [rows, onlyPriorityTableView, priorityCustomers, sortPriorityFirst, analysisSegmentNameSet]);
+  }, [rows, onlyPriorityTableView, priorityCustomers, analysisSegmentNameSet]);
 
   const segmentChartData = useMemo(() => {
     if (!analysisResult?.analysis?.segmentation?.summary) return [];
@@ -671,14 +724,24 @@ export default function CustomerListsPage() {
     ];
   }, [analysisResult]);
 
-  const analysisHumanInsights = useMemo(
-    () => (analysisResult ? buildHumanInsights(analysisResult.analysis) : []),
+  const analysisInsightBullets = useMemo(
+    () => (analysisResult ? buildAnalysisInsightBullets(analysisResult.analysis) : []),
     [analysisResult],
   );
-  const insightStrip = useMemo(
-    () => (analysisResult ? buildInsightStrip(analysisResult.analysis) : []),
-    [analysisResult],
-  );
+
+  const quickOutreachPreviewSamples = useMemo(() => {
+    const list = quickOutreachRecipients ?? [];
+    return list.slice(0, 3).map((r) => {
+      const name = (r.name || "").trim() || "bạn";
+      const phone = (r.phone || "").trim();
+      const merged: Record<string, string> = { name, phone, ...r.variables };
+      let out = quickOutreachBody;
+      for (const key of Object.keys(merged).sort((a, b) => b.length - a.length)) {
+        out = out.split(`{{${key}}}`).join(merged[key] ?? "");
+      }
+      return { name: r.name || r.variables.HoVaTen || "—", text: out };
+    });
+  }, [quickOutreachBody, quickOutreachRecipients]);
 
   useEffect(() => {
     if (!analysisModalOpen) setSegmentHubPanel(null);
@@ -1067,6 +1130,135 @@ export default function CustomerListsPage() {
   }
 
   /** Đánh dấu ưu tiên theo nhóm churn_risk trong kết quả phân tích (rule engine), rồi bật lọc bảng. */
+  function recipientsFromSelectedRows(): QuickOutreachRecipientRow[] {
+    return selectedRowIndexes
+      .map((i) => rows[i])
+      .filter(Boolean)
+      .map((row) => ({
+        name: String(row.HoVaTen || "").trim(),
+        email: String(row.Email || "").trim(),
+        phone: String(row.SDT || "").trim(),
+        variables: buildSmartVariablesFromRow(row),
+      }));
+  }
+
+  function recipientsFromAnalysisSegment(segment: AnalysisSegmentId): QuickOutreachRecipientRow[] {
+    if (!analysisResult) return [];
+    const nameSet = new Set(
+      analysisResult.analysis.segmentation.customers
+        .filter((c) => c.segment === segment)
+        .map((c) => String(c.customer_name || "").trim().toLowerCase())
+        .filter(Boolean),
+    );
+    return rows
+      .filter((row) => nameSet.has(String(row.HoVaTen || "").trim().toLowerCase()))
+      .map((row) => ({
+        name: String(row.HoVaTen || "").trim(),
+        email: String(row.Email || "").trim(),
+        phone: String(row.SDT || "").trim(),
+        variables: buildSmartVariablesFromRow(row),
+      }));
+  }
+
+  function openQuickOutreach(mode: "email" | "sms", list: QuickOutreachRecipientRow[]) {
+    if (!activeListId) {
+      setMessage("Chọn danh sách trước.");
+      return;
+    }
+    if (list.length === 0) {
+      setMessage("Không có khách trong nhóm này.");
+      return;
+    }
+    setQuickOutreachMode(mode);
+    setQuickOutreachRecipients(list);
+    setQuickOutreachSubject("Thông báo từ cửa hàng");
+    setQuickOutreachBody(OUTREACH_TEMPLATES.nhac_nhe);
+    setQuickOutreachTab("template");
+    setSmartComposePrompt("");
+    setQuickOutreachResults(null);
+    setQuickOutreachOpen(true);
+  }
+
+  function insertOutreachVariable(key: string) {
+    const token = `{{${key}}}`;
+    const el = quickOutreachTextareaRef.current;
+    if (el) {
+      const start = el.selectionStart ?? quickOutreachBody.length;
+      const end = el.selectionEnd ?? start;
+      const next = quickOutreachBody.slice(0, start) + token + quickOutreachBody.slice(end);
+      setQuickOutreachBody(next);
+      requestAnimationFrame(() => {
+        el.focus();
+        const pos = start + token.length;
+        el.setSelectionRange(pos, pos);
+      });
+    } else {
+      setQuickOutreachBody((b) => b + token);
+    }
+  }
+
+  async function runSmartContactCompose() {
+    if (!activeListId) return;
+    const prompt = smartComposePrompt.trim();
+    if (!prompt) {
+      setMessage("Nhập yêu cầu cho AI.");
+      return;
+    }
+    setSmartComposeLoading(true);
+    try {
+      const first = quickOutreachRecipients?.[0];
+      const contextOne =
+        first &&
+        `Tên: ${first.name}, chưa quay lại ~${first.variables.days_since_last || "—"} ngày, dịch vụ gần nhất: ${first.variables.DichVuLanCuoiSuDung || "—"}`;
+      const res = await api.post<{ text: string }>(
+        `/workflow/customer-lists/${activeListId}/smart-contact-compose`,
+        {
+          user_prompt: prompt,
+          mode: quickOutreachMode,
+          context_one_liner: contextOne || null,
+        },
+      );
+      setQuickOutreachBody(res.text);
+      setQuickOutreachTab("manual");
+      setMessage("Đã chèn nội dung do AI soạn. Kiểm tra trước khi gửi.");
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "AI không soạn được.");
+    } finally {
+      setSmartComposeLoading(false);
+    }
+  }
+
+  async function submitQuickOutreach() {
+    if (!activeListId || !quickOutreachRecipients?.length) return;
+    setQuickOutreachSending(true);
+    setQuickOutreachResults(null);
+    try {
+      const res = await api.post<{ results: Array<{ to: string; status: string; detail: string | null }> }>(
+        `/workflow/customer-lists/${activeListId}/quick-outreach`,
+        {
+          mode: quickOutreachMode,
+          subject: quickOutreachSubject,
+          message: quickOutreachBody,
+          recipients: quickOutreachRecipients.map((r) => ({
+            name: r.name,
+            email: r.email || null,
+            phone: r.phone || null,
+            variables: r.variables,
+          })),
+        },
+      );
+      setQuickOutreachResults(res.results);
+      const ok = res.results.filter((x) => x.status === "sent").length;
+      const fail = res.results.filter((x) => x.status === "failed").length;
+      const skip = res.results.filter((x) => x.status === "skipped").length;
+      setMessage(`Liên hệ nhanh: ${ok} gửi được, ${fail} lỗi, ${skip} bỏ qua.`);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Gửi thất bại");
+    } finally {
+      setQuickOutreachSending(false);
+    }
+  }
+
   async function applyChurnRiskFromAnalysisAndFilter() {
     if (!activeListId || !analysisResult) return;
     const churnNamesLower = new Set(
@@ -1281,13 +1473,20 @@ export default function CustomerListsPage() {
       ) : null}
 
       {showTableEditor && (
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={() => setShowTableEditor(false)}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-teal-200 bg-teal-50 text-teal-700 shadow-sm transition hover:border-teal-300 hover:bg-teal-100 hover:text-teal-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-500"
+            title="Quay lại danh sách"
+            aria-label="Quay lại danh sách"
+          >
+            <ArrowLeft className="h-4 w-4" strokeWidth={2.25} />
+          </button>
         <div className="card space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2>{activeListName ? `Danh sách khách hàng - ${activeListName}` : "Chọn danh sách để thao tác"}</h2>
             <div className="flex items-center gap-2">
-              <button className="btn-secondary text-xs" onClick={() => setShowTableEditor(false)}>
-                Quay lại
-              </button>
               <label className="btn-secondary text-xs cursor-pointer">
                 Tải dữ liệu
                 <input
@@ -1356,47 +1555,89 @@ export default function CustomerListsPage() {
                   </button>
                 </div>
               ) : null}
-              <div className="flex items-center justify-end">
-                <div className="flex flex-wrap items-center gap-3">
-                  <span className="text-[11px] border border-amber-300 bg-amber-50 px-2 py-[2px] text-amber-800">
-                    Khách ưu tiên: {priorityCustomers.length}
+              {selectedRowIndexes.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-2 border border-slate-300 bg-slate-50 px-2 py-1.5 text-xs">
+                  <span className="font-medium text-gray-900">
+                    <span className="tabular-nums">{selectedRowIndexes.length}</span> khách đã chọn →
                   </span>
-                  <label className="text-[11px] inline-flex items-center gap-1">
-                    <input
-                      type="checkbox"
-                      checked={sortPriorityFirst}
-                      onChange={(e) => setSortPriorityFirst(e.target.checked)}
-                    />
-                    Sắp xếp ưu tiên lên đầu
-                  </label>
-                  <label className="text-[11px] inline-flex items-center gap-1">
-                    <input
-                      type="checkbox"
-                      checked={onlyPriorityTableView}
-                      onChange={(e) => setOnlyPriorityTableView(e.target.checked)}
-                    />
-                    Chỉ hiện khách ưu tiên trong bảng
-                  </label>
                   <button
-                    className="btn-secondary text-[11px]"
-                    disabled={priorityCustomers.length === 0}
-                    onClick={() => void clearAllPriorityCustomers()}
+                    type="button"
+                    className="btn-primary text-[10px]"
+                    onClick={() => openQuickOutreach("email", recipientsFromSelectedRows())}
                   >
-                    Bỏ tất cả ưu tiên
+                    Gửi email
                   </button>
                   <button
-                    className="btn-secondary text-[11px]"
+                    type="button"
+                    className="btn-secondary text-[10px]"
+                    onClick={() => openQuickOutreach("sms", recipientsFromSelectedRows())}
+                  >
+                    Gửi SMS (mô phỏng)
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary text-[10px]"
                     disabled={selectedRowIndexes.length === 0}
                     onClick={() => void bulkTogglePriority(true)}
                   >
-                    Đánh dấu ưu tiên ({selectedRowIndexes.length})
+                    Đánh dấu
+                  </button>
+                </div>
+              ) : null}
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <span className="text-[11px] border border-amber-300 bg-amber-50 px-2 py-[3px] text-amber-800 rounded">
+                  Khách ưu tiên: {priorityCustomers.length}
+                </span>
+                <label className="text-[11px] inline-flex items-center gap-1.5 text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={onlyPriorityTableView}
+                    onChange={(e) => setOnlyPriorityTableView(e.target.checked)}
+                  />
+                  Chỉ hiện khách ưu tiên
+                </label>
+                <div
+                  className="inline-flex items-center gap-0.5 rounded-lg border border-amber-200/90 bg-amber-50/60 p-0.5"
+                  role="toolbar"
+                  aria-label="Thao tác ưu tiên"
+                >
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-amber-900 transition enabled:hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={priorityCustomers.length === 0}
+                    onClick={() => void clearAllPriorityCustomers()}
+                    title="Bỏ tất cả đánh dấu ưu tiên trong danh sách này"
+                    aria-label="Bỏ tất cả đánh dấu ưu tiên trong danh sách này"
+                  >
+                    <Eraser className="h-4 w-4" />
                   </button>
                   <button
-                    className="btn-secondary text-[11px]"
+                    type="button"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-amber-900 transition enabled:hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={selectedRowIndexes.length === 0}
+                    onClick={() => void bulkTogglePriority(true)}
+                    title={
+                      selectedRowIndexes.length === 0
+                        ? "Chọn ít nhất một dòng để đánh dấu ưu tiên"
+                        : `Đánh dấu ưu tiên cho ${selectedRowIndexes.length} khách đã chọn`
+                    }
+                    aria-label={`Đánh dấu ưu tiên cho ${selectedRowIndexes.length} khách đã chọn`}
+                  >
+                    <Star className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-amber-900 transition enabled:hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-40"
                     disabled={selectedRowIndexes.length === 0}
                     onClick={() => void bulkTogglePriority(false)}
+                    title={
+                      selectedRowIndexes.length === 0
+                        ? "Chọn ít nhất một dòng để bỏ ưu tiên"
+                        : `Bỏ đánh dấu ưu tiên cho ${selectedRowIndexes.length} khách đã chọn`
+                    }
+                    aria-label={`Bỏ đánh dấu ưu tiên cho ${selectedRowIndexes.length} khách đã chọn`}
                   >
-                    Bỏ ưu tiên đã chọn
+                    <StarOff className="h-4 w-4" />
                   </button>
                 </div>
               </div>
@@ -1657,51 +1898,67 @@ export default function CustomerListsPage() {
                               <p className="text-[10px] text-gray-600 mt-1.5 leading-snug">{activityCopy.sub}</p>
                             </div>
                             <div className={`border-2 p-3 rounded-none ${riskStrong}`}>
-                              <p className="text-sm font-semibold text-gray-900 leading-snug flex items-start gap-1.5">
-                                {seg.churn_risk > 0 ? <span className="text-red-600">⚠️</span> : <span>✅</span>}
-                                {seg.churn_risk > 0
-                                  ? `${seg.churn_risk} khách đang ở nhóm nguy cơ rời bỏ`
-                                  : "Không có nhóm nguy cơ đáng kể"}
+                              <p className="text-sm font-semibold text-gray-900 leading-snug">
+                                {seg.churn_risk > 0 ? (
+                                  <>
+                                    <span className="text-red-600">⚠️</span> Nguy cơ (rule):{" "}
+                                    <span className="tabular-nums">{seg.churn_risk}</span> khách
+                                  </>
+                                ) : (
+                                  "✅ Không có nguy cơ đáng kể (rule)"
+                                )}
                               </p>
                               <p className="text-[10px] text-gray-600 mt-1.5 tabular-nums">
-                                Trên 30 ngày không chi trả: {churn30} khách
+                                &gt;30 ngày không chi trả: {churn30} khách
                               </p>
                             </div>
                           </div>
-                          {seg.churn_risk > 0 ? (
-                            <p className="text-sm font-semibold text-amber-950 bg-amber-100/90 border border-amber-300 px-3 py-2.5 rounded-none">
-                              👉 Bạn đang có <span className="tabular-nums">{seg.churn_risk}</span> khách cần ưu tiên xử lý.
-                            </p>
-                          ) : null}
-                          {insightStrip.length > 0 ? (
-                            <div className="border border-gray-200 bg-gradient-to-br from-gray-50 to-white px-3 py-2.5 rounded-none space-y-1">
-                              {insightStrip.map((line, i) => (
-                                <p key={i} className="text-xs font-medium text-gray-800">
-                                  {line}
+                          {analysisInsightBullets.length > 0 ? (
+                            <div className="border border-gray-200 bg-gray-50 px-3 py-2.5 rounded-none space-y-2">
+                              {seg.churn_risk > 0 ? (
+                                <p className="text-xs font-semibold text-amber-900">
+                                  👉 <span className="tabular-nums">{seg.churn_risk}</span> khách cần ưu tiên xử lý ngay
                                 </p>
-                              ))}
+                              ) : null}
+                              <ul className="space-y-1">
+                                {analysisInsightBullets.map((line, i) => (
+                                  <li key={i} className="text-xs font-semibold text-gray-900">
+                                    {line}
+                                  </li>
+                                ))}
+                              </ul>
+                              {seg.churn_risk > 0 ? (
+                                <div className="flex flex-wrap gap-2 pt-1">
+                                  <button
+                                    type="button"
+                                    className="btn-secondary text-[10px]"
+                                    onClick={() => {
+                                      setAnalysisTableSegmentFilter("churn_risk");
+                                      setAnalysisModalOpen(false);
+                                      setMessage("Đã bật lọc nhóm nguy cơ trên bảng.");
+                                    }}
+                                  >
+                                    Lọc nhóm nguy cơ
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn-primary text-[10px]"
+                                    onClick={() => {
+                                      const list = recipientsFromAnalysisSegment("churn_risk");
+                                      setAnalysisModalOpen(false);
+                                      setSegmentHubPanel(null);
+                                      openQuickOutreach("email", list);
+                                    }}
+                                  >
+                                    Gửi email nhóm nguy cơ
+                                  </button>
+                                </div>
+                              ) : null}
                             </div>
                           ) : null}
                         </>
                       );
                     })()}
-
-                    {analysisHumanInsights.length > 0 ? (
-                      <div className="space-y-2">
-                        <p className="text-xs font-bold text-gray-800 uppercase tracking-wide">Điểm cần chú ý</p>
-                        <ul className="space-y-2.5">
-                          {analysisHumanInsights.map((block, i) => (
-                            <li
-                              key={i}
-                              className="text-sm text-gray-900 border-l-4 border-amber-500 bg-amber-50/60 pl-3 py-2.5 rounded-none space-y-1"
-                            >
-                              <p className="font-semibold">{block.headline}</p>
-                              <p className="text-xs text-gray-700 leading-relaxed">{block.follow}</p>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                       <div className="border border-gray-100 p-2 min-h-[280px]">
@@ -1958,6 +2215,21 @@ export default function CustomerListsPage() {
                                       {creatingCampaign ? "Đang tạo..." : "Tạo chiến dịch"}
                                     </button>
                                   ) : null}
+                                  {item.count > 0 ? (
+                                    <button
+                                      type="button"
+                                      className="btn-secondary text-[11px]"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const list = recipientsFromAnalysisSegment(item.id);
+                                        setAnalysisModalOpen(false);
+                                        setSegmentHubPanel(null);
+                                        openQuickOutreach("email", list);
+                                      }}
+                                    >
+                                      Liên hệ nhanh
+                                    </button>
+                                  ) : null}
                                   <button
                                     type="button"
                                     className="btn-secondary text-[11px]"
@@ -1992,6 +2264,209 @@ export default function CustomerListsPage() {
           ) : null}
         </div>
       )}
+      {quickOutreachOpen ? (
+        <div
+          className="fixed inset-0 z-[55] flex items-center justify-center bg-black/45 p-4"
+          role="presentation"
+          onClick={() => {
+            if (!quickOutreachSending) {
+              setQuickOutreachOpen(false);
+              setQuickOutreachResults(null);
+            }
+          }}
+        >
+          <div
+            className="max-h-[90vh] w-full max-w-lg overflow-y-auto border border-gray-200 bg-white p-4 shadow-xl space-y-3"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="quick-outreach-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <h3 id="quick-outreach-title" className="text-base font-semibold text-gray-900">
+                Liên hệ nhanh — {quickOutreachMode === "email" ? "Email" : "SMS (mô phỏng)"}
+              </h3>
+              <button
+                type="button"
+                className="btn-secondary text-xs shrink-0"
+                disabled={quickOutreachSending}
+                onClick={() => {
+                  setQuickOutreachOpen(false);
+                  setQuickOutreachResults(null);
+                }}
+              >
+                Đóng
+              </button>
+            </div>
+            <p className="text-xs text-gray-600">
+              <span className="tabular-nums font-medium text-gray-900">{quickOutreachRecipients?.length ?? 0}</span> người
+              nhận · Smart Contact: biến từ bảng + gửi không cần campaign.
+            </p>
+            <div className="flex flex-wrap gap-1 border-b border-gray-100 pb-2">
+              {(
+                [
+                  { id: "template" as const, label: "Mẫu nhanh" },
+                  { id: "ai" as const, label: "AI soạn" },
+                  { id: "manual" as const, label: "Viết tay" },
+                ] as const
+              ).map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={`text-[10px] px-2 py-1 border ${quickOutreachTab === t.id ? "border-blue-600 bg-blue-50 text-blue-900" : "border-gray-200 bg-white text-gray-700"}`}
+                  disabled={quickOutreachSending}
+                  onClick={() => setQuickOutreachTab(t.id)}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            {quickOutreachMode === "email" ? (
+              <div>
+                <label className="text-[10px] font-medium text-gray-600 uppercase tracking-wide">Tiêu đề</label>
+                <input
+                  type="text"
+                  className="input w-full text-sm mt-0.5"
+                  value={quickOutreachSubject}
+                  onChange={(e) => setQuickOutreachSubject(e.target.value)}
+                  disabled={quickOutreachSending}
+                />
+              </div>
+            ) : null}
+            {quickOutreachTab === "template" ? (
+              <div>
+                <p className="text-[10px] font-medium text-gray-600 uppercase tracking-wide mb-1">Mẫu theo mục đích</p>
+                <div className="flex flex-wrap gap-1">
+                  <button
+                    type="button"
+                    className="btn-secondary text-[10px] py-0.5"
+                    disabled={quickOutreachSending}
+                    onClick={() => setQuickOutreachBody(OUTREACH_TEMPLATES.nhac_nhe)}
+                  >
+                    Nhắc quay lại
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary text-[10px] py-0.5"
+                    disabled={quickOutreachSending}
+                    onClick={() => setQuickOutreachBody(OUTREACH_TEMPLATES.cham_soc)}
+                  >
+                    Chăm sóc
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary text-[10px] py-0.5"
+                    disabled={quickOutreachSending}
+                    onClick={() => setQuickOutreachBody(OUTREACH_TEMPLATES.kich_hoat)}
+                  >
+                    Kích hoạt
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary text-[10px] py-0.5"
+                    disabled={quickOutreachSending}
+                    onClick={() => setQuickOutreachBody(OUTREACH_TEMPLATES.khach_moi)}
+                  >
+                    Khách mới
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            {quickOutreachTab === "ai" ? (
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-medium text-gray-600 uppercase tracking-wide">Yêu cầu AI</label>
+                <textarea
+                  className="input w-full text-sm min-h-[72px]"
+                  placeholder='Ví dụ: nhắc khách lâu chưa quay lại, không nhắc ưu đãi, giọng thân thiện.'
+                  value={smartComposePrompt}
+                  onChange={(e) => setSmartComposePrompt(e.target.value)}
+                  disabled={quickOutreachSending || smartComposeLoading}
+                />
+                <button
+                  type="button"
+                  className="btn-primary text-[10px]"
+                  disabled={quickOutreachSending || smartComposeLoading}
+                  onClick={() => void runSmartContactCompose()}
+                >
+                  {smartComposeLoading ? "Đang tạo…" : "Tạo nội dung"}
+                </button>
+              </div>
+            ) : null}
+            {quickOutreachTab === "manual" ? (
+              <p className="text-[10px] text-gray-500">Soạn trực tiếp hoặc chèn biến bên dưới.</p>
+            ) : null}
+            <div>
+              <p className="text-[10px] font-medium text-gray-600 uppercase tracking-wide mb-1">Chèn biến</p>
+              <div className="flex flex-wrap gap-1">
+                {SMART_CONTACT_VARIABLES.map((v) => (
+                  <button
+                    key={v.key}
+                    type="button"
+                    className="border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] text-gray-800 hover:bg-gray-100"
+                    disabled={quickOutreachSending}
+                    onClick={() => insertOutreachVariable(v.key)}
+                    title={`{{${v.key}}}`}
+                  >
+                    {v.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="text-[10px] font-medium text-gray-600 uppercase tracking-wide">Nội dung</label>
+              <textarea
+                ref={quickOutreachTextareaRef}
+                className="input w-full text-sm mt-0.5 min-h-[120px] font-mono"
+                value={quickOutreachBody}
+                onChange={(e) => setQuickOutreachBody(e.target.value)}
+                disabled={quickOutreachSending}
+              />
+            </div>
+            <div>
+              <p className="text-[10px] font-medium text-gray-600 uppercase tracking-wide mb-1">Xem trước (tối đa 3 khách)</p>
+              <ul className="space-y-2 text-[10px] text-gray-800 border border-gray-100 bg-gray-50/80 p-2 max-h-40 overflow-y-auto">
+                {quickOutreachPreviewSamples.length === 0 ? (
+                  <li className="text-gray-500">—</li>
+                ) : (
+                  quickOutreachPreviewSamples.map((s, i) => (
+                    <li key={i}>
+                      <span className="font-semibold text-gray-900">{s.name}:</span>
+                      <span className="block whitespace-pre-wrap text-gray-800 mt-0.5">{s.text}</span>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </div>
+            {quickOutreachResults ? (
+              <div className="border border-gray-200 bg-gray-50 max-h-36 overflow-y-auto p-2 text-[10px] space-y-0.5">
+                {quickOutreachResults.map((r, i) => (
+                  <div key={i} className="flex flex-wrap gap-x-1">
+                    <span className="font-mono text-gray-800">{r.to}</span>
+                    <span
+                      className={
+                        r.status === "sent" ? "text-emerald-700" : r.status === "failed" ? "text-red-700" : "text-amber-800"
+                      }
+                    >
+                      {r.status === "sent" ? "✓" : r.status === "failed" ? "✗" : "○"} {r.status}
+                    </span>
+                    {r.detail ? <span className="text-gray-600">— {r.detail}</span> : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                className="btn-primary text-xs"
+                disabled={quickOutreachSending || !quickOutreachRecipients?.length}
+                onClick={() => void submitQuickOutreach()}
+              >
+                {quickOutreachSending ? "Đang gửi…" : "Gửi ngay"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {analyzing ? (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-white border border-gray-200 p-4 space-y-2">
