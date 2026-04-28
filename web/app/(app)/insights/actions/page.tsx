@@ -184,7 +184,7 @@ export default function InsightActionsPage() {
                               className="btn-primary text-xs"
                               href={toCampaignFromActionHref(run.id, action)}
                             >
-                              Tạo campaign
+                              Tạo chiến dịch
                             </a>
                           </div>
                           <p className="mt-2 text-sm text-gray-700">{action.goal || action.reason || "Chưa có mô tả chi tiết."}</p>

@@ -95,7 +95,7 @@ const TEMPLATE_COLUMNS = [
   "DichVuSuDungNhieuNhat",
 ] as const;
 
-const REQUIRED_IMPORT_COLUMNS = ["HoVaTen", "SDT", "Email"] as const;
+const REQUIRED_IMPORT_COLUMNS = ["HoVaTen", "SDT"] as const;
 const PRIMARY_COLUMNS = [
   { key: "HoVaTen", label: "Họ và tên" },
   { key: "SDT", label: "SĐT" },
@@ -146,6 +146,37 @@ function parseCsvText(text: string): Record<string, string>[] {
     });
     return row;
   });
+}
+
+function normalizeHeaderKey(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function autoSuggestMapping(headers: string[]): Record<string, string> {
+  const aliases: Record<string, string[]> = {
+    HoVaTen: ["hovaten", "hoten", "fullname", "name", "tenkhachhang", "customername"],
+    SDT: ["sdt", "sodienthoai", "phone", "phonenumber", "mobile"],
+    Email: ["email", "mail"],
+    LoaiKhachHang: ["loaikhachhang", "customertype", "segment"],
+    LanCuoiChiTra: ["lancuoichitra", "lastpaymentdate", "lastpaiddate"],
+    TongSoTienDaChiTra: ["tongsotiendachitra", "totalspent", "totalspend"],
+    TongSoLanQuayLai: ["tongsolanquaylai", "totalvisits", "repeatcount", "ordercount"],
+    Tuoi: ["tuoi", "age"],
+    LinkFB: ["linkfb", "facebook", "facebooklink"],
+    DichVuLanCuoiSuDung: ["dichvulancuoisudung", "lastserviceused"],
+    DichVuSuDungNhieuNhat: ["dichvusudungnhieunhat", "mostusedservice"],
+  };
+  const headerMap = headers.map((h) => ({ raw: h, normalized: normalizeHeaderKey(h) }));
+  const result: Record<string, string> = {};
+  Object.entries(aliases).forEach(([target, keys]) => {
+    const found = headerMap.find((h) => keys.includes(h.normalized));
+    if (found) result[target] = found.raw;
+  });
+  return result;
 }
 
 async function parseFileToRows(file: File): Promise<Record<string, string>[]> {
@@ -211,6 +242,10 @@ export default function CustomerListsPage() {
   const [rowsDirty, setRowsDirty] = useState(false);
   const isHydratingRowsRef = useRef(false);
   const prevHasRowErrorsRef = useRef<boolean>(false);
+  const [mappingModalOpen, setMappingModalOpen] = useState(false);
+  const [importedRowsPending, setImportedRowsPending] = useState<Record<string, string>[]>([]);
+  const [importedHeadersPending, setImportedHeadersPending] = useState<string[]>([]);
+  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
 
   const allColumns = useMemo(() => {
     const extra = new Set<string>();
@@ -246,8 +281,8 @@ export default function CustomerListsPage() {
       const hasAnyData = Boolean(fullName || email || phone || customerType || lastPaid || totalSpend);
       if (!hasAnyData) return;
       if (!fullName) rowErr.push("Thiếu họ tên");
-      if (!email) rowErr.push("Thiếu email");
-      else if (!isValidEmail(email)) rowErr.push("Email không hợp lệ");
+      if (!phone) rowErr.push("Thiếu SĐT");
+      if (email && !isValidEmail(email)) rowErr.push("Email không hợp lệ");
       if (email) {
         const key = email.toLowerCase();
         emailMap[key] = [...(emailMap[key] || []), idx];
@@ -469,23 +504,55 @@ export default function CustomerListsPage() {
     try {
       const imported = await parseFileToRows(file);
       const importedHeaders = Object.keys(imported[0] || {});
-      const missingRequired = REQUIRED_IMPORT_COLUMNS.filter((col) => !importedHeaders.includes(col));
+      const suggested = autoSuggestMapping(importedHeaders);
+      setImportedRowsPending(imported);
+      setImportedHeadersPending(importedHeaders);
+      setColumnMapping(suggested);
+      const missingRequired = REQUIRED_IMPORT_COLUMNS.filter((col) => !suggested[col]);
       if (missingRequired.length > 0) {
-        setMessage(
-          `File chưa đúng khuôn. Thiếu cột bắt buộc: ${missingRequired.join(", ")}. Vui lòng dùng template mẫu.`,
-        );
-        return;
+        setMappingModalOpen(true);
+      } else {
+        const mappedRows = imported.map((row) => {
+          const out: Record<string, string> = {};
+          Object.entries(suggested).forEach(([target, source]) => {
+            if (!source) return;
+            out[target] = String(row[source] ?? "");
+          });
+          return out;
+        });
+        const normalized = normalizeRows(mappedRows as Record<string, unknown>[]);
+        setRows(normalized);
+        setRowsDirty(true);
+        setOnlyPriorityTableView(false);
+        setMessage(`Đã nạp ${normalized.length} dòng vào danh sách đang mở.`);
       }
-      const normalized = normalizeRows(imported as Record<string, unknown>[]);
-      setRows(normalized);
-      setRowsDirty(true);
-      setOnlyPriorityTableView(false);
-      setMessage(`Đã nạp ${normalized.length} dòng vào danh sách đang mở.`);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Không đọc được file");
     } finally {
       event.target.value = "";
     }
+  }
+
+  function applyMappedImport() {
+    const missingRequired = REQUIRED_IMPORT_COLUMNS.filter((col) => !columnMapping[col]);
+    if (missingRequired.length > 0) {
+      setMessage(`Thiếu cột bắt buộc sau mapping: ${missingRequired.join(", ")}`);
+      return;
+    }
+    const mappedRows = importedRowsPending.map((row) => {
+      const out: Record<string, string> = {};
+      Object.entries(columnMapping).forEach(([target, source]) => {
+        if (!source) return;
+        out[target] = String(row[source] ?? "");
+      });
+      return out;
+    });
+    const normalized = normalizeRows(mappedRows as Record<string, unknown>[]);
+    setRows(normalized);
+    setRowsDirty(true);
+    setOnlyPriorityTableView(false);
+    setMappingModalOpen(false);
+    setMessage(`Đã nạp ${normalized.length} dòng vào danh sách đang mở.`);
   }
 
   async function persistRowsNow(showToast: boolean) {
@@ -563,7 +630,7 @@ export default function CustomerListsPage() {
   }) {
     if (!analysisResult) return;
     if (brands.length === 0) {
-      setMessage("Chưa có Brand Vault. Vui lòng tạo brand trước khi tạo campaign.");
+      setMessage("Chưa có Brand Vault. Vui lòng tạo thương hiệu trước khi tạo chiến dịch.");
       return;
     }
     setCreatingCampaign(true);
@@ -591,7 +658,7 @@ export default function CustomerListsPage() {
       await api.post(`/campaigns/${created.id}/run`);
       router.push(`/campaigns/${created.id}`);
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Không tạo được campaign từ action");
+      setMessage(e instanceof Error ? e.message : "Không tạo được chiến dịch từ hành động");
     } finally {
       setCreatingCampaign(false);
     }
@@ -701,12 +768,13 @@ export default function CustomerListsPage() {
         <div className="flex items-center gap-2">
           <HelpDialogButton
             title="Hướng dẫn danh sách người dùng"
-            summary="Mỗi danh sách là một tập khách hàng riêng. Bạn nạp file vào danh sách đang mở, chỉnh sửa và chỉ lưu khi bấm Lưu danh sách."
+            summary="Mỗi danh sách là một tập khách hàng riêng. Bạn nạp file vào danh sách đang mở, chỉnh sửa và hệ thống tự lưu."
             steps={[
               "Tạo hoặc chọn danh sách.",
               "Nạp file CSV/XLSX vào đúng danh sách đang mở.",
+              "Xác nhận mapping cột nếu file không theo đúng khuôn chuẩn.",
               "Chỉnh sửa thêm/xóa dòng.",
-              "Bấm Lưu danh sách để ghi dữ liệu.",
+              "Hệ thống tự lưu dữ liệu sau khi bạn thao tác.",
               "Bấm Phân tích để chạy pipeline bot và lấy kết quả.",
             ]}
           />
@@ -1157,7 +1225,7 @@ export default function CustomerListsPage() {
                                 disabled={creatingCampaign}
                                 onClick={() => void createCampaignFromAction(a)}
                               >
-                                {creatingCampaign ? "Đang tạo..." : "Tạo campaign từ action"}
+                                {creatingCampaign ? "Đang tạo..." : "Tạo chiến dịch từ hành động"}
                               </button>
                             </div>
                           ))}
@@ -1183,6 +1251,62 @@ export default function CustomerListsPage() {
             <p className="text-sm text-gray-600">Đang phân tích</p>
             <div className="h-2 bg-gray-100">
               <div className="h-2 bg-blue-600 animate-pulse w-3/4" />
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {mappingModalOpen ? (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl bg-white border border-gray-200 p-4 space-y-3">
+            <h3 className="text-lg font-semibold">Xác nhận mapping cột import</h3>
+            <p className="text-sm text-gray-600">Vui lòng map cột bắt buộc: Họ và tên, SĐT.</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+              {[
+                "HoVaTen",
+                "SDT",
+                "Email",
+                "LoaiKhachHang",
+                "LanCuoiChiTra",
+                "TongSoTienDaChiTra",
+                "TongSoLanQuayLai",
+              ].map((target) => (
+                <div key={target} className="border border-gray-200 p-2">
+                  <p className="text-xs text-gray-500 mb-1">{COLUMN_LABELS[target] ?? target}</p>
+                  <select
+                    className="input text-sm"
+                    value={columnMapping[target] || ""}
+                    onChange={(e) =>
+                      setColumnMapping((prev) => ({
+                        ...prev,
+                        [target]: e.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">-- Không chọn --</option>
+                    {importedHeadersPending.map((h) => (
+                      <option key={h} value={h}>
+                        {h}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                className="btn-secondary text-xs"
+                onClick={() => {
+                  setMappingModalOpen(false);
+                  setImportedRowsPending([]);
+                  setImportedHeadersPending([]);
+                }}
+              >
+                Hủy
+              </button>
+              <button className="btn-primary text-xs" onClick={applyMappedImport}>
+                Áp dụng import
+              </button>
             </div>
           </div>
         </div>

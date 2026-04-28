@@ -218,7 +218,7 @@ export default function NewCampaignPage() {
 
         {form.source_insight_run_id ? (
           <div className="border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
-            Campaign này được tạo từ Insight run: <span className="font-medium">{form.source_insight_run_id}</span>
+            Chiến dịch này được tạo từ Insight run: <span className="font-medium">{form.source_insight_run_id}</span>
             {form.source_customer_segment ? (
               <span> | Segment: <span className="font-medium">{form.source_customer_segment}</span></span>
             ) : null}

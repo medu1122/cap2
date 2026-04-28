@@ -680,7 +680,7 @@ async def _process_customer_list_background(
                 extra_fields=extra or None,
             )
         )
-        if email:
+        if full_name and phone:
             valid += 1
 
     invalid = max(total - valid, 0)
@@ -879,7 +879,7 @@ async def replace_customer_list_rows(
         if not isinstance(row, dict):
             continue
         email, full_name, phone, extra_fields = _row_to_customer_fields(row)
-        if email:
+        if full_name and phone:
             valid_records += 1
         new_customers.append(
             Customer(
