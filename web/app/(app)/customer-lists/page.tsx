@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { BarChart3, Filter, RefreshCw, Wrench, X } from "lucide-react";
+import { BarChart3, Filter, Loader2, RefreshCw, Wrench, X } from "lucide-react";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
 import { api } from "@/lib/api-client";
 
@@ -60,11 +60,13 @@ interface CustomerAnalysisResponse {
     churn_risk: {
       inactive_over_30_days: number;
       inactive_over_60_days: number;
+      inactive_day_buckets?: Array<{ key: string; label: string; count: number }>;
       high_risk_customers: Array<{ customer_name: string; days_since_last_payment: number; email?: string; phone?: string }>;
       medium_risk_customers: Array<{ customer_name: string; days_since_last_payment: number; email?: string; phone?: string }>;
     };
     segmentation: {
       summary: { vip: number; potential: number; churn_risk: number; new: number };
+      revenue_by_segment?: { vip: number; potential: number; churn_risk: number; new: number };
       customers: Array<{ customer_name: string; segment: string }>;
     };
     suggested_actions: Array<{
@@ -149,38 +151,148 @@ function formatMoneyVi(n: number) {
   return new Intl.NumberFormat("vi-VN").format(Number.isFinite(n) ? n : 0);
 }
 
-function buildKeyInsights(analysis: CustomerAnalysisResponse["analysis"]): string[] {
-  const out: string[] = [];
+/** Gợi ý ngắn 1 dòng (dưới KPI). */
+function buildInsightStrip(analysis: CustomerAnalysisResponse["analysis"]): string[] {
+  const s = analysis.segmentation.summary;
+  const lines: string[] = [];
+  if (s.churn_risk > 0) lines.push(`⚠️ ${s.churn_risk} khách có dấu hiệu rời bỏ`);
+  if (s.vip > 0) lines.push(`💰 ${s.vip} khách VIP — thường đóng góp giá trị cao`);
+  if (s.potential > 0) lines.push(`📈 ${s.potential} khách tiềm năng — còn dư địa tăng trưởng`);
+  if (lines.length < 3 && s.new > 0) lines.push(`🌱 ${s.new} khách mới — cần onboarding để giữ chân`);
+  return lines.slice(0, 3);
+}
+
+/** Điểm cần chú ý — giọng người, có mũi tên hành động. */
+function buildHumanInsights(analysis: CustomerAnalysisResponse["analysis"]): { headline: string; follow: string }[] {
+  const out: { headline: string; follow: string }[] = [];
   const seg = analysis.segmentation.summary;
   const churn = seg.churn_risk;
   const inactive60 = analysis.churn_risk.inactive_over_60_days;
   if (churn > 0) {
-    out.push(
-      `⚠️ ${churn} khách đang ở nhóm nguy cơ rời bỏ — nên có kế hoạch tái kích hoạt sớm.`,
-    );
+    out.push({
+      headline: `⚠️ ${churn} khách đã lâu chưa quay lại`,
+      follow: "→ Nếu không xử lý, khả năng mất khách sẽ tăng.",
+    });
   }
   if (inactive60 > 0) {
-    out.push(
-      `⏱️ ${inactive60} khách đã hơn 60 ngày chưa phát sinh chi trả — cần chú ý hơn.`,
-    );
+    out.push({
+      headline: `⏱️ ${inactive60} khách trên 60 ngày chưa chi tiêu`,
+      follow: "→ Đây là nhóm nên ưu tiên chạm tới trước.",
+    });
   }
   if (seg.vip > 0) {
-    out.push(
-      `💰 Nhóm VIP (${seg.vip} khách) thường mang giá trị cao — phù hợp chăm sóc riêng và upsell.`,
-    );
+    out.push({
+      headline: `💰 ${seg.vip} khách VIP`,
+      follow: "→ Nên tập trung giữ chân và upsell có chừng mực.",
+    });
   } else if (seg.potential > 0) {
-    out.push(
-      `📈 Nhóm tiềm năng (${seg.potential} khách) có thể chuyển hóa thêm với chiến dịch phù hợp.`,
-    );
+    out.push({
+      headline: `📈 ${seg.potential} khách tiềm năng`,
+      follow: "→ Có thể đẩy chuyển đổi bằng ưu đãi hoặc nội dung phù hợp.",
+    });
   }
   return out.slice(0, 3);
 }
 
+function retentionStatement(pct: number): string {
+  if (pct >= 75) return `🔥 Giữ chân khách rất tốt (${pct}%)`;
+  if (pct >= 45) return `👍 Giữ chân đang ổn (${pct}%)`;
+  return `📉 Cần cải thiện giữ chân (${pct}%)`;
+}
+
+function revenueStatement(total: number): string {
+  if (total <= 0) return "💰 Chưa ghi nhận doanh thu tích lũy";
+  return `💰 Doanh thu tích lũy khoảng ${formatMoneyVi(total)}`;
+}
+
+function getCampaignActionForSegment(
+  segmentId: "vip" | "potential" | "churn_risk" | "new",
+  suggested: CustomerAnalysisResponse["analysis"]["suggested_actions"],
+): {
+  title: string;
+  target_segment: string;
+  priority: string;
+  goal?: string;
+  expected_impact?: string;
+  recommended_channels?: string[];
+} {
+  const hit = suggested.find((a) => a.target_segment === segmentId);
+  if (hit) {
+    return {
+      title: hit.title,
+      target_segment: hit.target_segment,
+      priority: hit.priority,
+      goal: hit.goal,
+      expected_impact: hit.expected_impact,
+      recommended_channels: hit.recommended_channels,
+    };
+  }
+  const fallbacks: Record<
+    typeof segmentId,
+    {
+      title: string;
+      target_segment: string;
+      priority: string;
+      goal: string;
+      expected_impact: string;
+      recommended_channels: string[];
+    }
+  > = {
+    churn_risk: {
+      title: "Kích hoạt lại nhóm nguy cơ",
+      target_segment: "churn_risk",
+      priority: "high",
+      goal: "Kéo khách quay lại trong 7 ngày tới.",
+      expected_impact: "Giảm rời bỏ, tăng lượt quay lại",
+      recommended_channels: ["email"],
+    },
+    vip: {
+      title: "Chăm sóc & upsell VIP",
+      target_segment: "vip",
+      priority: "medium",
+      goal: "Giữ chân và tăng giá trị mỗi khách VIP.",
+      expected_impact: "Tăng doanh thu trên khách hiện hữu",
+      recommended_channels: ["email"],
+    },
+    potential: {
+      title: "Phát triển nhóm tiềm năng",
+      target_segment: "potential",
+      priority: "medium",
+      goal: "Chuyển khách tiềm năng thành khách trung thành hơn.",
+      expected_impact: "Tăng tần suất quay lại",
+      recommended_channels: ["facebook_post", "email"],
+    },
+    new: {
+      title: "Onboarding khách mới",
+      target_segment: "new",
+      priority: "medium",
+      goal: "Giúp khách mới quay lại lần hai.",
+      expected_impact: "Tăng tỷ lệ mua lặp",
+      recommended_channels: ["email", "facebook_post"],
+    },
+  };
+  return fallbacks[segmentId];
+}
+
 const SEGMENT_CARD_COPY: Record<string, string> = {
-  vip: "Khách giá trị cao — phù hợp chăm sóc riêng, ưu đãi VIP.",
-  potential: "Còn dư địa tăng tần suất và giá trị đơn hàng.",
-  churn_risk: "Đã lâu không quay lại — ưu tiên kích hoạt lại.",
-  new: "Mới phát sinh — cần onboarding để giữ chân.",
+  vip: "Khách giá trị cao",
+  potential: "Còn dư địa tăng trưởng",
+  churn_risk: "Đã lâu chưa quay lại",
+  new: "Mới phát sinh — cần giữ chân",
+};
+
+const SEGMENT_CARD_ACTION_HINT: Record<string, string> = {
+  vip: "→ Nên chăm sóc riêng và upsell có chừng mực.",
+  potential: "→ Có thể đẩy mạnh bằng ưu đãi hoặc nội dung phù hợp.",
+  churn_risk: "→ Nên kích hoạt lại sớm trước khi mất hẳn.",
+  new: "→ Chuỗi onboarding giúp tạo thói quen quay lại.",
+};
+
+const SEGMENT_CARD_STYLE: Record<string, string> = {
+  vip: "border-violet-300 bg-violet-50/50",
+  potential: "border-sky-300 bg-sky-50/50",
+  churn_risk: "border-red-400 bg-red-50/70",
+  new: "border-emerald-300 bg-emerald-50/50",
 };
 
 function emptyRow(): Record<string, string> {
@@ -313,6 +425,7 @@ export default function CustomerListsPage() {
   const [importedHeadersPending, setImportedHeadersPending] = useState<string[]>([]);
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
   const [quickToolsOpen, setQuickToolsOpen] = useState(false);
+  const [applyingChurnPriority, setApplyingChurnPriority] = useState(false);
 
   const allColumns = useMemo(() => {
     const extra = new Set<string>();
@@ -405,8 +518,49 @@ export default function CustomerListsPage() {
     [segmentChartData],
   );
 
-  const analysisInsights = useMemo(
-    () => (analysisResult ? buildKeyInsights(analysisResult.analysis) : []),
+  const INACTIVE_BUCKET_FILL: Record<string, string> = {
+    "0_7": "#22c55e",
+    "7_30": "#eab308",
+    "30_60": "#f97316",
+    over_60: "#ef4444",
+    unknown: "#94a3b8",
+  };
+
+  const inactiveSinceLastChartData = useMemo(() => {
+    const raw = analysisResult?.analysis?.churn_risk?.inactive_day_buckets;
+    if (!raw?.length) return [];
+    return raw.map((b) => ({
+      name: b.label,
+      key: b.key,
+      value: b.count,
+      fill: INACTIVE_BUCKET_FILL[b.key] ?? "#94a3b8",
+    }));
+  }, [analysisResult]);
+
+  const revenueBySegmentChartData = useMemo(() => {
+    const r = analysisResult?.analysis?.segmentation?.revenue_by_segment;
+    if (!r) {
+      return [
+        { name: "VIP", value: 0, fill: "#7c3aed" },
+        { name: "Tiềm năng", value: 0, fill: "#0ea5e9" },
+        { name: "Nguy cơ rời bỏ", value: 0, fill: "#ef4444" },
+        { name: "Khách mới", value: 0, fill: "#22c55e" },
+      ];
+    }
+    return [
+      { name: "VIP", value: r.vip, fill: "#7c3aed" },
+      { name: "Tiềm năng", value: r.potential, fill: "#0ea5e9" },
+      { name: "Nguy cơ rời bỏ", value: r.churn_risk, fill: "#ef4444" },
+      { name: "Khách mới", value: r.new, fill: "#22c55e" },
+    ];
+  }, [analysisResult]);
+
+  const analysisHumanInsights = useMemo(
+    () => (analysisResult ? buildHumanInsights(analysisResult.analysis) : []),
+    [analysisResult],
+  );
+  const insightStrip = useMemo(
+    () => (analysisResult ? buildInsightStrip(analysisResult.analysis) : []),
     [analysisResult],
   );
 
@@ -786,6 +940,61 @@ export default function CustomerListsPage() {
       setMessage(`Đã bỏ ưu tiên ${result.cleared_count} khách.`);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Không thể bỏ tất cả ưu tiên");
+    }
+  }
+
+  /** Đánh dấu ưu tiên theo nhóm churn_risk trong kết quả phân tích (rule engine), rồi bật lọc bảng. */
+  async function applyChurnRiskFromAnalysisAndFilter() {
+    if (!activeListId || !analysisResult) return;
+    const churnNamesLower = new Set(
+      analysisResult.analysis.segmentation.customers
+        .filter((c) => c.segment === "churn_risk")
+        .map((c) => String(c.customer_name || "").trim().toLowerCase())
+        .filter(Boolean),
+    );
+    if (churnNamesLower.size === 0) {
+      setMessage("Phân tích không có khách thuộc nhóm nguy cơ rời bỏ.");
+      return;
+    }
+    const targets = rows
+      .filter((row) => churnNamesLower.has(String(row.HoVaTen || "").trim().toLowerCase()))
+      .map((row) => ({
+        customer_name: String(row.HoVaTen || "").trim(),
+        email: String(row.Email || "").trim(),
+        phone: String(row.SDT || "").trim(),
+      }))
+      .filter((t) => t.customer_name);
+    if (targets.length === 0) {
+      setMessage("Không khớp dòng bảng với tên khách nguy cơ trong phân tích. Kiểm tra cột họ tên.");
+      return;
+    }
+    setApplyingChurnPriority(true);
+    try {
+      await Promise.all(
+        targets.map((item) =>
+          api.post(`/workflow/customer-lists/${activeListId}/priority-customers`, {
+            customer_name: item.customer_name,
+            email: item.email || null,
+            phone: item.phone || null,
+            is_priority: true,
+          }),
+        ),
+      );
+      const targetKeys = targets.map((item) => toPriorityKey(item.customer_name, item.email, item.phone));
+      setPriorityCustomers((prev) => {
+        const next = [...prev];
+        targetKeys.forEach((key) => {
+          if (!next.includes(key)) next.push(key);
+        });
+        return next;
+      });
+      setOnlyPriorityTableView(true);
+      setSortPriorityFirst(true);
+      setMessage(`Đã đánh dấu ưu tiên ${targets.length} khách (nhóm nguy cơ theo phân tích) và bật lọc bảng.`);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Không áp dụng được ưu tiên từ phân tích.");
+    } finally {
+      setApplyingChurnPriority(false);
     }
   }
 
@@ -1270,56 +1479,74 @@ export default function CustomerListsPage() {
                       const seg = analysisResult.analysis.segmentation.summary;
                       const churn30 = analysisResult.analysis.churn_risk.inactive_over_30_days;
                       const retentionPct = ov.retention_rate_percent;
-                      const retentionTone =
+                      const retentionStrong =
                         retentionPct >= 60
-                          ? "border-emerald-200 bg-emerald-50/90"
+                          ? "border-emerald-400 bg-emerald-50 ring-1 ring-emerald-200/80"
                           : retentionPct >= 35
-                            ? "border-amber-200 bg-amber-50/90"
-                            : "border-red-100 bg-red-50/80";
-                      const riskTone =
-                        seg.churn_risk > 0 ? "border-red-300 bg-red-50/90" : "border-gray-200 bg-gray-50/80";
+                            ? "border-amber-300 bg-amber-50/90"
+                            : "border-red-200 bg-red-50/80";
+                      const riskStrong =
+                        seg.churn_risk > 0
+                          ? "border-red-500 bg-red-50 ring-2 ring-red-200/90 shadow-sm"
+                          : "border-gray-200 bg-gray-50/90";
                       return (
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                          <div className="border border-gray-200 bg-white p-3 rounded-none">
-                            <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Tổng khách</p>
-                            <p className="text-2xl font-semibold text-gray-900 tabular-nums mt-1">{ov.total_customers}</p>
+                        <>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                            <div className="border border-slate-200 bg-slate-50/80 p-3 rounded-none">
+                              <p className="text-sm font-semibold text-gray-900 leading-snug">
+                                👥 Khoảng <span className="tabular-nums text-lg">{ov.total_customers}</span> khách trong danh sách
+                              </p>
+                              <p className="text-[10px] text-gray-500 mt-1.5">Quy mô để lên kế hoạch chạm tới.</p>
+                            </div>
+                            <div className="border border-slate-200 bg-white p-3 rounded-none">
+                              <p className="text-sm font-semibold text-gray-900 leading-snug">{revenueStatement(ov.total_revenue)}</p>
+                              <p className="text-[10px] text-gray-500 mt-1.5">Từ cột tổng chi trả trên dữ liệu của bạn.</p>
+                            </div>
+                            <div className={`border-2 p-3 rounded-none ${retentionStrong}`}>
+                              <p className="text-sm font-semibold text-gray-900 leading-snug">{retentionStatement(retentionPct)}</p>
+                              <p className="text-[10px] text-gray-600 mt-1.5">Dựa trên lần quay lại / khách mới trong tập dữ liệu.</p>
+                            </div>
+                            <div className={`border-2 p-3 rounded-none ${riskStrong}`}>
+                              <p className="text-sm font-semibold text-gray-900 leading-snug flex items-start gap-1.5">
+                                {seg.churn_risk > 0 ? <span className="text-red-600">⚠️</span> : <span>✅</span>}
+                                {seg.churn_risk > 0
+                                  ? `${seg.churn_risk} khách đang ở nhóm nguy cơ rời bỏ`
+                                  : "Không có nhóm nguy cơ đáng kể"}
+                              </p>
+                              <p className="text-[10px] text-gray-600 mt-1.5 tabular-nums">
+                                Trên 30 ngày không chi trả: {churn30} khách
+                              </p>
+                            </div>
                           </div>
-                          <div className="border border-gray-200 bg-white p-3 rounded-none">
-                            <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Tổng doanh thu</p>
-                            <p className="text-2xl font-semibold text-gray-900 tabular-nums mt-1">{formatMoneyVi(ov.total_revenue)}</p>
-                          </div>
-                          <div className={`border p-3 rounded-none ${retentionTone}`}>
-                            <p className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Tỷ lệ giữ chân</p>
-                            <p className="text-2xl font-semibold tabular-nums mt-1">{retentionPct}%</p>
-                          </div>
-                          <div className={`border p-3 rounded-none ${riskTone}`}>
-                            <p className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Nguy cơ rời bỏ (nhóm)</p>
-                            <p className="text-2xl font-semibold tabular-nums mt-1">{seg.churn_risk}</p>
-                            <p className="text-[10px] text-gray-500 mt-1">
-                              &gt;30 ngày: {churn30} khách
+                          {seg.churn_risk > 0 ? (
+                            <p className="text-sm font-semibold text-amber-950 bg-amber-100/90 border border-amber-300 px-3 py-2.5 rounded-none">
+                              👉 Bạn đang có <span className="tabular-nums">{seg.churn_risk}</span> khách cần ưu tiên xử lý.
                             </p>
-                          </div>
-                        </div>
+                          ) : null}
+                          {insightStrip.length > 0 ? (
+                            <div className="border border-gray-200 bg-gradient-to-br from-gray-50 to-white px-3 py-2.5 rounded-none space-y-1">
+                              {insightStrip.map((line, i) => (
+                                <p key={i} className="text-xs font-medium text-gray-800">
+                                  {line}
+                                </p>
+                              ))}
+                            </div>
+                          ) : null}
+                        </>
                       );
                     })()}
 
-                    {analysisResult.analysis.narrative ? (
-                      <div className="border border-indigo-100 bg-indigo-50/60 p-3 rounded-none">
-                        <p className="text-[11px] font-medium text-indigo-900 mb-1">Tóm tắt nhanh</p>
-                        <p className="text-sm text-gray-800 whitespace-pre-line line-clamp-4">{analysisResult.analysis.narrative}</p>
-                      </div>
-                    ) : null}
-
-                    {analysisInsights.length > 0 ? (
+                    {analysisHumanInsights.length > 0 ? (
                       <div className="space-y-2">
-                        <p className="text-xs font-semibold text-gray-700">Điểm cần chú ý</p>
-                        <ul className="space-y-2">
-                          {analysisInsights.map((line, i) => (
+                        <p className="text-xs font-bold text-gray-800 uppercase tracking-wide">Điểm cần chú ý</p>
+                        <ul className="space-y-2.5">
+                          {analysisHumanInsights.map((block, i) => (
                             <li
                               key={i}
-                              className="text-sm text-gray-800 border-l-4 border-amber-400 bg-amber-50/50 pl-3 py-2 rounded-none"
+                              className="text-sm text-gray-900 border-l-4 border-amber-500 bg-amber-50/60 pl-3 py-2.5 rounded-none space-y-1"
                             >
-                              {line}
+                              <p className="font-semibold">{block.headline}</p>
+                              <p className="text-xs text-gray-700 leading-relaxed">{block.follow}</p>
                             </li>
                           ))}
                         </ul>
@@ -1328,7 +1555,7 @@ export default function CustomerListsPage() {
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                       <div className="border border-gray-100 p-2 min-h-[280px]">
-                        <p className="text-xs font-semibold text-gray-700 px-2 pt-1 pb-2">Phân bổ nhóm (tròn)</p>
+                        <p className="text-xs font-semibold text-gray-700 px-2 pt-1 pb-2">Phân bổ nhóm</p>
                         {segmentPieData.length === 0 ? (
                           <p className="text-xs text-gray-500 p-4">Chưa có dữ liệu để vẽ biểu đồ.</p>
                         ) : (
@@ -1355,25 +1582,60 @@ export default function CustomerListsPage() {
                         )}
                       </div>
                       <div className="border border-gray-100 p-2 min-h-[280px]">
-                        <p className="text-xs font-semibold text-gray-700 px-2 pt-1 pb-2">Số khách theo nhóm (cột)</p>
-                        <ResponsiveContainer width="100%" height={240}>
-                          <BarChart data={segmentChartData} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
+                        <p className="text-xs font-semibold text-gray-700 px-2 pt-1 pb-2">
+                          Thời gian không quay lại (từ lần chi trả cuối)
+                        </p>
+                        {inactiveSinceLastChartData.length === 0 ? (
+                          <p className="text-xs text-gray-500 p-4">
+                            Chạy phân tích lại để có histogram theo ngày (hoặc chưa đủ cột ngày).
+                          </p>
+                        ) : (
+                          <ResponsiveContainer width="100%" height={240}>
+                            <BarChart
+                              data={inactiveSinceLastChartData}
+                              margin={{ top: 8, right: 8, left: 0, bottom: 4 }}
+                            >
+                              <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                              <XAxis dataKey="name" tick={{ fontSize: 9 }} interval={0} angle={-18} textAnchor="end" height={56} />
+                              <YAxis allowDecimals={false} tick={{ fontSize: 10 }} width={32} />
+                              <Tooltip formatter={(v: number) => [`${v} khách`, ""]} />
+                              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                                {inactiveSinceLastChartData.map((entry) => (
+                                  <Cell key={entry.key} fill={entry.fill} />
+                                ))}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="border border-gray-100 p-2 min-h-[220px]">
+                      <p className="text-xs font-semibold text-gray-700 px-2 pt-1 pb-2">Doanh thu theo nhóm (tổng đã chi trả)</p>
+                      {revenueBySegmentChartData.every((d) => d.value <= 0) ? (
+                        <p className="text-xs text-gray-500 p-4">Chưa có doanh thu theo nhóm.</p>
+                      ) : (
+                        <ResponsiveContainer width="100%" height={200}>
+                          <BarChart data={revenueBySegmentChartData} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
                             <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-12} textAnchor="end" height={48} />
-                            <YAxis allowDecimals={false} tick={{ fontSize: 10 }} width={32} />
-                            <Tooltip formatter={(v: number) => [`${v} khách`, "Số lượng"]} />
+                            <YAxis tick={{ fontSize: 10 }} width={40} tickFormatter={(v) => formatMoneyVi(Number(v))} />
+                            <Tooltip
+                              formatter={(v: number) => [`${formatMoneyVi(v)}`, ""]}
+                              labelFormatter={(label) => String(label)}
+                            />
                             <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                              {segmentChartData.map((entry) => (
+                              {revenueBySegmentChartData.map((entry) => (
                                 <Cell key={entry.name} fill={entry.fill} />
                               ))}
                             </Bar>
                           </BarChart>
                         </ResponsiveContainer>
-                      </div>
+                      )}
                     </div>
 
                     <div>
-                      <p className="text-xs font-semibold text-gray-700 mb-2">Phân nhóm khách hàng</p>
+                      <p className="text-xs font-bold text-gray-800 mb-2 uppercase tracking-wide">Phân nhóm khách hàng</p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {(
                           [
@@ -1390,50 +1652,86 @@ export default function CustomerListsPage() {
                             },
                             { id: "new", label: "Khách mới", count: analysisResult.analysis.segmentation.summary.new },
                           ] as const
-                        ).map((item) => (
-                          <div key={item.id} className="border border-gray-200 bg-white p-3 rounded-none flex flex-col gap-2">
-                            <div className="flex items-baseline justify-between gap-2">
-                              <p className="font-medium text-sm text-gray-900">{item.label}</p>
-                              <span className="text-lg font-semibold tabular-nums text-gray-800">{item.count}</span>
-                            </div>
-                            <p className="text-xs text-gray-600 leading-snug">{SEGMENT_CARD_COPY[item.id]}</p>
-                            <button
-                              type="button"
-                              className="btn-secondary text-[11px] self-start"
-                              onClick={() => setAnalysisModalOpen(false)}
+                        ).map((item) => {
+                          const style = SEGMENT_CARD_STYLE[item.id] ?? "border-gray-200 bg-white";
+                          const dead = item.count <= 0;
+                          return (
+                            <div
+                              key={item.id}
+                              className={`border-2 p-3 rounded-none flex flex-col gap-2 ${style} ${dead ? "opacity-50" : ""}`}
                             >
-                              Xem trong bảng
-                            </button>
-                          </div>
-                        ))}
+                              <div className="flex items-baseline justify-between gap-2">
+                                <p className="font-bold text-sm text-gray-900">
+                                  {item.label}{" "}
+                                  <span className="tabular-nums text-gray-700">— {item.count}</span>
+                                </p>
+                              </div>
+                              <p className="text-xs text-gray-800 font-medium">{SEGMENT_CARD_COPY[item.id]}</p>
+                              <p className="text-xs text-gray-700 leading-snug">{SEGMENT_CARD_ACTION_HINT[item.id]}</p>
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                {item.id === "churn_risk" && item.count > 0 ? (
+                                  <button
+                                    type="button"
+                                    className="btn-primary text-[10px] py-1 px-2"
+                                    disabled={applyingChurnPriority || analyzing}
+                                    onClick={() => {
+                                      void applyChurnRiskFromAnalysisAndFilter();
+                                      setAnalysisModalOpen(false);
+                                    }}
+                                  >
+                                    Lọc &amp; ưu tiên
+                                  </button>
+                                ) : null}
+                                {item.count > 0 ? (
+                                  <button
+                                    type="button"
+                                    className="btn-secondary text-[10px] py-1 px-2"
+                                    disabled={creatingCampaign}
+                                    onClick={() =>
+                                      void createCampaignFromAction(
+                                        getCampaignActionForSegment(item.id, analysisResult.analysis.suggested_actions),
+                                      )
+                                    }
+                                  >
+                                    Tạo chiến dịch
+                                  </button>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  className="btn-secondary text-[10px] py-1 px-2"
+                                  onClick={() => setAnalysisModalOpen(false)}
+                                >
+                                  Xem bảng
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
 
                     {analysisResult.analysis.suggested_actions.length > 0 ? (
-                      <div className="border border-emerald-100 bg-emerald-50/40 p-3 rounded-none space-y-3">
-                        <p className="text-sm font-semibold text-gray-900">Gợi ý từ hệ thống</p>
+                      <div className="border-2 border-emerald-200 bg-gradient-to-b from-emerald-50/80 to-white p-4 rounded-none space-y-3">
+                        <p className="text-sm font-bold text-gray-900">Gợi ý từ hệ thống</p>
+                        <p className="text-[11px] text-gray-600">Diễn đạt gọn — bạn có thể chỉnh lại sau khi tạo chiến dịch.</p>
                         <div className="space-y-3">
                           {analysisResult.analysis.suggested_actions.map((a, idx) => (
-                            <div key={idx} className="border border-gray-200 bg-white p-3 rounded-none space-y-2">
+                            <div key={idx} className="border border-gray-200 bg-white p-3 rounded-none space-y-2 shadow-sm">
                               <div className="flex flex-wrap items-center gap-2">
-                                <p className="font-medium text-sm text-gray-900">{a.title}</p>
-                                <span className="text-[10px] border border-gray-200 bg-gray-50 px-2 py-0.5 text-gray-700">
+                                <p className="font-bold text-sm text-gray-900">{a.title}</p>
+                                <span className="text-[10px] border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-900 font-medium">
                                   {PRIORITY_FRIENDLY[a.priority] ?? a.priority}
                                 </span>
                                 {a.target_segment ? (
-                                  <span className="text-[10px] text-gray-500">
-                                    Nhóm: {SEGMENT_FRIENDLY[a.target_segment] ?? a.target_segment}
+                                  <span className="text-[10px] text-gray-600 font-medium">
+                                    {SEGMENT_FRIENDLY[a.target_segment] ?? a.target_segment}
                                   </span>
                                 ) : null}
                               </div>
-                              <p className="text-xs text-gray-700">
-                                <span className="font-medium text-gray-600">Mục tiêu: </span>
-                                {a.goal}
-                              </p>
+                              <p className="text-sm text-gray-800 leading-relaxed">{a.goal}</p>
                               {a.reason ? (
-                                <p className="text-xs text-gray-600">
-                                  <span className="font-medium text-gray-600">Vì sao: </span>
-                                  {a.reason}
+                                <p className="text-xs text-gray-700 leading-relaxed border-l-4 border-gray-300 pl-2">
+                                  → {a.reason}
                                 </p>
                               ) : null}
                               <button
@@ -1635,27 +1933,54 @@ export default function CustomerListsPage() {
                     <p className="leading-snug text-gray-700">
                       Chưa có kết quả phân tích. Chạy phân tích để nhận gợi ý riêng cho danh sách này.
                     </p>
-                  ) : showPrioritySuggestion ? (
-                    <div className="space-y-2">
-                      <p className="border-l-4 border-amber-500 pl-2 leading-snug text-amber-950">
-                        Nhóm nguy cơ rời bỏ đang cao. Gợi ý bật lọc khách ưu tiên để xử lý nhanh.
-                      </p>
-                      <button
-                        type="button"
-                        className="btn-primary w-full text-[11px]"
-                        onClick={() => {
-                          setOnlyPriorityTableView(true);
-                          setSortPriorityFirst(true);
-                          setMessage("Đã bật lọc khách ưu tiên.");
-                        }}
-                      >
-                        Áp dụng lọc ưu tiên
-                      </button>
-                    </div>
                   ) : (
-                    <p className="leading-snug text-gray-700">
-                      Tỷ lệ nhóm nguy cơ rời bỏ trong danh sách đang ở mức chưa cần báo động.
-                    </p>
+                    <div className="space-y-2">
+                      {showPrioritySuggestion ? (
+                        <p className="border-l-4 border-amber-500 pl-2 leading-snug text-amber-950">
+                          Tỷ lệ nhóm nguy cơ rời bỏ đang cao. Có thể{" "}
+                          <strong>đánh dấu ưu tiên tự động</strong> theo kết quả phân tích (rule), rồi lọc bảng.
+                        </p>
+                      ) : (analysisResult.analysis.segmentation.summary.churn_risk ?? 0) > 0 ? (
+                        <p className="leading-snug text-gray-700">
+                          Có {analysisResult.analysis.segmentation.summary.churn_risk} khách thuộc nhóm nguy cơ trong
+                          phân tích — bạn có thể đánh dấu ưu tiên tự động khớp họ tên trên bảng.
+                        </p>
+                      ) : (
+                        <p className="leading-snug text-gray-700">
+                          Tỷ lệ nhóm nguy cơ rời bỏ trong danh sách đang ở mức chưa cần báo động.
+                        </p>
+                      )}
+                      {(analysisResult.analysis.segmentation.summary.churn_risk ?? 0) > 0 ? (
+                        <>
+                          <button
+                            type="button"
+                            className="btn-primary flex w-full items-center justify-center gap-1.5 text-[11px]"
+                            disabled={applyingChurnPriority || analyzing}
+                            onClick={() => void applyChurnRiskFromAnalysisAndFilter()}
+                          >
+                            {applyingChurnPriority ? (
+                              <Loader2 size={14} className="animate-spin shrink-0" />
+                            ) : null}
+                            {applyingChurnPriority ? "Đang áp dụng…" : "Đánh dấu nhóm nguy cơ & bật lọc"}
+                          </button>
+                          <p className="text-[10px] leading-snug text-gray-500">
+                            Dựa trên phân nhóm rule (không dùng LLM). Khớp theo họ tên với bảng đang mở.
+                          </p>
+                          <button
+                            type="button"
+                            className="btn-secondary w-full text-[10px]"
+                            disabled={applyingChurnPriority}
+                            onClick={() => {
+                              setOnlyPriorityTableView(true);
+                              setSortPriorityFirst(true);
+                              setMessage("Đã bật lọc khách ưu tiên (giữ nguyên đánh dấu hiện có).");
+                            }}
+                          >
+                            Chỉ bật lọc (không đánh dấu thêm)
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
                   )}
                 </div>
 
@@ -1706,8 +2031,8 @@ export default function CustomerListsPage() {
                       <Filter size={18} className="shrink-0 text-amber-800" />
                       <span className="font-medium text-gray-900">Lọc khách ưu tiên</span>
                     </button>
-                    <div className="pointer-events-none absolute right-full top-1/2 z-10 mr-1 hidden w-48 -translate-y-1/2 rounded border border-gray-800 bg-gray-900 px-2 py-1.5 text-[10px] leading-snug text-white shadow-md group-hover:block">
-                      Chỉ hiển thị khách đã đánh dấu ưu tiên và đưa họ lên đầu bảng. Cần ít nhất một khách được đánh dấu.
+                    <div className="pointer-events-none absolute right-full top-1/2 z-10 mr-1 hidden w-52 -translate-y-1/2 rounded border border-gray-800 bg-gray-900 px-2 py-1.5 text-[10px] leading-snug text-white shadow-md group-hover:block">
+                      Chỉ hiện khách đã đánh dấu ưu tiên và đưa lên đầu. Đánh dấu hàng loạt theo phân tích nằm ở mục “Theo phân tích” phía trên.
                     </div>
                   </div>
                 </div>

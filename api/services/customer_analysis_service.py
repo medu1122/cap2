@@ -56,6 +56,28 @@ def _segment_label(spend: float, repeat_count: int, days_since_last: int | None)
     return "new"
 
 
+def _inactive_bucket_key(days_since_last: int | None) -> str:
+    """Bucket theo ngày kể từ lần chi trả cuối (phục vụ histogram churn)."""
+    if days_since_last is None:
+        return "unknown"
+    if days_since_last < 7:
+        return "0_7"
+    if days_since_last < 30:
+        return "7_30"
+    if days_since_last < 60:
+        return "30_60"
+    return "over_60"
+
+
+_INACTIVE_BUCKET_ORDER: tuple[tuple[str, str], ...] = (
+    ("0_7", "0–7 ngày"),
+    ("7_30", "7–30 ngày"),
+    ("30_60", "30–60 ngày"),
+    ("over_60", "Trên 60 ngày"),
+    ("unknown", "Chưa có ngày chi trả"),
+)
+
+
 def analyze_customer_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     normalized: list[dict[str, Any]] = []
     now = datetime.now(timezone.utc)
@@ -110,6 +132,19 @@ def analyze_customer_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "potential": segment_counts.get("potential", 0),
         "churn_risk": segment_counts.get("churn_risk", 0),
         "new": segment_counts.get("new", 0),
+    }
+
+    inactive_bucket_counts = Counter(_inactive_bucket_key(item["days_since_last"]) for item in normalized)
+    inactive_day_buckets = [
+        {"key": key, "label": label, "count": inactive_bucket_counts.get(key, 0)}
+        for key, label in _INACTIVE_BUCKET_ORDER
+    ]
+
+    revenue_by_segment = {
+        "vip": round(sum(item["spend"] for item in normalized if item["segment"] == "vip"), 2),
+        "potential": round(sum(item["spend"] for item in normalized if item["segment"] == "potential"), 2),
+        "churn_risk": round(sum(item["spend"] for item in normalized if item["segment"] == "churn_risk"), 2),
+        "new": round(sum(item["spend"] for item in normalized if item["segment"] == "new"), 2),
     }
 
     suggested_actions: list[dict[str, Any]] = []
@@ -183,6 +218,7 @@ def analyze_customer_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "churn_risk": {
             "inactive_over_30_days": len(over_30),
             "inactive_over_60_days": len(over_60),
+            "inactive_day_buckets": inactive_day_buckets,
             "high_risk_customers": [
                 {
                     "customer_name": item["name"],
@@ -204,6 +240,7 @@ def analyze_customer_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         },
         "segmentation": {
             "summary": segment_summary,
+            "revenue_by_segment": revenue_by_segment,
             "customers": [
                 {"customer_name": item["name"], "segment": item["segment"]}
                 for item in normalized[:100]
