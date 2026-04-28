@@ -259,7 +259,7 @@ async def _generate_customer_analysis_narrative(analysis: dict) -> tuple[str, di
         "Tom tat ket qua phan tich customer bang tieng Viet, toi da 3 bullet, ngan gon va hanh dong duoc.\n"
         f"- Tong khach: {overview.get('total_customers', 0)}\n"
         f"- Tong doanh thu: {overview.get('total_revenue', 0)}\n"
-        f"- Retention (%): {overview.get('retention_rate_percent', 0)}\n"
+        f"- Hoat dong 30 ngay (%): {overview.get('recent_activity_30d_percent', overview.get('retention_rate_percent', 0))}\n"
         f"- Segment: VIP {segment_summary.get('vip', 0)}, Potential {segment_summary.get('potential', 0)}, "
         f"ChurnRisk {segment_summary.get('churn_risk', 0)}, New {segment_summary.get('new', 0)}\n"
         f"- Churn >30: {churn.get('inactive_over_30_days', 0)}, >60: {churn.get('inactive_over_60_days', 0)}\n"

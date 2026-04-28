@@ -14,7 +14,18 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { BarChart3, Filter, Loader2, RefreshCw, Wrench, X } from "lucide-react";
+import {
+  AlertTriangle,
+  BarChart3,
+  Crown,
+  Filter,
+  Loader2,
+  RefreshCw,
+  TrendingUp,
+  UserPlus,
+  Wrench,
+  X,
+} from "lucide-react";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
 import { api } from "@/lib/api-client";
 
@@ -42,7 +53,11 @@ interface CustomerAnalysisResponse {
     overview: {
       total_customers: number;
       total_revenue: number;
-      retention_rate_percent: number;
+      /** Tỷ lệ khách có lần chi trả cuối trong vòng 30 ngày (không dùng repeat count). */
+      recent_activity_30d_percent?: number;
+      customers_active_in_last_30d?: number;
+      /** @deprecated Phân tích cũ — ưu tiên recent_activity_30d_percent */
+      retention_rate_percent?: number;
     };
     customer_value: {
       total_revenue: number;
@@ -54,7 +69,10 @@ interface CustomerAnalysisResponse {
       total_customers: number;
       returning_customers: number;
       new_customers: number;
-      retention_rate_percent: number;
+      recent_activity_30d_percent?: number;
+      customers_active_in_last_30d?: number;
+      repeat_customer_rate_percent?: number;
+      retention_rate_percent?: number;
       top_returning_customers: Array<{ customer_name: string; return_count: number }>;
     };
     churn_risk: {
@@ -66,7 +84,10 @@ interface CustomerAnalysisResponse {
     };
     segmentation: {
       summary: { vip: number; potential: number; churn_risk: number; new: number };
-      revenue_by_segment?: { vip: number; potential: number; churn_risk: number; new: number };
+      /** Doanh thu gom theo cột Loại khách hàng (dữ liệu gốc). */
+      revenue_by_customer_type?: Array<{ label: string; count: number; revenue: number }>;
+      /** Giá trị trung bình / khách theo nhóm phân tích (AI/rule). */
+      arpu_by_segment?: { vip: number; potential: number; churn_risk: number; new: number };
       customers: Array<{ customer_name: string; segment: string }>;
     };
     suggested_actions: Array<{
@@ -151,39 +172,58 @@ function formatMoneyVi(n: number) {
   return new Intl.NumberFormat("vi-VN").format(Number.isFinite(n) ? n : 0);
 }
 
-/** Gợi ý ngắn 1 dòng (dưới KPI). */
+function formatArpuVi(n: number) {
+  return new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 1, minimumFractionDigits: 0 }).format(
+    Number.isFinite(n) ? n : 0,
+  );
+}
+
+/** Gợi ý ngắn 1 dòng (dưới KPI) — ưu tiên rủi ro, tránh mâu thuẫn với “tốt 100%”. */
 function buildInsightStrip(analysis: CustomerAnalysisResponse["analysis"]): string[] {
   const s = analysis.segmentation.summary;
+  const inactive30 = analysis.churn_risk.inactive_over_30_days;
   const lines: string[] = [];
-  if (s.churn_risk > 0) lines.push(`⚠️ ${s.churn_risk} khách có dấu hiệu rời bỏ`);
-  if (s.vip > 0) lines.push(`💰 ${s.vip} khách VIP — thường đóng góp giá trị cao`);
-  if (s.potential > 0) lines.push(`📈 ${s.potential} khách tiềm năng — còn dư địa tăng trưởng`);
-  if (lines.length < 3 && s.new > 0) lines.push(`🌱 ${s.new} khách mới — cần onboarding để giữ chân`);
+  if (inactive30 > 0) {
+    lines.push(`⚠️ ${inactive30} khách đã hơn 30 ngày chưa quay lại — có thể mất khách`);
+  }
+  if (s.churn_risk > 0) {
+    lines.push(`🔥 ${s.churn_risk} khách thuộc nhóm nguy cơ rời bỏ — nên xử lý sớm`);
+  }
+  if (s.vip > 0) {
+    lines.push(`💰 ${s.vip} khách VIP — tập trung giữ chân và upsell`);
+  }
+  if (lines.length < 3 && s.potential > 0) {
+    lines.push(`📈 ${s.potential} khách tiềm năng — còn dư địa tăng trưởng`);
+  }
+  if (lines.length < 3 && s.new > 0) {
+    lines.push(`🌱 ${s.new} khách mới — cần onboarding`);
+  }
   return lines.slice(0, 3);
 }
 
-/** Điểm cần chú ý — giọng người, có mũi tên hành động. */
+/** Điểm cần chú ý — thứ tự: rủi ro thời gian → nhóm AI → giá trị. */
 function buildHumanInsights(analysis: CustomerAnalysisResponse["analysis"]): { headline: string; follow: string }[] {
   const out: { headline: string; follow: string }[] = [];
   const seg = analysis.segmentation.summary;
-  const churn = seg.churn_risk;
+  const inactive30 = analysis.churn_risk.inactive_over_30_days;
   const inactive60 = analysis.churn_risk.inactive_over_60_days;
-  if (churn > 0) {
+  if (inactive30 > 0) {
+    const extra60 = inactive60 > 0 ? ` Trong đó ${inactive60} khách trên 60 ngày.` : "";
     out.push({
-      headline: `⚠️ ${churn} khách đã lâu chưa quay lại`,
-      follow: "→ Nếu không xử lý, khả năng mất khách sẽ tăng.",
+      headline: `⚠️ ${inactive30} khách đã hơn 30 ngày chưa quay lại`,
+      follow: `→ Đây là dấu hiệu có thể mất khách — nên lên chiến dịch kích hoạt.${extra60}`,
     });
   }
-  if (inactive60 > 0) {
+  if (seg.churn_risk > 0) {
     out.push({
-      headline: `⏱️ ${inactive60} khách trên 60 ngày chưa chi tiêu`,
-      follow: "→ Đây là nhóm nên ưu tiên chạm tới trước.",
+      headline: `🔥 ${seg.churn_risk} khách thuộc nhóm nguy cơ rời bỏ`,
+      follow: "→ Nên ưu tiên xử lý sớm (lọc bảng, chạm tới trong vài ngày tới).",
     });
   }
   if (seg.vip > 0) {
     out.push({
       headline: `💰 ${seg.vip} khách VIP`,
-      follow: "→ Nên tập trung giữ chân và upsell có chừng mực.",
+      follow: "→ Nhóm mang giá trị cao — giữ chân và upsell có chừng mực.",
     });
   } else if (seg.potential > 0) {
     out.push({
@@ -194,10 +234,35 @@ function buildHumanInsights(analysis: CustomerAnalysisResponse["analysis"]): { h
   return out.slice(0, 3);
 }
 
-function retentionStatement(pct: number): string {
-  if (pct >= 75) return `🔥 Giữ chân khách rất tốt (${pct}%)`;
-  if (pct >= 45) return `👍 Giữ chân đang ổn (${pct}%)`;
-  return `📉 Cần cải thiện giữ chân (${pct}%)`;
+/** KPI hoạt động 30 ngày — không dùng “giữ chân %” từ repeat count. */
+function recentActivityKpiCopy(
+  recentPct: number,
+  inactiveOver30: number,
+  total: number,
+): { main: string; sub: string } {
+  if (total <= 0) return { main: "Chưa có khách để tính", sub: "" };
+  if (inactiveOver30 > 0) {
+    return {
+      main: `⚠️ ${inactiveOver30} khách đã hơn 30 ngày chưa quay lại`,
+      sub: `Trong 30 ngày gần đây có ${recentPct}% khách còn phát sinh (theo ngày chi trả cuối).`,
+    };
+  }
+  if (recentPct >= 60) {
+    return {
+      main: `👍 ${recentPct}% khách có phát sinh trong 30 ngày gần đây`,
+      sub: "Đa số vẫn còn tương tác gần.",
+    };
+  }
+  if (recentPct >= 35) {
+    return {
+      main: `Hoạt động 30 ngày: ${recentPct}%`,
+      sub: "Còn dư địa để kéo khách quay lại.",
+    };
+  }
+  return {
+    main: `📉 Hoạt động 30 ngày thấp (${recentPct}%)`,
+    sub: "Nhiều khách đã lâu không phát sinh — cần chiến dịch kích hoạt.",
+  };
 }
 
 function revenueStatement(total: number): string {
@@ -294,6 +359,24 @@ const SEGMENT_CARD_STYLE: Record<string, string> = {
   churn_risk: "border-red-400 bg-red-50/70",
   new: "border-emerald-300 bg-emerald-50/50",
 };
+
+type AnalysisSegmentId = "vip" | "potential" | "churn_risk" | "new";
+
+const SEGMENT_TILE_ICON: Record<string, typeof Crown> = {
+  vip: Crown,
+  potential: TrendingUp,
+  churn_risk: AlertTriangle,
+  new: UserPlus,
+};
+
+function pickSuggestedActionForSegment(
+  segmentId: AnalysisSegmentId,
+  actions: CustomerAnalysisResponse["analysis"]["suggested_actions"],
+) {
+  return actions.find((a) => a.target_segment === segmentId) ?? null;
+}
+
+const RAW_TYPE_CHART_COLORS = ["#7c3aed", "#0ea5e9", "#22c55e", "#f97316", "#ef4444", "#a855f7", "#64748b"];
 
 function emptyRow(): Record<string, string> {
   return Object.fromEntries(TEMPLATE_COLUMNS.map((c) => [c, ""])) as Record<string, string>;
@@ -426,6 +509,10 @@ export default function CustomerListsPage() {
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
   const [quickToolsOpen, setQuickToolsOpen] = useState(false);
   const [applyingChurnPriority, setApplyingChurnPriority] = useState(false);
+  /** Ô đang mở trong modal phân tích (panel chi tiết). */
+  const [segmentHubPanel, setSegmentHubPanel] = useState<AnalysisSegmentId | null>(null);
+  /** Lọc bảng theo nhóm phân tích (sau khi đóng modal). */
+  const [analysisTableSegmentFilter, setAnalysisTableSegmentFilter] = useState<AnalysisSegmentId | null>(null);
 
   const allColumns = useMemo(() => {
     const extra = new Set<string>();
@@ -480,6 +567,18 @@ export default function CustomerListsPage() {
   }, [rows]);
 
   const hasRowErrors = Object.keys(rowErrors).length > 0;
+  const analysisSegmentNameSet = useMemo(() => {
+    if (!analysisResult || !analysisTableSegmentFilter) return null;
+    const s = new Set<string>();
+    for (const c of analysisResult.analysis.segmentation.customers) {
+      if (c.segment === analysisTableSegmentFilter) {
+        const n = String(c.customer_name || "").trim().toLowerCase();
+        if (n) s.add(n);
+      }
+    }
+    return s;
+  }, [analysisResult, analysisTableSegmentFilter]);
+
   const displayedRows = useMemo(() => {
     let mapped = rows.map((row, rowIdx) => ({ row, rowIdx }));
     if (sortPriorityFirst) {
@@ -494,13 +593,20 @@ export default function CustomerListsPage() {
         return aPriority ? -1 : 1;
       });
     }
-    if (!onlyPriorityTableView) return mapped;
-    return mapped.filter(({ row }) =>
-      priorityCustomers.includes(
-        toPriorityKey(String(row.HoVaTen || ""), String(row.Email || ""), String(row.SDT || "")),
-      ),
-    );
-  }, [rows, onlyPriorityTableView, priorityCustomers, sortPriorityFirst]);
+    if (onlyPriorityTableView) {
+      mapped = mapped.filter(({ row }) =>
+        priorityCustomers.includes(
+          toPriorityKey(String(row.HoVaTen || ""), String(row.Email || ""), String(row.SDT || "")),
+        ),
+      );
+    }
+    if (analysisTableSegmentFilter !== null && analysisSegmentNameSet !== null) {
+      mapped = mapped.filter(({ row }) =>
+        analysisSegmentNameSet.has(String(row.HoVaTen || "").trim().toLowerCase()),
+      );
+    }
+    return mapped;
+  }, [rows, onlyPriorityTableView, priorityCustomers, sortPriorityFirst, analysisSegmentNameSet]);
 
   const segmentChartData = useMemo(() => {
     if (!analysisResult?.analysis?.segmentation?.summary) return [];
@@ -537,21 +643,31 @@ export default function CustomerListsPage() {
     }));
   }, [analysisResult]);
 
-  const revenueBySegmentChartData = useMemo(() => {
-    const r = analysisResult?.analysis?.segmentation?.revenue_by_segment;
+  const revenueByCustomerTypeChartData = useMemo(() => {
+    const raw = analysisResult?.analysis?.segmentation?.revenue_by_customer_type;
+    if (!raw?.length) return [];
+    return raw.map((row, i) => ({
+      name: row.label,
+      value: row.revenue,
+      fill: RAW_TYPE_CHART_COLORS[i % RAW_TYPE_CHART_COLORS.length],
+    }));
+  }, [analysisResult]);
+
+  const arpuBySegmentChartData = useMemo(() => {
+    const r = analysisResult?.analysis?.segmentation?.arpu_by_segment;
     if (!r) {
       return [
-        { name: "VIP", value: 0, fill: "#7c3aed" },
-        { name: "Tiềm năng", value: 0, fill: "#0ea5e9" },
-        { name: "Nguy cơ rời bỏ", value: 0, fill: "#ef4444" },
-        { name: "Khách mới", value: 0, fill: "#22c55e" },
+        { name: "VIP", key: "vip", value: 0, fill: "#7c3aed" },
+        { name: "Tiềm năng", key: "potential", value: 0, fill: "#0ea5e9" },
+        { name: "Nguy cơ rời bỏ", key: "churn_risk", value: 0, fill: "#ef4444" },
+        { name: "Khách mới", key: "new", value: 0, fill: "#22c55e" },
       ];
     }
     return [
-      { name: "VIP", value: r.vip, fill: "#7c3aed" },
-      { name: "Tiềm năng", value: r.potential, fill: "#0ea5e9" },
-      { name: "Nguy cơ rời bỏ", value: r.churn_risk, fill: "#ef4444" },
-      { name: "Khách mới", value: r.new, fill: "#22c55e" },
+      { name: "VIP", key: "vip", value: r.vip, fill: "#7c3aed" },
+      { name: "Tiềm năng", key: "potential", value: r.potential, fill: "#0ea5e9" },
+      { name: "Nguy cơ rời bỏ", key: "churn_risk", value: r.churn_risk, fill: "#ef4444" },
+      { name: "Khách mới", key: "new", value: r.new, fill: "#22c55e" },
     ];
   }, [analysisResult]);
 
@@ -563,6 +679,10 @@ export default function CustomerListsPage() {
     () => (analysisResult ? buildInsightStrip(analysisResult.analysis) : []),
     [analysisResult],
   );
+
+  useEffect(() => {
+    if (!analysisModalOpen) setSegmentHubPanel(null);
+  }, [analysisModalOpen]);
 
   useEffect(() => {
     if (!analysisResult) return;
@@ -634,6 +754,7 @@ export default function CustomerListsPage() {
       setShowTableEditor(true);
       setExpandedRowIndex(null);
       setOnlyPriorityTableView(false);
+      setAnalysisTableSegmentFilter(null);
       const priority = await api
         .get<PriorityCustomer[]>(`/workflow/customer-lists/${res.table.id}/priority-customers`)
         .catch(() => []);
@@ -842,6 +963,7 @@ export default function CustomerListsPage() {
       const result = await api.post<CustomerAnalysisResponse>(`/workflow/customer-lists/${activeListId}/analyze`, { rows });
       setAnalysisResult(result);
       setAnalysisByList((prev) => ({ ...prev, [activeListId]: result }));
+      setAnalysisTableSegmentFilter(null);
       setAnalysisModalOpen(true);
       setMessage("Phân tích hoàn tất. Kết quả mới đã thay thế kết quả trước.");
     } catch (e) {
@@ -874,6 +996,7 @@ export default function CustomerListsPage() {
     if (!analysisResult) return;
     if (brands.length === 0) {
       setMessage("Chưa có Brand Vault. Vui lòng tạo thương hiệu trước khi tạo chiến dịch.");
+      setAnalysisModalOpen(false);
       return;
     }
     setCreatingCampaign(true);
@@ -990,6 +1113,7 @@ export default function CustomerListsPage() {
       });
       setOnlyPriorityTableView(true);
       setSortPriorityFirst(true);
+      setAnalysisTableSegmentFilter("churn_risk");
       setMessage(`Đã đánh dấu ưu tiên ${targets.length} khách (nhóm nguy cơ theo phân tích) và bật lọc bảng.`);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Không áp dụng được ưu tiên từ phân tích.");
@@ -1211,6 +1335,25 @@ export default function CustomerListsPage() {
               {hasRowErrors ? (
                 <div className="border border-red-200 bg-red-50 p-2 text-xs text-red-700">
                   Có {Object.keys(rowErrors).length} dòng đang lỗi dữ liệu. Bấm biểu tượng cảnh báo trước tên khách để xem lỗi.
+                </div>
+              ) : null}
+              {analysisTableSegmentFilter ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 border border-blue-200 bg-blue-50/90 px-2 py-1.5 text-xs text-blue-950">
+                  <span>
+                    Lọc theo nhóm phân tích:{" "}
+                    <strong>{SEGMENT_FRIENDLY[analysisTableSegmentFilter] ?? analysisTableSegmentFilter}</strong> —{" "}
+                    <span className="tabular-nums">{displayedRows.length}</span> dòng.
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-secondary text-[10px]"
+                    onClick={() => {
+                      setAnalysisTableSegmentFilter(null);
+                      setMessage("Đã tắt lọc theo nhóm phân tích.");
+                    }}
+                  >
+                    Bỏ lọc nhóm
+                  </button>
                 </div>
               ) : null}
               <div className="flex items-center justify-end">
@@ -1478,13 +1621,20 @@ export default function CustomerListsPage() {
                       const ov = analysisResult.analysis.overview;
                       const seg = analysisResult.analysis.segmentation.summary;
                       const churn30 = analysisResult.analysis.churn_risk.inactive_over_30_days;
-                      const retentionPct = ov.retention_rate_percent;
-                      const retentionStrong =
-                        retentionPct >= 60
-                          ? "border-emerald-400 bg-emerald-50 ring-1 ring-emerald-200/80"
-                          : retentionPct >= 35
-                            ? "border-amber-300 bg-amber-50/90"
-                            : "border-red-200 bg-red-50/80";
+                      const recentPct =
+                        ov.recent_activity_30d_percent ??
+                        analysisResult.analysis.retention?.recent_activity_30d_percent ??
+                        ov.retention_rate_percent ??
+                        0;
+                      const activityCopy = recentActivityKpiCopy(recentPct, churn30, ov.total_customers);
+                      const activityStrong =
+                        churn30 > 0
+                          ? "border-amber-400 bg-amber-50 ring-1 ring-amber-200/80"
+                          : recentPct >= 60
+                            ? "border-emerald-400 bg-emerald-50 ring-1 ring-emerald-200/80"
+                            : recentPct >= 35
+                              ? "border-amber-300 bg-amber-50/90"
+                              : "border-red-200 bg-red-50/80";
                       const riskStrong =
                         seg.churn_risk > 0
                           ? "border-red-500 bg-red-50 ring-2 ring-red-200/90 shadow-sm"
@@ -1502,9 +1652,9 @@ export default function CustomerListsPage() {
                               <p className="text-sm font-semibold text-gray-900 leading-snug">{revenueStatement(ov.total_revenue)}</p>
                               <p className="text-[10px] text-gray-500 mt-1.5">Từ cột tổng chi trả trên dữ liệu của bạn.</p>
                             </div>
-                            <div className={`border-2 p-3 rounded-none ${retentionStrong}`}>
-                              <p className="text-sm font-semibold text-gray-900 leading-snug">{retentionStatement(retentionPct)}</p>
-                              <p className="text-[10px] text-gray-600 mt-1.5">Dựa trên lần quay lại / khách mới trong tập dữ liệu.</p>
+                            <div className={`border-2 p-3 rounded-none ${activityStrong}`}>
+                              <p className="text-sm font-semibold text-gray-900 leading-snug">{activityCopy.main}</p>
+                              <p className="text-[10px] text-gray-600 mt-1.5 leading-snug">{activityCopy.sub}</p>
                             </div>
                             <div className={`border-2 p-3 rounded-none ${riskStrong}`}>
                               <p className="text-sm font-semibold text-gray-900 leading-snug flex items-start gap-1.5">
@@ -1608,145 +1758,227 @@ export default function CustomerListsPage() {
                           </ResponsiveContainer>
                         )}
                       </div>
+                      <div className="border border-gray-100 p-2 min-h-[260px]">
+                        <p className="text-xs font-semibold text-gray-700 px-2 pt-1 pb-2">
+                          Doanh thu theo loại khách (cột gốc)
+                        </p>
+                        {revenueByCustomerTypeChartData.length === 0 ? (
+                          <p className="text-xs text-gray-500 p-4">
+                            Chạy phân tích lại để gom theo cột Loại khách hàng (hoặc chưa có dữ liệu).
+                          </p>
+                        ) : revenueByCustomerTypeChartData.every((d) => d.value <= 0) ? (
+                          <p className="text-xs text-gray-500 p-4">Chưa ghi nhận doanh thu theo loại khách.</p>
+                        ) : (
+                          <ResponsiveContainer width="100%" height={220}>
+                            <BarChart
+                              data={revenueByCustomerTypeChartData}
+                              margin={{ top: 8, right: 8, left: 0, bottom: 4 }}
+                            >
+                              <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                              <XAxis dataKey="name" tick={{ fontSize: 9 }} interval={0} angle={-14} textAnchor="end" height={52} />
+                              <YAxis tick={{ fontSize: 10 }} width={40} tickFormatter={(v) => formatMoneyVi(Number(v))} />
+                              <Tooltip
+                                formatter={(v: number) => [`${formatMoneyVi(v)}`, ""]}
+                                labelFormatter={(label) => String(label)}
+                              />
+                              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                                {revenueByCustomerTypeChartData.map((entry) => (
+                                  <Cell key={entry.name} fill={entry.fill} />
+                                ))}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        )}
+                      </div>
+                      <div className="border border-gray-100 p-2 min-h-[260px]">
+                        <p className="text-xs font-semibold text-gray-700 px-2 pt-1 pb-2">
+                          Giá trị trung bình / khách (nhóm phân tích)
+                        </p>
+                        {arpuBySegmentChartData.every((d) => d.value <= 0) ? (
+                          <p className="text-xs text-gray-500 p-4">Chưa có ARPU theo nhóm.</p>
+                        ) : (
+                          <ResponsiveContainer width="100%" height={220}>
+                            <BarChart data={arpuBySegmentChartData} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                              <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-12} textAnchor="end" height={48} />
+                              <YAxis tick={{ fontSize: 10 }} width={36} tickFormatter={(v) => formatArpuVi(Number(v))} />
+                              <Tooltip formatter={(v: number) => [`${formatArpuVi(v)}`, "Trung bình / khách"]} />
+                              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                                {arpuBySegmentChartData.map((entry) => (
+                                  <Cell key={entry.key} fill={entry.fill} />
+                                ))}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="border border-gray-100 p-2 min-h-[220px]">
-                      <p className="text-xs font-semibold text-gray-700 px-2 pt-1 pb-2">Doanh thu theo nhóm (tổng đã chi trả)</p>
-                      {revenueBySegmentChartData.every((d) => d.value <= 0) ? (
-                        <p className="text-xs text-gray-500 p-4">Chưa có doanh thu theo nhóm.</p>
-                      ) : (
-                        <ResponsiveContainer width="100%" height={200}>
-                          <BarChart data={revenueBySegmentChartData} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-                            <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-12} textAnchor="end" height={48} />
-                            <YAxis tick={{ fontSize: 10 }} width={40} tickFormatter={(v) => formatMoneyVi(Number(v))} />
-                            <Tooltip
-                              formatter={(v: number) => [`${formatMoneyVi(v)}`, ""]}
-                              labelFormatter={(label) => String(label)}
-                            />
-                            <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                              {revenueBySegmentChartData.map((entry) => (
-                                <Cell key={entry.name} fill={entry.fill} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      )}
-                    </div>
-
-                    <div>
-                      <p className="text-xs font-bold text-gray-800 mb-2 uppercase tracking-wide">Phân nhóm khách hàng</p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-xs font-bold text-gray-800 uppercase tracking-wide">Phân nhóm &amp; hành động</p>
+                        <p className="text-[10px] text-gray-500 mt-0.5">
+                          Bấm ô vuông để xem mô tả, gợi ý hệ thống và lọc bảng.
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         {(
                           [
-                            { id: "vip", label: "VIP", count: analysisResult.analysis.segmentation.summary.vip },
+                            { id: "vip" as const, label: "VIP", count: analysisResult.analysis.segmentation.summary.vip },
                             {
-                              id: "potential",
+                              id: "potential" as const,
                               label: "Tiềm năng",
                               count: analysisResult.analysis.segmentation.summary.potential,
                             },
                             {
-                              id: "churn_risk",
-                              label: "Nguy cơ rời bỏ",
+                              id: "churn_risk" as const,
+                              label: "Nguy cơ",
                               count: analysisResult.analysis.segmentation.summary.churn_risk,
                             },
-                            { id: "new", label: "Khách mới", count: analysisResult.analysis.segmentation.summary.new },
+                            { id: "new" as const, label: "Khách mới", count: analysisResult.analysis.segmentation.summary.new },
                           ] as const
                         ).map((item) => {
+                          const TileIcon = SEGMENT_TILE_ICON[item.id] ?? UserPlus;
                           const style = SEGMENT_CARD_STYLE[item.id] ?? "border-gray-200 bg-white";
-                          const dead = item.count <= 0;
+                          const active = segmentHubPanel === item.id;
                           return (
-                            <div
+                            <button
                               key={item.id}
-                              className={`border-2 p-3 rounded-none flex flex-col gap-2 ${style} ${dead ? "opacity-50" : ""}`}
+                              type="button"
+                              onClick={() => setSegmentHubPanel((p) => (p === item.id ? null : item.id))}
+                              className={`flex aspect-square max-h-[7.25rem] w-full flex-col items-center justify-center gap-1 border-2 p-2 text-center transition outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${style} ${
+                                active ? "ring-2 ring-blue-600 ring-offset-1" : "hover:brightness-[0.97]"
+                              }`}
                             >
-                              <div className="flex items-baseline justify-between gap-2">
-                                <p className="font-bold text-sm text-gray-900">
-                                  {item.label}{" "}
-                                  <span className="tabular-nums text-gray-700">— {item.count}</span>
-                                </p>
-                              </div>
-                              <p className="text-xs text-gray-800 font-medium">{SEGMENT_CARD_COPY[item.id]}</p>
-                              <p className="text-xs text-gray-700 leading-snug">{SEGMENT_CARD_ACTION_HINT[item.id]}</p>
-                              <div className="flex flex-wrap gap-1.5 pt-1">
-                                {item.id === "churn_risk" && item.count > 0 ? (
-                                  <button
-                                    type="button"
-                                    className="btn-primary text-[10px] py-1 px-2"
-                                    disabled={applyingChurnPriority || analyzing}
-                                    onClick={() => {
-                                      void applyChurnRiskFromAnalysisAndFilter();
-                                      setAnalysisModalOpen(false);
-                                    }}
-                                  >
-                                    Lọc &amp; ưu tiên
-                                  </button>
-                                ) : null}
-                                {item.count > 0 ? (
-                                  <button
-                                    type="button"
-                                    className="btn-secondary text-[10px] py-1 px-2"
-                                    disabled={creatingCampaign}
-                                    onClick={() =>
-                                      void createCampaignFromAction(
-                                        getCampaignActionForSegment(item.id, analysisResult.analysis.suggested_actions),
-                                      )
-                                    }
-                                  >
-                                    Tạo chiến dịch
-                                  </button>
-                                ) : null}
-                                <button
-                                  type="button"
-                                  className="btn-secondary text-[10px] py-1 px-2"
-                                  onClick={() => setAnalysisModalOpen(false)}
-                                >
-                                  Xem bảng
-                                </button>
-                              </div>
-                            </div>
+                              <TileIcon className="h-7 w-7 shrink-0 text-gray-800" aria-hidden />
+                              <span className="text-[11px] font-bold leading-tight text-gray-900">{item.label}</span>
+                              <span className="tabular-nums text-sm font-bold text-gray-900">{item.count}</span>
+                            </button>
                           );
                         })}
                       </div>
-                    </div>
 
-                    {analysisResult.analysis.suggested_actions.length > 0 ? (
-                      <div className="border-2 border-emerald-200 bg-gradient-to-b from-emerald-50/80 to-white p-4 rounded-none space-y-3">
-                        <p className="text-sm font-bold text-gray-900">Gợi ý từ hệ thống</p>
-                        <p className="text-[11px] text-gray-600">Diễn đạt gọn — bạn có thể chỉnh lại sau khi tạo chiến dịch.</p>
-                        <div className="space-y-3">
-                          {analysisResult.analysis.suggested_actions.map((a, idx) => (
-                            <div key={idx} className="border border-gray-200 bg-white p-3 rounded-none space-y-2 shadow-sm">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="font-bold text-sm text-gray-900">{a.title}</p>
-                                <span className="text-[10px] border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-900 font-medium">
-                                  {PRIORITY_FRIENDLY[a.priority] ?? a.priority}
-                                </span>
-                                {a.target_segment ? (
-                                  <span className="text-[10px] text-gray-600 font-medium">
-                                    {SEGMENT_FRIENDLY[a.target_segment] ?? a.target_segment}
-                                  </span>
-                                ) : null}
+                      {segmentHubPanel ? (
+                        <div
+                          className="relative border-2 border-slate-300 bg-white p-3 shadow-sm"
+                          role="region"
+                          aria-label="Chi tiết nhóm đã chọn"
+                        >
+                          <button
+                            type="button"
+                            className="absolute right-2 top-2 rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                            aria-label="Đóng"
+                            onClick={() => setSegmentHubPanel(null)}
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                          {(() => {
+                            const item = (
+                              [
+                                { id: "vip" as const, label: "VIP", count: analysisResult.analysis.segmentation.summary.vip },
+                                {
+                                  id: "potential" as const,
+                                  label: "Tiềm năng",
+                                  count: analysisResult.analysis.segmentation.summary.potential,
+                                },
+                                {
+                                  id: "churn_risk" as const,
+                                  label: "Nguy cơ rời bỏ",
+                                  count: analysisResult.analysis.segmentation.summary.churn_risk,
+                                },
+                                { id: "new" as const, label: "Khách mới", count: analysisResult.analysis.segmentation.summary.new },
+                              ] as const
+                            ).find((x) => x.id === segmentHubPanel)!;
+                            const suggested = pickSuggestedActionForSegment(
+                              segmentHubPanel,
+                              analysisResult.analysis.suggested_actions,
+                            );
+                            const campaignPayload =
+                              suggested ??
+                              getCampaignActionForSegment(segmentHubPanel, analysisResult.analysis.suggested_actions);
+                            return (
+                              <div className="space-y-3 pr-6">
+                                <div>
+                                  <p className="text-sm font-bold text-gray-900">
+                                    {item.label}{" "}
+                                    <span className="tabular-nums font-semibold text-gray-600">({item.count} khách)</span>
+                                  </p>
+                                  <p className="text-xs font-medium text-gray-800 mt-1">{SEGMENT_CARD_COPY[item.id]}</p>
+                                  <p className="text-xs text-gray-700 leading-snug mt-0.5">
+                                    {SEGMENT_CARD_ACTION_HINT[item.id]}
+                                  </p>
+                                </div>
+                                {suggested ? (
+                                  <div className="border border-emerald-200 bg-emerald-50/60 px-2.5 py-2 space-y-1">
+                                    <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-900">
+                                      Gợi ý từ hệ thống
+                                    </p>
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      <span className="text-xs font-semibold text-gray-900">{suggested.title}</span>
+                                      <span className="text-[9px] border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-900">
+                                        {PRIORITY_FRIENDLY[suggested.priority] ?? suggested.priority}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-gray-800">{suggested.goal}</p>
+                                    {suggested.reason ? (
+                                      <p className="text-[11px] text-gray-700 border-l-2 border-emerald-400 pl-2">
+                                        → {suggested.reason}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                ) : (
+                                  <p className="text-[11px] text-gray-500">Chưa có gợi ý riêng cho nhóm này.</p>
+                                )}
+                                <div className="flex flex-wrap gap-2 pt-0.5">
+                                  {item.id === "churn_risk" && item.count > 0 ? (
+                                    <button
+                                      type="button"
+                                      className="btn-primary text-[11px]"
+                                      disabled={applyingChurnPriority || analyzing}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        void applyChurnRiskFromAnalysisAndFilter();
+                                        setAnalysisModalOpen(false);
+                                        setSegmentHubPanel(null);
+                                      }}
+                                    >
+                                      Lọc &amp; ưu tiên
+                                    </button>
+                                  ) : null}
+                                  {item.count > 0 ? (
+                                    <button
+                                      type="button"
+                                      className="btn-primary text-[11px]"
+                                      disabled={creatingCampaign}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        void createCampaignFromAction(campaignPayload);
+                                      }}
+                                    >
+                                      {creatingCampaign ? "Đang tạo..." : "Tạo chiến dịch"}
+                                    </button>
+                                  ) : null}
+                                  <button
+                                    type="button"
+                                    className="btn-secondary text-[11px]"
+                                    disabled={item.count <= 0}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setAnalysisTableSegmentFilter(item.id);
+                                      setAnalysisModalOpen(false);
+                                      setSegmentHubPanel(null);
+                                      setMessage(`Đang lọc bảng theo nhóm: ${SEGMENT_FRIENDLY[item.id] ?? item.label}.`);
+                                    }}
+                                  >
+                                    Xem trên bảng
+                                  </button>
+                                </div>
                               </div>
-                              <p className="text-sm text-gray-800 leading-relaxed">{a.goal}</p>
-                              {a.reason ? (
-                                <p className="text-xs text-gray-700 leading-relaxed border-l-4 border-gray-300 pl-2">
-                                  → {a.reason}
-                                </p>
-                              ) : null}
-                              <button
-                                type="button"
-                                className="btn-primary text-[11px] mt-1"
-                                disabled={creatingCampaign}
-                                onClick={() => void createCampaignFromAction(a)}
-                              >
-                                {creatingCampaign ? "Đang tạo..." : "Tạo chiến dịch"}
-                              </button>
-                            </div>
-                          ))}
+                            );
+                          })()}
                         </div>
-                      </div>
-                    ) : null}
+                      ) : null}
+                    </div>
 
                     <div className="flex justify-end pt-1">
                       <button type="button" className="btn-primary text-xs" onClick={() => void analyzeCurrentTable()} disabled={analyzing}>

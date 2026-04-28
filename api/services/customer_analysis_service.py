@@ -78,6 +78,14 @@ _INACTIVE_BUCKET_ORDER: tuple[tuple[str, str], ...] = (
 )
 
 
+def _customer_type_canon(raw: str) -> tuple[str, str]:
+    """Gom nhóm theo chữ thường; nhãn hiển thị giữ dạng gốc lần đầu gặp."""
+    t = (raw or "").strip()
+    if not t:
+        return ("__empty__", "Chưa ghi loại")
+    return (t.casefold(), t)
+
+
 def analyze_customer_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     normalized: list[dict[str, Any]] = []
     now = datetime.now(timezone.utc)
@@ -91,6 +99,7 @@ def analyze_customer_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         days_since_last = (now - last_paid_at).days if last_paid_at else None
         phone = str(row.get("SDT", "")).strip()
         email = str(row.get("Email", "")).strip()
+        loai_raw = str(row.get("LoaiKhachHang", "")).strip()
 
         if not str(row.get("HoVaTen", "")).strip():
             invalid_rows.append({"row_index": idx, "reason": "Thiếu họ tên"})
@@ -107,6 +116,7 @@ def analyze_customer_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 "segment": segment,
                 "phone": phone,
                 "email": email,
+                "customer_type_raw": loai_raw,
             }
         )
 
@@ -120,7 +130,15 @@ def analyze_customer_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     revenue_share = round((top_group_revenue / total_revenue) * 100, 2) if total_revenue > 0 else 0.0
 
     returning_customers = sum(1 for item in normalized if item["repeat_count"] >= 1)
-    retention_rate = round((returning_customers / total_customers) * 100, 2) if total_customers > 0 else 0.0
+    repeat_customer_rate = round((returning_customers / total_customers) * 100, 2) if total_customers > 0 else 0.0
+    customers_active_in_last_30d = sum(
+        1
+        for item in normalized
+        if item["days_since_last"] is not None and item["days_since_last"] < 30
+    )
+    recent_activity_30d_percent = (
+        round((customers_active_in_last_30d / total_customers) * 100, 2) if total_customers > 0 else 0.0
+    )
     top_returning = sorted(normalized, key=lambda x: x["repeat_count"], reverse=True)[:5]
 
     over_30 = [item for item in normalized if item["days_since_last"] is not None and item["days_since_last"] >= 30]
@@ -140,11 +158,38 @@ def analyze_customer_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         for key, label in _INACTIVE_BUCKET_ORDER
     ]
 
-    revenue_by_segment = {
-        "vip": round(sum(item["spend"] for item in normalized if item["segment"] == "vip"), 2),
-        "potential": round(sum(item["spend"] for item in normalized if item["segment"] == "potential"), 2),
-        "churn_risk": round(sum(item["spend"] for item in normalized if item["segment"] == "churn_risk"), 2),
-        "new": round(sum(item["spend"] for item in normalized if item["segment"] == "new"), 2),
+    # Doanh thu theo cột Loại khách hàng (dữ liệu gốc), không theo nhóm AI.
+    ctype_acc: dict[str, dict[str, Any]] = {}
+    for item in normalized:
+        ck, clabel = _customer_type_canon(item["customer_type_raw"])
+        if ck not in ctype_acc:
+            ctype_acc[ck] = {"label": clabel, "count": 0, "revenue": 0.0}
+        ctype_acc[ck]["count"] += 1
+        ctype_acc[ck]["revenue"] += item["spend"]
+    revenue_by_customer_type = sorted(
+        (
+            {
+                "label": str(v["label"]),
+                "count": int(v["count"]),
+                "revenue": round(float(v["revenue"]), 2),
+            }
+            for v in ctype_acc.values()
+        ),
+        key=lambda x: x["revenue"],
+        reverse=True,
+    )
+
+    def _arpu(seg: str) -> float:
+        items = [i for i in normalized if i["segment"] == seg]
+        if not items:
+            return 0.0
+        return round(sum(i["spend"] for i in items) / len(items), 2)
+
+    arpu_by_segment = {
+        "vip": _arpu("vip"),
+        "potential": _arpu("potential"),
+        "churn_risk": _arpu("churn_risk"),
+        "new": _arpu("new"),
     }
 
     suggested_actions: list[dict[str, Any]] = []
@@ -189,7 +234,8 @@ def analyze_customer_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "overview": {
             "total_customers": total_customers,
             "total_revenue": total_revenue,
-            "retention_rate_percent": retention_rate,
+            "recent_activity_30d_percent": recent_activity_30d_percent,
+            "customers_active_in_last_30d": customers_active_in_last_30d,
         },
         "customer_value": {
             "total_revenue": total_revenue,
@@ -209,7 +255,9 @@ def analyze_customer_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "total_customers": total_customers,
             "returning_customers": returning_customers,
             "new_customers": max(total_customers - returning_customers, 0),
-            "retention_rate_percent": retention_rate,
+            "recent_activity_30d_percent": recent_activity_30d_percent,
+            "customers_active_in_last_30d": customers_active_in_last_30d,
+            "repeat_customer_rate_percent": repeat_customer_rate,
             "top_returning_customers": [
                 {"customer_name": item["name"], "return_count": item["repeat_count"]}
                 for item in top_returning
@@ -240,10 +288,11 @@ def analyze_customer_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         },
         "segmentation": {
             "summary": segment_summary,
-            "revenue_by_segment": revenue_by_segment,
+            "revenue_by_customer_type": revenue_by_customer_type,
+            "arpu_by_segment": arpu_by_segment,
             "customers": [
                 {"customer_name": item["name"], "segment": item["segment"]}
-                for item in normalized[:100]
+                for item in normalized
             ],
         },
         "suggested_actions": suggested_actions[:3],
