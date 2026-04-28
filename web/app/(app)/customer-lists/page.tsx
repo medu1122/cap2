@@ -21,11 +21,8 @@ import {
   Crown,
   Eraser,
   Filter,
-  LayoutTemplate,
   Loader2,
   Mail,
-  MessageSquare,
-  PenLine,
   RefreshCw,
   Send,
   Sparkles,
@@ -254,16 +251,20 @@ const OUTREACH_TEMPLATES = {
   khach_moi: "Chào {{HoVaTen}}, cảm ơn bạn đã sử dụng dịch vụ.\nBên mình sẵn sàng hỗ trợ nếu bạn cần.",
 } as const;
 
-const SMART_CONTACT_VARIABLES: { key: string; label: string }[] = [
-  { key: "HoVaTen", label: "Tên" },
-  { key: "LanCuoiChiTra", label: "Lần cuối chi trả" },
-  { key: "days_since_last", label: "Ngày chưa quay lại" },
-  { key: "DichVuLanCuoiSuDung", label: "Dịch vụ lần cuối" },
-  { key: "DichVuSuDungNhieuNhat", label: "Dịch vụ hay dùng" },
-  { key: "TongSoLanQuayLai", label: "Số lần quay lại" },
-  { key: "name", label: "Tên (ngắn)" },
-  { key: "phone", label: "SĐT" },
-];
+type OutreachAiPurposeKey = keyof typeof OUTREACH_TEMPLATES;
+
+const OUTREACH_AI_INSTRUCTION: Record<OutreachAiPurposeKey, string> = {
+  nhac_nhe:
+    "Mục đích: nhắc khách đã lâu chưa quay lại — giọng nhẹ, không gây áp lực; không nhắc khuyến mãi trừ khi bản nháp đã có.",
+  cham_soc:
+    "Mục đích: hỏi thăm trải nghiệm lần gần nhất, thể hiện quan tâm chân thành.",
+  kich_hoat:
+    "Mục đích: mời khách ghé lại (có cải tiến / làm mới), không hứa hẹn giá hay ưu đãi.",
+  khach_moi: "Mục đích: chào khách mới, cảm ơn, sẵn sàng hỗ trợ — ngắn gọn.",
+};
+
+const REFINE_DRAFT_INSTRUCTION =
+  "Mục đích: hoàn thiện bản nháp người dùng — chỉnh cho súc tích, thân thiện; dùng biến {{HoVaTen}}, {{days_since_last}}, {{DichVuLanCuoiSuDung}}, {{DichVuSuDungNhieuNhat}}, v.v. khi hợp lý với dữ liệu từng khách. Không thêm khuyến mãi nếu bản nháp không có.";
 
 function parseLastPaymentDate(raw: string): Date | null {
   const s = raw.trim();
@@ -313,6 +314,32 @@ type QuickOutreachRecipientRow = {
   phone: string;
   variables: Record<string, string>;
 };
+
+function buildRecipientsDataContextForAi(list: QuickOutreachRecipientRow[]): string {
+  const max = 20;
+  const chunks: string[] = [];
+  for (let i = 0; i < Math.min(list.length, max); i++) {
+    const r = list[i];
+    const v = r.variables;
+    const lines: string[] = [`Khách ${i + 1}: ${v.HoVaTen || r.name || "—"}`];
+    const phone = (v.phone || r.phone || "").trim();
+    if (phone) lines.push(`  SĐT: ${phone}`);
+    const em = (r.email || "").trim();
+    if (em) lines.push(`  Email: ${em}`);
+    if (v.days_since_last) lines.push(`  Ngày chưa quay lại: ${v.days_since_last}`);
+    if (v.LanCuoiChiTra) lines.push(`  Lần cuối chi trả: ${v.LanCuoiChiTra}`);
+    if (v.DichVuLanCuoiSuDung) lines.push(`  Dịch vụ lần cuối: ${v.DichVuLanCuoiSuDung}`);
+    if (v.DichVuSuDungNhieuNhat) lines.push(`  Dịch vụ hay dùng: ${v.DichVuSuDungNhieuNhat}`);
+    if (v.TongSoLanQuayLai) lines.push(`  Số lần quay lại: ${v.TongSoLanQuayLai}`);
+    chunks.push(lines.join("\n"));
+  }
+  if (list.length > max) {
+    chunks.push(
+      `… Còn ${list.length - max} khách khác (cùng nội dung khung, hệ thống thay biến theo từng người khi gửi).`,
+    );
+  }
+  return chunks.join("\n\n");
+}
 
 function revenueStatement(total: number): string {
   if (total <= 0) return "💰 Chưa ghi nhận doanh thu tích lũy";
@@ -562,18 +589,27 @@ export default function CustomerListsPage() {
   /** Lọc bảng theo nhóm phân tích (sau khi đóng modal). */
   const [analysisTableSegmentFilter, setAnalysisTableSegmentFilter] = useState<AnalysisSegmentId | null>(null);
   const [quickOutreachOpen, setQuickOutreachOpen] = useState(false);
-  const [quickOutreachMode, setQuickOutreachMode] = useState<"email" | "sms">("email");
   const [quickOutreachSubject, setQuickOutreachSubject] = useState("Thông báo từ cửa hàng");
-  const [quickOutreachBody, setQuickOutreachBody] = useState<string>(OUTREACH_TEMPLATES.nhac_nhe);
+  const [quickOutreachBody, setQuickOutreachBody] = useState<string>("");
   const [quickOutreachRecipients, setQuickOutreachRecipients] = useState<QuickOutreachRecipientRow[] | null>(null);
   const [quickOutreachResults, setQuickOutreachResults] = useState<
     Array<{ to: string; status: string; detail: string | null }> | null
   >(null);
   const [quickOutreachSending, setQuickOutreachSending] = useState(false);
-  const [quickOutreachTab, setQuickOutreachTab] = useState<"template" | "ai" | "manual">("template");
-  const [smartComposePrompt, setSmartComposePrompt] = useState("");
   const [smartComposeLoading, setSmartComposeLoading] = useState(false);
+  const [aiPurposeMenuOpen, setAiPurposeMenuOpen] = useState(false);
   const quickOutreachTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const aiMenuWrapRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!aiPurposeMenuOpen) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      const el = aiMenuWrapRef.current;
+      if (el && !el.contains(e.target as Node)) setAiPurposeMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, [aiPurposeMenuOpen]);
 
   const allColumns = useMemo(() => {
     const extra = new Set<string>();
@@ -1166,7 +1202,7 @@ export default function CustomerListsPage() {
       }));
   }
 
-  function openQuickOutreach(mode: "email" | "sms", list: QuickOutreachRecipientRow[]) {
+  function openQuickOutreach(list: QuickOutreachRecipientRow[]) {
     if (!activeListId) {
       setMessage("Chọn danh sách trước.");
       return;
@@ -1175,67 +1211,49 @@ export default function CustomerListsPage() {
       setMessage("Không có khách trong nhóm này.");
       return;
     }
-    setQuickOutreachMode(mode);
     setQuickOutreachRecipients(list);
     setQuickOutreachSubject("Thông báo từ cửa hàng");
-    setQuickOutreachBody(OUTREACH_TEMPLATES.nhac_nhe);
-    setQuickOutreachTab("template");
-    setSmartComposePrompt("");
+    setQuickOutreachBody("");
     setQuickOutreachResults(null);
+    setAiPurposeMenuOpen(false);
     setQuickOutreachOpen(true);
   }
 
-  function insertOutreachVariable(key: string) {
-    const token = `{{${key}}}`;
-    const el = quickOutreachTextareaRef.current;
-    if (el) {
-      const start = el.selectionStart ?? quickOutreachBody.length;
-      const end = el.selectionEnd ?? start;
-      const next = quickOutreachBody.slice(0, start) + token + quickOutreachBody.slice(end);
-      setQuickOutreachBody(next);
-      requestAnimationFrame(() => {
-        el.focus();
-        const pos = start + token.length;
-        el.setSelectionRange(pos, pos);
-      });
-    } else {
-      setQuickOutreachBody((b) => b + token);
-    }
-  }
-
-  async function runSmartContactCompose() {
-    if (!activeListId) return;
-    const prompt = smartComposePrompt.trim();
-    if (!prompt) {
-      setMessage("Nhập yêu cầu cho AI.");
-      return;
-    }
+  async function runSmartContactAiCompose(purpose: OutreachAiPurposeKey | "refine") {
+    if (!activeListId || !quickOutreachRecipients?.length) return;
+    setAiPurposeMenuOpen(false);
     setSmartComposeLoading(true);
     try {
-      const first = quickOutreachRecipients?.[0];
-      const v = first?.variables;
-      const contextParts = first
-        ? [
-            (v?.HoVaTen || first.name) && `Tên: ${v?.HoVaTen || first.name}`,
-            v?.days_since_last && `Chưa quay lại ~${v.days_since_last} ngày`,
-            v?.DichVuLanCuoiSuDung && `Dịch vụ gần nhất: ${v.DichVuLanCuoiSuDung}`,
-            v?.DichVuSuDungNhieuNhat && `Dịch vụ dùng nhiều: ${v.DichVuSuDungNhieuNhat}`,
-            v?.LanCuoiChiTra && `Lần chi trả cuối (cột): ${v.LanCuoiChiTra}`,
-            v?.TongSoLanQuayLai && `Tổng lần quay lại: ${v.TongSoLanQuayLai}`,
-          ].filter(Boolean)
-        : [];
-      const contextOne = contextParts.length ? contextParts.join(" · ") : null;
+      const dataCtx = buildRecipientsDataContextForAi(quickOutreachRecipients);
+      let user_prompt: string;
+      if (purpose === "refine") {
+        user_prompt = [
+          REFINE_DRAFT_INSTRUCTION,
+          "",
+          "=== Bản nháp hiện tại ===",
+          quickOutreachBody.trim() || "(trống — hãy soạn một email ngắn chăm sóc dựa trên dữ liệu khách)",
+        ].join("\n");
+      } else {
+        user_prompt = [
+          OUTREACH_AI_INSTRUCTION[purpose],
+          "",
+          "Tham khảo cấu trúc (có thể viết lại cho tự nhiên hơn):",
+          OUTREACH_TEMPLATES[purpose],
+          "",
+          "=== Bản nháp hiện tại (gộp hoặc thay nếu hợp lý) ===",
+          quickOutreachBody.trim() || "(trống)",
+        ].join("\n");
+      }
       const res = await api.post<{ text: string }>(
         `/workflow/customer-lists/${activeListId}/smart-contact-compose`,
         {
-          user_prompt: prompt,
-          mode: quickOutreachMode,
-          context_one_liner: contextOne,
+          user_prompt,
+          mode: "email",
+          recipients_data_context: dataCtx || undefined,
         },
       );
       setQuickOutreachBody(res.text);
-      setQuickOutreachTab("manual");
-      setMessage("Đã chèn nội dung do AI soạn. Kiểm tra trước khi gửi.");
+      setMessage("Đã cập nhật nội dung nhờ AI. Kiểm tra trước khi gửi.");
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "AI không soạn được.");
     } finally {
@@ -1251,7 +1269,7 @@ export default function CustomerListsPage() {
       const res = await api.post<{ results: Array<{ to: string; status: string; detail: string | null }> }>(
         `/workflow/customer-lists/${activeListId}/quick-outreach`,
         {
-          mode: quickOutreachMode,
+          mode: "email",
           subject: quickOutreachSubject,
           message: quickOutreachBody,
           recipients: quickOutreachRecipients.map((r) => ({
@@ -1569,35 +1587,6 @@ export default function CustomerListsPage() {
                   </button>
                 </div>
               ) : null}
-              {selectedRowIndexes.length > 0 ? (
-                <div className="flex flex-wrap items-center gap-2 border border-slate-300 bg-slate-50 px-2 py-1.5 text-xs">
-                  <span className="font-medium text-gray-900">
-                    <span className="tabular-nums">{selectedRowIndexes.length}</span> khách đã chọn →
-                  </span>
-                  <button
-                    type="button"
-                    className="btn-primary text-[10px]"
-                    onClick={() => openQuickOutreach("email", recipientsFromSelectedRows())}
-                  >
-                    Gửi email
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary text-[10px]"
-                    onClick={() => openQuickOutreach("sms", recipientsFromSelectedRows())}
-                  >
-                    Gửi SMS (mô phỏng)
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary text-[10px]"
-                    disabled={selectedRowIndexes.length === 0}
-                    onClick={() => void bulkTogglePriority(true)}
-                  >
-                    Đánh dấu
-                  </button>
-                </div>
-              ) : null}
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <span className="text-[11px] border border-amber-300 bg-amber-50 px-2 py-[3px] text-amber-800 rounded">
                   Khách ưu tiên: {priorityCustomers.length}
@@ -1632,10 +1621,10 @@ export default function CustomerListsPage() {
                     onClick={() => void bulkTogglePriority(true)}
                     title={
                       selectedRowIndexes.length === 0
-                        ? "Chọn ít nhất một dòng để đánh dấu ưu tiên"
-                        : `Đánh dấu ưu tiên cho ${selectedRowIndexes.length} khách đã chọn`
+                        ? "Chọn ít nhất một dòng để đặt ưu tiên"
+                        : `Chọn thành ưu tiên cho ${selectedRowIndexes.length} khách đã chọn`
                     }
-                    aria-label={`Đánh dấu ưu tiên cho ${selectedRowIndexes.length} khách đã chọn`}
+                    aria-label={`Chọn thành ưu tiên cho ${selectedRowIndexes.length} khách đã chọn`}
                   >
                     <Star className="h-4 w-4" />
                   </button>
@@ -1961,7 +1950,7 @@ export default function CustomerListsPage() {
                                       const list = recipientsFromAnalysisSegment("churn_risk");
                                       setAnalysisModalOpen(false);
                                       setSegmentHubPanel(null);
-                                      openQuickOutreach("email", list);
+                                      openQuickOutreach(list);
                                     }}
                                   >
                                     Gửi email nhóm nguy cơ
@@ -2238,7 +2227,7 @@ export default function CustomerListsPage() {
                                         const list = recipientsFromAnalysisSegment(item.id);
                                         setAnalysisModalOpen(false);
                                         setSegmentHubPanel(null);
-                                        openQuickOutreach("email", list);
+                                        openQuickOutreach(list);
                                       }}
                                     >
                                       Liên hệ nhanh
@@ -2287,6 +2276,7 @@ export default function CustomerListsPage() {
             if (!quickOutreachSending) {
               setQuickOutreachOpen(false);
               setQuickOutreachResults(null);
+              setAiPurposeMenuOpen(false);
             }
           }}
         >
@@ -2299,30 +2289,18 @@ export default function CustomerListsPage() {
           >
             <header className="shrink-0 border-b border-slate-100 bg-gradient-to-b from-slate-50 to-white px-4 pb-3 pt-4 sm:px-5">
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <div
-                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
-                        quickOutreachMode === "email"
-                          ? "bg-sky-100 text-sky-700"
-                          : "bg-violet-100 text-violet-700"
-                      }`}
-                    >
-                      {quickOutreachMode === "email" ? (
-                        <Mail className="h-[18px] w-[18px]" strokeWidth={2} />
-                      ) : (
-                        <MessageSquare className="h-[18px] w-[18px]" strokeWidth={2} />
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <h3 id="quick-outreach-title" className="text-[15px] font-semibold leading-tight text-slate-900">
-                        Smart Contact
-                      </h3>
-                      <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
-                        <span className="tabular-nums font-medium text-slate-700">{quickOutreachRecipients?.length ?? 0}</span>{" "}
-                        người nhận · biến từ bảng, không cần campaign.
-                      </p>
-                    </div>
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
+                    <Mail className="h-[18px] w-[18px]" strokeWidth={2} />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 id="quick-outreach-title" className="text-[15px] font-semibold leading-tight text-slate-900">
+                      Gửi email — Smart Contact
+                    </h3>
+                    <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
+                      <span className="tabular-nums font-medium text-slate-700">{quickOutreachRecipients?.length ?? 0}</span>{" "}
+                      người nhận · dữ liệu khách đã chọn được đưa vào AI tự động khi bạn dùng icon gợi ý.
+                    </p>
                   </div>
                 </div>
                 <button
@@ -2334,193 +2312,101 @@ export default function CustomerListsPage() {
                   onClick={() => {
                     setQuickOutreachOpen(false);
                     setQuickOutreachResults(null);
+                    setAiPurposeMenuOpen(false);
                   }}
                 >
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Kênh</span>
-                <div className="inline-flex rounded-lg border border-slate-200/90 bg-slate-100/80 p-0.5">
-                  <button
-                    type="button"
-                    disabled={quickOutreachSending}
-                    onClick={() => setQuickOutreachMode("email")}
-                    className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition ${
-                      quickOutreachMode === "email"
-                        ? "bg-white text-sky-800 shadow-sm ring-1 ring-slate-200/80"
-                        : "text-slate-600 hover:text-slate-900"
-                    } disabled:opacity-50`}
-                  >
-                    <Mail className="h-3.5 w-3.5 shrink-0" />
-                    Email
-                  </button>
-                  <button
-                    type="button"
-                    disabled={quickOutreachSending}
-                    onClick={() => setQuickOutreachMode("sms")}
-                    className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition ${
-                      quickOutreachMode === "sms"
-                        ? "bg-white text-violet-800 shadow-sm ring-1 ring-slate-200/80"
-                        : "text-slate-600 hover:text-slate-900"
-                    } disabled:opacity-50`}
-                  >
-                    <MessageSquare className="h-3.5 w-3.5 shrink-0" />
-                    SMS (mô phỏng)
-                  </button>
-                </div>
-              </div>
             </header>
 
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5">
-              <div>
-                <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-slate-400">Nguồn nội dung</p>
-                <div
-                  className="grid grid-cols-3 gap-1 rounded-xl border border-slate-200 bg-slate-50/80 p-1"
-                  role="tablist"
-                  aria-label="Chế độ soạn thảo"
-                >
-                  {(
-                    [
-                      { id: "template" as const, label: "Mẫu nhanh", Icon: LayoutTemplate },
-                      { id: "ai" as const, label: "AI soạn", Icon: Sparkles },
-                      { id: "manual" as const, label: "Viết tay", Icon: PenLine },
-                    ] as const
-                  ).map((t) => {
-                    const Icon = t.Icon;
-                    const on = quickOutreachTab === t.id;
-                    return (
-                      <button
-                        key={t.id}
-                        type="button"
-                        role="tab"
-                        aria-selected={on}
-                        className={`flex flex-col items-center gap-0.5 rounded-lg px-1 py-2 text-center transition sm:flex-row sm:justify-center sm:gap-1.5 sm:py-1.5 ${
-                          on
-                            ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/90"
-                            : "text-slate-500 hover:bg-white/60 hover:text-slate-800"
-                        } disabled:opacity-50`}
-                        disabled={quickOutreachSending}
-                        onClick={() => setQuickOutreachTab(t.id)}
-                      >
-                        <Icon className="h-3.5 w-3.5 shrink-0 opacity-80" strokeWidth={2} />
-                        <span className="text-[10px] font-medium leading-none sm:text-[11px]">{t.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+              <div className="rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2.5">
+                <label className="text-[11px] font-medium text-slate-600">Tiêu đề email</label>
+                <input
+                  type="text"
+                  className="input mt-1 w-full text-sm"
+                  value={quickOutreachSubject}
+                  onChange={(e) => setQuickOutreachSubject(e.target.value)}
+                  disabled={quickOutreachSending}
+                  placeholder="Ví dụ: Lời nhắn từ cửa hàng"
+                />
               </div>
 
-              {quickOutreachMode === "email" ? (
-                <div className="rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2.5">
-                  <label className="text-[11px] font-medium text-slate-600">Tiêu đề email</label>
-                  <input
-                    type="text"
-                    className="input mt-1 w-full text-sm"
-                    value={quickOutreachSubject}
-                    onChange={(e) => setQuickOutreachSubject(e.target.value)}
-                    disabled={quickOutreachSending}
-                    placeholder="Ví dụ: Lời nhắn từ cửa hàng"
-                  />
-                </div>
-              ) : null}
-
-              {quickOutreachTab === "template" ? (
-                <div className="rounded-xl border border-slate-100 bg-white px-3 py-3 shadow-sm">
-                  <p className="mb-2 text-[11px] font-medium text-slate-600">Mẫu theo mục đích</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {(
-                      [
-                        { key: "nhac_nhe" as const, label: "Nhắc quay lại" },
-                        { key: "cham_soc" as const, label: "Chăm sóc" },
-                        { key: "kich_hoat" as const, label: "Kích hoạt" },
-                        { key: "khach_moi" as const, label: "Khách mới" },
-                      ] as const
-                    ).map((item) => (
-                      <button
-                        key={item.key}
-                        type="button"
-                        className="rounded-lg border border-slate-200 bg-slate-50/90 px-2.5 py-1.5 text-[11px] font-medium text-slate-800 transition hover:border-sky-200 hover:bg-sky-50/80 hover:text-sky-900 disabled:opacity-50"
-                        disabled={quickOutreachSending}
-                        onClick={() => setQuickOutreachBody(OUTREACH_TEMPLATES[item.key])}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {quickOutreachTab === "ai" ? (
-                <div className="space-y-2 rounded-xl border border-violet-100 bg-violet-50/40 px-3 py-3">
-                  <label className="text-[11px] font-medium text-slate-700">Yêu cầu cho AI</label>
+              <div>
+                <label className="text-[11px] font-medium text-slate-600">Nội dung</label>
+                <div ref={aiMenuWrapRef} className="relative mt-1">
                   <textarea
-                    className="input min-h-[88px] w-full resize-y text-sm"
-                    placeholder="Ví dụ: nhắc khách lâu chưa quay lại, không nhắc ưu đãi, giọng thân thiện."
-                    value={smartComposePrompt}
-                    onChange={(e) => setSmartComposePrompt(e.target.value)}
-                    disabled={quickOutreachSending || smartComposeLoading}
+                    ref={quickOutreachTextareaRef}
+                    className="input min-h-[168px] w-full resize-y pb-11 pr-12 text-[13px] leading-relaxed"
+                    value={quickOutreachBody}
+                    onChange={(e) => setQuickOutreachBody(e.target.value)}
+                    disabled={quickOutreachSending}
+                    placeholder="Soạn nội dung email… Bấm icon AI ở góc để chọn mục đích hoặc hoàn thiện đoạn đang gõ."
                   />
                   <button
                     type="button"
-                    className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-[11px] font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:opacity-50"
+                    className="absolute bottom-2 right-2 flex h-9 w-9 items-center justify-center rounded-lg bg-violet-600 text-white shadow-md transition hover:bg-violet-700 disabled:opacity-45"
                     disabled={quickOutreachSending || smartComposeLoading}
-                    onClick={() => void runSmartContactCompose()}
+                    title="Gợi ý AI — chọn mục đích hoặc hoàn thiện bản nháp"
+                    aria-label="Mở gợi ý AI"
+                    aria-expanded={aiPurposeMenuOpen}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setAiPurposeMenuOpen((v) => !v);
+                    }}
                   >
                     {smartComposeLoading ? (
-                      <>
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        Đang tạo…
-                      </>
+                      <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      <>
-                        <Sparkles className="h-3.5 w-3.5" />
-                        Tạo nội dung
-                      </>
+                      <Sparkles className="h-4 w-4" strokeWidth={2} />
                     )}
                   </button>
-                </div>
-              ) : null}
-
-              {quickOutreachTab === "manual" ? (
-                <p className="text-[11px] leading-snug text-slate-500">
-                  Soạn trực tiếp hoặc chèn biến ở khối bên dưới.
-                </p>
-              ) : null}
-
-              <div className="rounded-xl border border-slate-100 bg-white px-3 py-3 shadow-sm">
-                <p className="mb-2 text-[11px] font-medium text-slate-600">Chèn biến</p>
-                <div className="flex flex-wrap gap-1">
-                  {SMART_CONTACT_VARIABLES.map((v) => (
-                    <button
-                      key={v.key}
-                      type="button"
-                      className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-medium text-slate-800 transition hover:border-slate-300 hover:bg-white"
-                      disabled={quickOutreachSending}
-                      onClick={() => insertOutreachVariable(v.key)}
-                      title={`Chèn {{${v.key}}}`}
+                  {aiPurposeMenuOpen ? (
+                    <div
+                      className="absolute bottom-11 right-0 z-10 w-[min(calc(100vw-2rem),15.5rem)] rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+                      role="menu"
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      {v.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <div className="mb-1 flex items-baseline justify-between gap-2">
-                  <label className="text-[11px] font-medium text-slate-600">Nội dung gửi</label>
-                  {quickOutreachMode === "sms" ? (
-                    <span className="text-[10px] tabular-nums text-slate-400">{quickOutreachBody.length} ký tự</span>
+                      <p className="border-b border-slate-100 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                        Mẫu theo mục đích
+                      </p>
+                      <div className="max-h-52 overflow-y-auto py-1">
+                        {(
+                          [
+                            { key: "nhac_nhe" as const, label: "Nhắc quay lại" },
+                            { key: "cham_soc" as const, label: "Chăm sóc" },
+                            { key: "kich_hoat" as const, label: "Kích hoạt" },
+                            { key: "khach_moi" as const, label: "Khách mới" },
+                          ] as const
+                        ).map((item) => (
+                          <button
+                            key={item.key}
+                            type="button"
+                            role="menuitem"
+                            className="flex w-full px-3 py-2 text-left text-[11px] text-slate-800 hover:bg-violet-50 disabled:opacity-50"
+                            disabled={quickOutreachSending || smartComposeLoading}
+                            onClick={() => void runSmartContactAiCompose(item.key)}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="flex w-full border-t border-slate-100 px-3 py-2 text-left text-[11px] font-medium text-violet-800 hover:bg-violet-50 disabled:opacity-50"
+                          disabled={quickOutreachSending || smartComposeLoading}
+                          onClick={() => void runSmartContactAiCompose("refine")}
+                        >
+                          Chỉ hoàn thiện bản nháp
+                        </button>
+                      </div>
+                    </div>
                   ) : null}
                 </div>
-                <textarea
-                  ref={quickOutreachTextareaRef}
-                  className="input min-h-[128px] w-full resize-y font-mono text-[13px] leading-relaxed"
-                  value={quickOutreachBody}
-                  onChange={(e) => setQuickOutreachBody(e.target.value)}
-                  disabled={quickOutreachSending}
-                  placeholder="Nội dung… Có thể dùng {{HoVaTen}} và các biến khác."
-                />
+                <p className="mt-1.5 text-[10px] leading-snug text-slate-500">
+                  Không cần chèn biến tay: khi gọi AI, hệ thống gửi kèm họ tên, ngày, dịch vụ… của khách đã chọn.
+                </p>
               </div>
 
               <div className="rounded-xl border border-slate-200/80 bg-slate-50/90 px-3 py-2.5">
@@ -2715,23 +2601,22 @@ export default function CustomerListsPage() {
 
       {showTableEditor && activeListId ? (
         <>
-          <button
-            type="button"
-            aria-label="Mở công cụ nhanh"
-            aria-expanded={quickToolsOpen}
-            onClick={() => setQuickToolsOpen((v) => !v)}
-            className={
-              quickToolsOpen
-                ? "hidden"
-                : "fixed bottom-5 right-5 z-[45] flex h-12 w-12 items-center justify-center rounded-full border-2 border-gray-500 bg-gradient-to-b from-[#f5f5f5] to-[#d4d0c8] text-gray-800 shadow-lg hover:brightness-105 active:brightness-95"
-            }
-          >
-            <Wrench size={22} strokeWidth={2} />
-          </button>
+          <div className="fixed right-4 top-28 z-[45] flex flex-col items-end gap-2 sm:right-5">
+            {!quickToolsOpen ? (
+              <button
+                type="button"
+                aria-label="Mở công cụ nhanh"
+                aria-expanded={quickToolsOpen}
+                onClick={() => setQuickToolsOpen(true)}
+                className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-gray-500 bg-gradient-to-b from-[#f5f5f5] to-[#d4d0c8] text-gray-800 shadow-lg hover:brightness-105 active:brightness-95 sm:h-12 sm:w-12"
+              >
+                <Wrench size={22} strokeWidth={2} />
+              </button>
+            ) : null}
 
-          {quickToolsOpen ? (
+            {quickToolsOpen ? (
             <div
-              className="fixed bottom-5 right-5 z-[45] flex w-[min(92vw,300px)] max-h-[min(72vh,420px)] flex-col overflow-hidden rounded-sm border border-gray-500 bg-[#ece9d8] shadow-[2px_2px_8px_rgba(0,0,0,0.35)]"
+              className="flex w-[min(92vw,300px)] max-h-[min(72vh,420px)] flex-col overflow-hidden rounded-sm border border-gray-500 bg-[#ece9d8] shadow-[2px_2px_8px_rgba(0,0,0,0.35)]"
               role="dialog"
               aria-label="Công cụ nhanh"
             >
@@ -2752,6 +2637,45 @@ export default function CustomerListsPage() {
               <div className="min-h-0 flex-1 overflow-y-auto border-x border-gray-400 bg-white p-2.5 text-xs">
                 <p className="mb-2 truncate text-[10px] font-semibold uppercase tracking-wide text-gray-500">Danh sách đang mở</p>
                 <p className="mb-3 truncate font-medium text-gray-900">{activeListName}</p>
+
+                <div className="mb-3 space-y-2 border border-gray-300 bg-white p-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-gray-600">Khách đã chọn</p>
+                  {selectedRowIndexes.length > 0 ? (
+                    <>
+                      <p className="text-[11px] text-gray-800">
+                        <span className="tabular-nums font-semibold">{selectedRowIndexes.length}</span> khách →
+                      </p>
+                      <div className="flex flex-col gap-1.5">
+                        <button
+                          type="button"
+                          className="btn-primary w-full text-[11px]"
+                          onClick={() => {
+                            openQuickOutreach(recipientsFromSelectedRows());
+                            setQuickToolsOpen(false);
+                          }}
+                        >
+                          Gửi email
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary w-full text-[11px]"
+                          onClick={() => setMessage("Gửi SMS chưa được hỗ trợ.")}
+                        >
+                          Gửi SMS (chưa hỗ trợ)
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary w-full text-[11px]"
+                          onClick={() => void bulkTogglePriority(true)}
+                        >
+                          Chọn thành ưu tiên
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-[11px] leading-snug text-gray-600">Tick dòng trên bảng để gửi email hoặc đặt ưu tiên.</p>
+                  )}
+                </div>
 
                 <div className="mb-3 space-y-2 border border-gray-300 bg-[#f8f8f8] p-2">
                   <p className="text-[10px] font-bold uppercase tracking-wide text-gray-600">Theo phân tích</p>
@@ -2862,7 +2786,8 @@ export default function CustomerListsPage() {
                 </div>
               </div>
             </div>
-          ) : null}
+            ) : null}
+          </div>
         </>
       ) : null}
     </div>

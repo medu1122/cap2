@@ -389,6 +389,8 @@ class SmartContactComposePayload(BaseModel):
     user_prompt: str
     mode: str = "email"
     context_one_liner: str | None = None
+    # Tóm tắt khách đã chọn (tự build từ bảng) — đưa vào system để model không cần user chọn biến tay
+    recipients_data_context: str | None = None
 
 
 def _render_smart_contact_template(text: str, r: QuickOutreachRecipient) -> str:
@@ -432,7 +434,11 @@ def _normalize_smart_contact_compose_output(raw: str, mode: str) -> str:
     return t.strip()
 
 
-def _smart_contact_compose_system_prompt(mode: str, context_one_liner: str | None) -> str:
+def _smart_contact_compose_system_prompt(
+    mode: str,
+    context_one_liner: str | None,
+    recipients_data: str | None,
+) -> str:
     channel_rules = (
         "ĐỊNH DẠNG SMS:\n"
         "- Tối đa khoảng 300 ký tự (Unicode); 1–2 câu ngắn; ít xuống dòng; không chèn URL dài.\n"
@@ -459,7 +465,12 @@ def _smart_contact_compose_system_prompt(mode: str, context_one_liner: str | Non
         "khi thiếu thì viết chung chung hoặc dùng placeholder ở trên.\n\n"
         f"{channel_rules}\n"
     )
-    if context_one_liner:
+    if recipients_data:
+        base += (
+            "\nDỮ LIỆU KHÁCH (từ hệ thống — chỉ dùng để cá nhân hóa; không tự bịa thêm người hay số liệu ngoài danh sách):\n"
+            f"{recipients_data[:2800]}\n"
+        )
+    elif context_one_liner:
         base += (
             "Ngữ cảnh một khách mẫu (chỉ tham khảo, không tự thêm chi tiết không có): "
             f"{context_one_liner[:500]}\n"
@@ -474,13 +485,16 @@ async def _smart_contact_compose_text(payload: SmartContactComposePayload) -> st
     up = (payload.user_prompt or "").strip()
     if not up:
         raise HTTPException(400, "Nhập yêu cầu soạn nội dung.")
-    if len(up) > 2000:
-        raise HTTPException(400, "Yêu cầu quá dài (tối đa 2000 ký tự).")
+    if len(up) > 4500:
+        raise HTTPException(400, "Yêu cầu quá dài (tối đa 4500 ký tự).")
+    rd = (payload.recipients_data_context or "").strip() or None
+    if rd and len(rd) > 4000:
+        raise HTTPException(400, "Dữ liệu ngữ cảnh khách quá dài.")
     mode = (payload.mode or "email").strip().lower()
     if mode not in ("email", "sms"):
         mode = "email"
     ctx = (payload.context_one_liner or "").strip() or None
-    sys = _smart_contact_compose_system_prompt(mode, ctx)
+    sys = _smart_contact_compose_system_prompt(mode, ctx, rd)
     user_block = f"YÊU CẦU CỦA NGƯỜI DÙNG:\n{up}"
     messages = [
         {"role": "system", "content": sys},
