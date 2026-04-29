@@ -57,7 +57,24 @@ class CampaignIdeaSuggestResponse(BaseModel):
     suggestions: list[CampaignIdeaSuggestionItem]
 
 
-class CampaignIdeaCreateFromSuggestion(BaseModel):
+class CampaignIdeaGenerateBriefRequest(BaseModel):
+    suggestion_id: str
+    suggestion_title: str
+    suggestion_description: str
+    suggestion_category: str
+    suggestion_timing: str | None = None
+    suggestion_segment: str | None = None
+    suggestion_hook: str | None = None
+    target_customer: str = ""
+    budget: str = ""
+    duration: str = ""
+
+
+class BriefGenerated(BaseModel):
+    title: str
+    objective: str
+    hook: str
+    channels: list[str]
     suggestion_id: str
     title: str
     objective: str | None = None

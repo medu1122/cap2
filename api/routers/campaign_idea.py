@@ -20,6 +20,8 @@ from schemas.campaign_idea import (
     CampaignIdeaSuggestResponse,
     CampaignIdeaSuggestionItem,
     CampaignIdeaCreateFromSuggestion,
+    CampaignIdeaGenerateBriefRequest,
+    BriefGenerated,
     CampaignIdeaUpdateRequest,
     CampaignIdeaOut,
     CampaignIdeaBuildEmailRequest,
@@ -256,6 +258,73 @@ Chỉ trả về JSON, không thêm text khác."""
             for item in (data.get("suggestions") or [])
         ]
         return CampaignIdeaSuggestResponse(suggestions=suggestions)
+    except Exception:
+        raise HTTPException(503, "AI trả về dữ liệu không hợp lệ. Vui lòng thử lại.")
+
+
+@router.post("/generate-brief", response_model=BriefGenerated)
+async def generate_campaign_brief(
+    payload: CampaignIdeaGenerateBriefRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """AI tự viết đầy đủ brief cho chiến dịch dựa trên suggestion + user preferences."""
+    target_label = {
+        "existing": "khách cũ",
+        "new": "khách mới",
+        "all": "tất cả khách hàng",
+    }.get(payload.target_customer, "tất cả khách hàng")
+
+    budget_label = {
+        "low": "ngân sách thấp (<5 triệu)",
+        "medium": "ngân sách trung bình (5-20 triệu)",
+        "high": "ngân sách cao (>20 triệu)",
+        "unknown": "ngân sách linh hoạt",
+    }.get(payload.budget, "ngân sách linh hoạt")
+
+    duration_label = {
+        "1_week": "1 tuần",
+        "2_4_weeks": "2-4 tuần",
+        "1_month": "cả tháng",
+    }.get(payload.duration, "2-4 tuần")
+
+    prompt = f"""Bạn là chuyên gia marketing viết brief cho chiến dịch marketing của doanh nghiệp nhỏ Việt Nam.
+Dựa trên ý tưởng chiến dịch bên dưới và thông tin khách hàng, hãy viết 1 brief đầy đủ.
+
+Ý TƯỞNG CHIẾN DỊCH:
+- Tên: {payload.suggestion_title}
+- Mô tả: {payload.suggestion_description}
+- Category: {payload.suggestion_category}
+- Thời gian gợi ý: {payload.suggestion_timing or "linh hoạt"}
+- Đối tượng gợi ý: {payload.suggestion_segment or "tùy chọn"}
+- Hook gợi ý: {payload.suggestion_hook or "tự đề xuất"}
+
+THÔNG TIN KHÁCH HÀNG:
+- Đối tượng mục tiêu: {target_label}
+- Ngân sách: {budget_label}
+- Thời gian chạy: {duration_label}
+
+YÊU CẦU:
+1. Viết title ngắn gọn, hấp dẫn (dưới 10 từ, có emoji nếu phù hợp)
+2. Viết objective/mục tiêu rõ ràng, cụ thể (1-2 câu)
+3. Viết hook/ưu đãi chính cực kỳ hấp dẫn, tạo FOMO (1-2 dòng)
+4. Chọn 1-2 kênh phù hợp nhất với ngân sách và đối tượng
+
+Trả về JSON hợp lệ:
+{{
+  "title": "Tên chiến dịch ngắn, hấp dẫn",
+  "objective": "Mục tiêu rõ ràng, cụ thể",
+  "hook": "Ưu đãi hấp dẫn, gây FOMO",
+  "channels": ["email", "facebook_post"]
+}}
+
+Chỉ trả về JSON, không thêm text khác."""
+
+    messages = [{"role": "user", "content": prompt}]
+    raw = await _call_ai_safe(messages, timeout=120)
+
+    try:
+        data = _parse_json_flexible(raw)
+        return BriefGenerated(**data)
     except Exception:
         raise HTTPException(503, "AI trả về dữ liệu không hợp lệ. Vui lòng thử lại.")
 
