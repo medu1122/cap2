@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Lightbulb, Loader2, RefreshCw, ChevronRight } from "lucide-react";
+import { Lightbulb, Loader2, RefreshCw, ChevronRight, Clock, Users, Zap } from "lucide-react";
 import { api } from "@/lib/api-client";
 import type { SuggestionItem } from "../CampaignAssistantModal";
 
@@ -9,6 +9,13 @@ const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
   acquisition: { label: "Kéo khách mới", color: "bg-blue-100 text-blue-700" },
   awareness: { label: "Nhận diện", color: "bg-purple-100 text-purple-700" },
   upsell: { label: "Upsell", color: "bg-amber-100 text-amber-700" },
+  seasonal: { label: "Theo mùa", color: "bg-orange-100 text-orange-700" },
+};
+
+const URGENCY_ICONS: Record<string, string> = {
+  high: "🔴",
+  medium: "🟡",
+  low: "🟢",
 };
 
 interface Props {
@@ -61,6 +68,9 @@ export default function StepSuggestions({
       category: "awareness",
       channels: ["facebook_post", "email"],
       hook: null,
+      timing: null,
+      customer_segment: null,
+      urgency_level: null,
     };
     onSelectSuggestion(custom);
     setCustomIdea("");
@@ -74,14 +84,12 @@ export default function StepSuggestions({
         </div>
         <h3 className="text-lg font-semibold text-gray-900">Tìm ý tưởng cho bạn</h3>
         <p className="text-sm text-gray-600">
-          AI sẽ phân tích thương hiệu của bạn và đề xuất các ý tưởng chiến dịch
-          dựa trên xu hướng và sự kiện sắp tới.
+          AI sẽ phân tích thương hiệu và đề xuất ý tưởng chiến dịch
+          <br />
+          dựa trên xu hướng + dịp lễ sắp tới.
         </p>
         {error && <p className="text-sm text-red-600">{error}</p>}
-        <button
-          onClick={loadSuggestions}
-          className="btn-primary px-6 py-3"
-        >
+        <button onClick={loadSuggestions} className="btn-primary px-6 py-3">
           <Lightbulb size={16} className="inline mr-2" />
           Gợi ý chiến dịch
         </button>
@@ -102,7 +110,9 @@ export default function StepSuggestions({
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-gray-900">Gợi ý cho bạn</h3>
+        <h3 className="font-semibold text-gray-900">
+          Gợi ý cho bạn ({suggestions.length} ý tưởng)
+        </h3>
         <button
           onClick={loadSuggestions}
           className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 transition-colors"
@@ -127,25 +137,53 @@ export default function StepSuggestions({
               }`}
             >
               <div className="flex items-start gap-3">
+                {/* Radio */}
                 <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center mt-0.5 shrink-0 ${
                   isSelected ? "border-blue-500 bg-blue-500" : "border-gray-300"
                 }`}>
-                  {isSelected && (
-                    <div className="w-2 h-2 rounded-full bg-white" />
-                  )}
+                  {isSelected && <div className="w-2 h-2 rounded-full bg-white" />}
                 </div>
+
                 <div className="flex-1 min-w-0">
+                  {/* Title + category */}
                   <div className="flex items-center gap-2 flex-wrap">
+                    {s.urgency_level && (
+                      <span title="Mức độ khẩn cấp">
+                        {URGENCY_ICONS[s.urgency_level] || "⚪"}
+                      </span>
+                    )}
                     <span className="font-medium text-gray-900">{s.title}</span>
                     <span className={`text-xs px-2 py-0.5 rounded-full ${cat.color}`}>
                       {cat.label}
                     </span>
                   </div>
+
+                  {/* Description */}
                   <p className="text-sm text-gray-600 mt-1 line-clamp-2">{s.description}</p>
+
+                  {/* Hook */}
                   {s.hook && (
-                    <p className="text-xs text-blue-600 mt-1 font-medium">
+                    <p className="text-sm text-blue-600 mt-1 font-medium">
                       → {s.hook}
                     </p>
+                  )}
+
+                  {/* Meta: timing + segment */}
+                  {(s.timing || s.customer_segment) && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {s.timing && (
+                        <span className="inline-flex items-center gap-1 text-xs bg-orange-50 text-orange-700 px-2 py-0.5 rounded-full border border-orange-200">
+                          <Clock size={10} />
+                          {s.timing}
+                        </span>
+                      )}
+                      {s.customer_segment && (
+                        <span className="inline-flex items-center gap-1 text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full border border-indigo-200">
+                          <Users size={10} />
+                          {s.customer_segment}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
@@ -154,6 +192,7 @@ export default function StepSuggestions({
         })}
       </div>
 
+      {/* Custom idea */}
       <div className="border-t border-gray-100 pt-4 space-y-2">
         <p className="text-xs text-gray-500">Hoặc tự nhập ý tưởng:</p>
         <div className="flex gap-2">
@@ -173,10 +212,10 @@ export default function StepSuggestions({
       <button
         onClick={onNext}
         disabled={!selectedSuggestion}
-        className="w-full btn-primary py-3 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full btn-primary py-3 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
-        Tiếp tục
-        <ChevronRight size={16} className="inline ml-1" />
+        Chọn ý tưởng này
+        <ChevronRight size={16} />
       </button>
     </div>
   );

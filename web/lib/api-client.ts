@@ -1,5 +1,9 @@
 export const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
 
+interface RequestInitWithParams extends RequestInit {
+  params?: Record<string, string>;
+}
+
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("aimap_token");
@@ -15,7 +19,7 @@ export function clearToken() {
 
 async function request<T>(
   path: string,
-  options: RequestInit = {},
+  options: RequestInitWithParams = {},
   auth = true
 ): Promise<T> {
   const headers: HeadersInit = {
@@ -30,7 +34,23 @@ async function request<T>(
     }
   }
 
-  const url = API_BASE ? `${API_BASE}${path}` : path;
+  let url = API_BASE ? `${API_BASE}${path}` : path;
+
+  // Handle params for GET and POST
+  const params = options.params as Record<string, string> | undefined;
+  if (params) {
+    const searchParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null) {
+        searchParams.append(key, String(value));
+      }
+    }
+    const queryString = searchParams.toString();
+    if (queryString) {
+      url += (url.includes("?") ? "&" : "?") + queryString;
+    }
+  }
+
   const res = await fetch(url, { ...options, headers });
 
   if (res.status === 401) {
@@ -50,8 +70,8 @@ async function request<T>(
 }
 
 export const api = {
-  get: <T>(path: string, init: RequestInit = {}) => request<T>(path, { ...init, method: "GET" }),
-  post: <T>(path: string, body?: unknown, init: RequestInit = {}) =>
+  get: <T>(path: string, init: RequestInitWithParams = {}) => request<T>(path, { ...init, method: "GET" }),
+  post: <T>(path: string, body?: unknown, init: RequestInitWithParams = {}) =>
     request<T>(path, {
       ...init,
       method: "POST",

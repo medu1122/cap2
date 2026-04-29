@@ -1047,7 +1047,7 @@ export default function CampaignDetailPage() {
                     <dd className="text-gray-800">
                       Insight run:{" "}
                       <Link
-                        href="/insights/actions"
+                        href="/insights"
                         className="text-blue-600 hover:underline"
                       >
                         {sourceContext.source_insight_run_id}

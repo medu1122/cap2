@@ -21,6 +21,8 @@ class CampaignIdea(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     objective: Mapped[str | None] = mapped_column(Text, nullable=True)
     channels: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
+    timing: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    customer_segment: Mapped[str | None] = mapped_column(Text, nullable=True)
     email_content: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     post_content: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     video_script: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

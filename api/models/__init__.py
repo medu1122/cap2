@@ -19,6 +19,7 @@ from .insight_report_run import InsightReportRun
 from .insight_report_schema_map import InsightReportSchemaMap
 from .insight_agent_trace import InsightAgentTrace
 from .insight_result_snapshot import InsightResultSnapshot
+from .insight_chat import InsightChat, InsightChatMessage
 from .customer_analysis_snapshot import CustomerAnalysisSnapshot
 
 __all__ = [
@@ -43,4 +44,7 @@ __all__ = [
     "InsightReportSchemaMap",
     "InsightAgentTrace",
     "InsightResultSnapshot",
+    "InsightChat",
+    "InsightChatMessage",
+    "CustomerAnalysisSnapshot",
 ]

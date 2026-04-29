@@ -1,6 +1,5 @@
 import Sidebar from "@/components/layout/Sidebar";
 import AuthGuard from "@/components/layout/AuthGuard";
-import CampaignAssistantButton from "@/components/campaign-assistant/CampaignAssistantButton";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -10,7 +9,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <main className="ml-60 min-h-screen overflow-auto">
           {children}
         </main>
-        <CampaignAssistantButton />
       </div>
     </AuthGuard>
   );

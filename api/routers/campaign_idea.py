@@ -41,17 +41,78 @@ QWEN_TIMEOUT = int(os.getenv("QWEN_TIMEOUT", "180"))
 
 # ── Upcoming events for Vietnamese market ───────────────────────────────────
 _UPCOMING_EVENTS = [
-    {"name": "Tết Nguyên Đán", "month": 1, "theme": "mùa lễ hội, quà tặng, sum vầy"},
-    {"name": "Valentine", "month": 2, "theme": "tình yêu, lãng mạn, quà tặng"},
-    {"name": "Quốc khánh", "month": 9, "theme": "yêu nước, khuyến mãi lớn"},
-    {"name": "Halloween", "month": 10, "theme": "ma quái, ưu đãi, trick-or-treat"},
-    {"name": "Black Friday", "month": 11, "theme": "giảm giá lớn, mua sắm"},
-    {"name": "Christmas", "month": 12, "theme": "giáng sinh, quà tặng, ấm áp"},
-    {"name": "Mùa hè", "month": 6, "theme": "du lịch, nghỉ mát, khuyến mãi"},
-    {"name": "Back to school", "month": 9, "theme": "回到学校,文具,培训"},
-    {"name": " Women's Day", "month": 3, "theme": "ưu đãi cho phái nữ, tôn vinh"},
-    {"name": "Mid-Autumn Festival", "month": 9, "theme": "bánh trung thu, sum vầy"},
+    {"name": "Tết Nguyên Đán", "month": 1, "theme": "mùa lễ hội, quà tặng, sum vầy, đoàn tụ"},
+    {"name": "Valentine", "month": 2, "theme": "tình yêu, lãng mạn, quà tặng, cặp đôi"},
+    {"name": "Women's Day", "month": 3, "theme": "phái đẹp, tôn vinh, ưu đãi nữ giới"},
+    {"name": "Giỗ Tổ Hùng Vương", "month": 3, "theme": "lịch sử, yêu nước, truyền thống"},
+    {"name": "Mùa hè", "month": 6, "theme": "du lịch, nghỉ mát, gia đình, trẻ em"},
+    {"name": "Back to school", "month": 8, "theme": "học tập,文具, khóa học mới"},
+    {"name": "Quốc khánh", "month": 9, "theme": "yêu nước, ưu đãi lớn, đặc biệt"},
+    {"name": "Mid-Autumn", "month": 9, "theme": "bánh trung thu, sum vầy, trẻ em, trăng tròn"},
+    {"name": "Halloween", "month": 10, "theme": "ma quái, trick-or-treat, ưu đãi, trẻ em"},
+    {"name": "Black Friday", "month": 11, "theme": "giảm giá lớn, mua sắm, deal khủng"},
+    {"name": "Christmas", "month": 12, "theme": "giáng sinh, quà tặng, ấm áp, gia đình"},
+    {"name": "Year End Sale", "month": 12, "theme": "cuối năm, tổng kết, ưu đãi cuối năm"},
 ]
+
+# Marketing patterns theo ngành
+_INDUSTRY_PATTERNS = {
+    "fnb": [  # Food & Beverage - quán ăn, cafe, trà sữa
+        {"pattern": "Win-back khách cũ", "description": "Nhắm vào khách đã lâu không quay lại, gửi ưu đãi cá nhân hóa"},
+        {"pattern": "Combo tiết kiệm", "description": "Gói combo giá tốt để tăng đơn hàng trung bình"},
+        {"pattern": "Chương trình tích điểm", "description": "Khách thân thiết tích điểm đổi quà"},
+        {"pattern": "Hậu mãi sau mua", "description": "Chăm sóc sau khi mua để tăng tái mua"},
+        {"pattern": "Flash sale giờ vàng", "description": "Giảm giá giới hạn trong khung giờ nhất định"},
+        {"pattern": "Mời bạn cùng thử", "description": "Khách giới thiệu bạn bè, cả hai đều được giảm"},
+    ],
+    "education": [  # Trung tâm dạy học, khóa học
+        {"pattern": "Học thử miễn phí", "description": "Cho học viên tiềm năng trải nghiệm buổi học đầu tiên"},
+        {"pattern": "Referral bạn bè", "description": "Học viên cũ giới thiệu bạn bè, cả hai đều được ưu đãi"},
+        {"pattern": "Khóa học mới", "description": "Ra mắt khóa học mới với early-bird discount"},
+        {"pattern": "Nâng cấp khóa", "description": "Upsell khóa cao hơn cho học viên đang học"},
+        {"pattern": "Mùa thi", "description": "Chiến dịch cổ vũ, hỗ trợ học viên mùa thi"},
+        {"pattern": "Tết sum họp - học cùng gia đình", "description": "Khóa học cho cả gia đình dịp lễ"},
+    ],
+    "spa_beauty": [  # Spa, làm đẹp, salon
+        {"pattern": "Thẻ VIP", "description": "Thẻ thành viên vip với nhiều ưu đãi đặc biệt"},
+        {"pattern": "Mùa cưới", "description": "Gói dịch vụ cho cô dâu chú rể, dịp cưới hỏi"},
+        {"pattern": "Làm đẹp sau Tết", "description": "Chiến dịch đầu năm, lấy lại phong độ"},
+        {"pattern": "Mùa hè skincare", "description": "Sản phẩm/dịch vụ chống nắng, dưỡng mùa hè"},
+        {"pattern": "Geschenk (quà tặng)", "description": "Voucher làm đẹp - quà tặng dịp lễ"},
+    ],
+    "retail": [  # Bán lẻ, shop quần áo, điện thoại
+        {"pattern": "New arrival", "description": "Ra mắt sản phẩm mới với ưu đãi đặc biệt"},
+        {"pattern": "Flash sale", "description": "Giảm giá cực mạnh trong thời gian ngắn"},
+        {"pattern": "Mua 2 giảm 1", "description": "Khuyến mãi mua nhiều giảm nhiều"},
+        {"pattern": "Hậu mãi", "description": "Chương trình bảo hành, chăm sóc sau mua"},
+        {"pattern": "Cross-sell", "description": "Bán kèm sản phẩm liên quan để tăng giỏ hàng"},
+    ],
+    "default": [  # Mặc định cho ngành khác
+        {"pattern": "Win-back khách cũ", "description": "Nhắm vào khách đã lâu không tương tác"},
+        {"pattern": "Loyalty program", "description": "Chương trình tích điểm cho khách thân thiết"},
+        {"pattern": "Seasonal sale", "description": "Khuyến mãi theo mùa hoặc dịp lễ"},
+        {"pattern": "Referral", "description": "Khách giới thiệu khách mới"},
+        {"pattern": "Content marketing", "description": "Chiến dịch nội dung để tăng nhận diện"},
+    ],
+}
+
+
+def _get_industry_patterns(business_type: str | None) -> str:
+    """Lấy danh sách marketing patterns phù hợp với ngành."""
+    patterns = _INDUSTRY_PATTERNS.get("default", [])
+    if business_type:
+        btype = business_type.lower()
+        if any(k in btype for k in ["f&b", "food", "cafe", "coffee", "restaurant", "quán", "ăn", "trà sữa"]):
+            patterns = _INDUSTRY_PATTERNS["fnb"]
+        elif any(k in btype for k in ["edu", "học", "dạy", "trung tâm", "khoá", "khóa", "school", "course"]):
+            patterns = _INDUSTRY_PATTERNS["education"]
+        elif any(k in btype for k in ["spa", "beauty", "làm đẹp", "salon", "móng", "skincare"]):
+            patterns = _INDUSTRY_PATTERNS["spa_beauty"]
+        elif any(k in btype for k in ["retail", "shop", "bán lẻ", "cửa hàng", "store"]):
+            patterns = _INDUSTRY_PATTERNS["retail"]
+
+    lines = [f"- {p['pattern']}: {p['description']}" for p in patterns]
+    return "\n".join(lines)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -124,7 +185,7 @@ async def suggest_campaign_ideas(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """AI gợi ý 3-4 ý tưởng chiến dịch dựa trên thương hiệu + sự kiện."""
+    """AI gợi ý 3-5 ý tưởng chiến dịch dựa trên thương hiệu + sự kiện + patterns ngành."""
     brand = None
     if payload.brand_id:
         result = await db.execute(
@@ -138,44 +199,55 @@ async def suggest_campaign_ideas(
     calendar_ctx = _build_calendar_context()
 
     brand_info = ""
+    business_type = ""
     if brand:
-        brand_info = f"""
-Thương hiệu: {brand.brand_name}
+        business_type = brand.tone_of_voice or ""
+        brand_info = f"""Thương hiệu: {brand.brand_name}
 Mô tả: {brand.brand_description}
 Tone: {brand.tone_of_voice}
 Khách hàng mục tiêu: {brand.target_audience}
 Sản phẩm chính: {', '.join(brand.key_products or [])}
-Ngành: {brand.tone_of_voice}
 """
 
-    prompt = f"""Bạn là chuyên gia marketing cho doanh nghiệp nhỏ Việt Nam.
-Dựa vào thông tin thương hiệu bên dưới và các sự kiện sắp tới, hãy gợi ý 3-4 ý tưởng chiến dịch marketing.
+    industry_patterns = _get_industry_patterns(business_type)
 
+    prompt = f"""Bạn là chuyên gia marketing cho doanh nghiệp nhỏ Việt Nam.
+Hãy gợi ý 6-8 ý tưởng chiến dịch marketing ĐA DẠNG, mỗi ý tưởng phải khác nhau về hướng tiếp cận.
+
+Thương hiệu:
 {brand_info}
-Các sự kiện sắp tới:
+Các dịp lễ/sự kiện sắp tới:
 {calendar_ctx}
 
-Trả về JSON hợp lệ với đúng format:
+Các pattern marketing phổ biến theo ngành (chọn và áp dụng sáng tạo):
+{industry_patterns}
+
+YÊU CẦU QUAN TRỌNG:
+1. Mỗi ý tưởng phải KHÁC NHAU: 1 cái theo dịp lễ, 1 cái win-back khách cũ, 1 cái referral/giới thiệu, 1 cái theo mùa/trend.
+2. KHÔNG lặp lại cùng 1 hướng tiếp cận.
+3. Mỗi ý tưởng PHẢI có đủ 7 trường: id, title, description, category, channels, hook, timing, customer_segment, urgency_level
+
+Trả về JSON hợp lệ:
 {{
   "suggestions": [
     {{
       "id": "1",
-      "title": "Tên chiến dịch (ngắn gọn, hấp dẫn)",
-      "description": "Mô tả 2-3 câu về chiến dịch, giải thích tại sao hiệu quả",
-      "category": "retention|acquisition|awareness|upsell",
+      "title": "Tên chiến dịch NGẮN (dưới 10 từ, hấp dẫn, có emoji nếu phù hợp)",
+      "description": "Mô tả 2-3 câu: chiến dịch làm gì, tại sao hiệu quả, ai được lợi",
+      "category": "retention|acquisition|awareness|upsell|seasonal",
       "channels": ["facebook_post", "email", "video_script"],
-      "hook": "Ưu đãi chính hoặc điểm thu hút (1 dòng)"
+      "hook": "Ưu đãi chính cực kỳ hấp dẫn (1-2 dòng, gây FOMO)",
+      "timing": "Tháng X - chạy Y tuần trước dịp. Lý do tại sao timing này tốt",
+      "customer_segment": "Nhắm vào ai? (VD: khách cũ 3-6 tháng, khách VIP, khách chưa từng mua...)",
+      "urgency_level": "high|medium|low"
     }}
   ]
 }}
 
-Quy tắc:
-- Mỗi gợi ý nên khác nhau về hướng tiếp cận
-- Ưu tiên các chiến dịch Retention (giữ chân khách cũ) vì hiệu quả cao nhất
-- Chỉ trả về JSON, không thêm text khác"""
+Chỉ trả về JSON, không thêm text khác."""
 
     messages = [{"role": "user", "content": prompt}]
-    raw = await _call_ai_safe(messages, timeout=200)
+    raw = await _call_ai_safe(messages, timeout=240)
 
     try:
         data = _parse_json_flexible(raw)
@@ -199,6 +271,8 @@ async def create_campaign_idea(
         title=payload.title,
         objective=payload.objective,
         channels=payload.channels,
+        timing=payload.timing,
+        customer_segment=payload.customer_segment,
         status="draft",
     )
     db.add(idea)
