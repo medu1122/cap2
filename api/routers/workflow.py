@@ -28,6 +28,7 @@ from models.file_upload import FileUpload
 from models.user import User
 from models.workflow_job import WorkflowJob
 from models.workflow_schedule import WorkflowSchedule
+from models.customer_analysis_snapshot import CustomerAnalysisSnapshot
 from services.agent_dispatcher import dispatch_campaign
 from services.customer_analysis_service import analyze_customer_rows
 
@@ -1292,11 +1293,50 @@ async def analyze_customer_list_rows(
     narrative, ai_meta = await _generate_customer_analysis_narrative(analysis)
     analysis["narrative"] = narrative
     analysis["ai_meta"] = ai_meta
-    return {
+
+    # Lưu snapshot để outreach page có thể lấy lại
+    snapshot_data = {
         "list_id": str(customer_list.id),
         "list_name": customer_list.list_name,
         "analysis": analysis,
     }
+    db.add(CustomerAnalysisSnapshot(
+        customer_list_id=customer_list.id,
+        result_json=snapshot_data,
+    ))
+    await db.commit()
+
+    return snapshot_data
+
+
+@router.get("/customer-lists/{customer_list_id}/analysis")
+async def get_customer_analysis(
+    customer_list_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lấy kết quả phân tích đã lưu của customer list (nếu có)."""
+    list_result = await db.execute(
+        select(CustomerList).where(
+            CustomerList.id == customer_list_id,
+            CustomerList.user_id == current_user.id,
+        )
+    )
+    customer_list = list_result.scalar_one_or_none()
+    if not customer_list:
+        raise HTTPException(404, "Customer list không tồn tại")
+
+    snapshot_result = await db.execute(
+        select(CustomerAnalysisSnapshot)
+        .where(CustomerAnalysisSnapshot.customer_list_id == customer_list_id)
+        .order_by(CustomerAnalysisSnapshot.created_at.desc())
+        .limit(1)
+    )
+    snapshot = snapshot_result.scalar_one_or_none()
+    if not snapshot:
+        raise HTTPException(404, "Chưa có kết quả phân tích cho customer list này")
+
+    return snapshot.result_json
 
 
 @router.post("/customer-lists/{customer_list_id}/quick-outreach")
@@ -1517,3 +1557,259 @@ async def clear_priority_customers(
         updated_count += 1
     await db.commit()
     return {"cleared_count": updated_count}
+
+
+# ---------------------------------------------------------------------------
+# Smart Contact Batch — soạn email riêng cho từng khách theo segment
+# ---------------------------------------------------------------------------
+
+
+class SmartContactBatchPayload(BaseModel):
+    """AI soạn song song từng email cho một nhóm khách (theo segment)."""
+
+    brand_id: uuid.UUID | None = None
+    segment: str = "churn_risk"
+    purpose: str = "nhac_nhe"
+    # Danh sách khách từ phân tích (tên + dịch vụ + ngày …) — frontend gửi lên
+    customers: list[dict] = []  # [{name, email, phone, variables: {}}]
+
+
+OUTREACH_PURPOSE_INSTRUCTION: dict[str, str] = {
+    "nhac_nhe": (
+        "Mục đích: nhắc khách đã lâu chưa quay lại — nhẹ nhàng, không gây áp lực; "
+        "thể hiện đúng ngành hình và giọng trong hồ sơ thương hiệu; "
+        "không nhắc khuyến mãi trừ khi hồ sơ thương hiệu có ghi rõ."
+    ),
+    "cham_soc": (
+        "Mục đích: hỏi thăm trải nghiệm gần nhất, đúng ngữ cảnh dịch vụ trong hồ sơ thương hiệu, "
+        "quan tâm chân thành."
+    ),
+    "kich_hoat": (
+        "Mục đích: mời khách ghé lại có lý do (cập nhật / trải nghiệm) gắn với giá trị thương hiệu, "
+        "không hứa giá hay ưu đãi."
+    ),
+    "khach_moi": (
+        "Mục đích: chào khách mới, giọng và cách nhắc phù hợp Brand Vault — ngắn, rõ, cảm ơn."
+    ),
+}
+
+
+async def _compose_single_email(
+    customer: dict,
+    brand_context: str | None,
+    purpose_instruction: str,
+    list_name: str,
+) -> dict:
+    """Soạn 1 email cho 1 khách, trả về dict có name/email/phone/subject/body."""
+    name = (customer.get("name") or "").strip() or "khách"
+    email_addr = (customer.get("email") or "").strip()
+    phone = (customer.get("phone") or "").strip()
+    variables: dict[str, str] = customer.get("variables") or {}
+
+    # Build per-customer data context
+    data_lines = [f"- Khách: {name}"]
+    for k, v in variables.items():
+        if k in ("name", "phone") or not v:
+            continue
+        k_label = {
+            "HoVaTen": "Họ và tên",
+            "LanCuoiChiTra": "Lần cuối chi trả",
+            "DichVuLanCuoiSuDung": "Dịch vụ lần cuối",
+            "DichVuSuDungNhieuNhat": "Dịch vụ dùng nhiều nhất",
+            "TongSoLanQuayLai": "Số lần quay lại",
+            "days_since_last": "Số ngày chưa quay lại",
+        }.get(k, k)
+        data_lines.append(f"  - {k_label}: {v}")
+    recipients_data = "\n".join(data_lines)
+
+    # Build user prompt
+    user_prompt = (
+        f"{purpose_instruction}\n\n"
+        f"Danh sách khách:\n{recipients_data}"
+    )
+
+    payload = SmartContactComposePayload(
+        user_prompt=user_prompt,
+        mode="email",
+        recipients_data_context=recipients_data,
+        brand_id=None,  # brand resolved server-side
+    )
+
+    body = await _smart_contact_compose_text(payload, brand_context=brand_context)
+
+    # Subject: lấy từ brand slogan hoặc tên danh sách
+    if brand_context:
+        # Trích slogan từ brand_context để làm subject gợi ý
+        for line in brand_context.splitlines():
+            if line.startswith("Slogan / dòng phụ:"):
+                subject = line.split(":", 1)[1].strip()
+                if subject:
+                    body = body.rstrip()
+                    return {
+                        "name": name,
+                        "email": email_addr,
+                        "phone": phone,
+                        "subject": subject,
+                        "body": body,
+                    }
+    subject = f"Tin nhắn từ {list_name}"
+    return {
+        "name": name,
+        "email": email_addr,
+        "phone": phone,
+        "subject": subject,
+        "body": body,
+    }
+
+
+@router.post("/customer-lists/{customer_list_id}/smart-contact-batch")
+async def smart_contact_batch(
+    customer_list_id: uuid.UUID,
+    payload: SmartContactBatchPayload,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    list_result = await db.execute(
+        select(CustomerList).where(
+            CustomerList.id == customer_list_id,
+            CustomerList.user_id == current_user.id,
+        )
+    )
+    customer_list = list_result.scalar_one_or_none()
+    if not customer_list:
+        raise HTTPException(404, "Customer list không tồn tại")
+
+    if not payload.customers:
+        raise HTTPException(400, "Danh sách khách trống.")
+
+    valid_segments = {"churn_risk", "potential", "new", "vip"}
+    seg = (payload.segment or "churn_risk").strip().lower()
+    if seg not in valid_segments:
+        raise HTTPException(400, f"Segment không hợp lệ. Chọn: {', '.join(valid_segments)}.")
+
+    # Lọc đúng segment
+    filtered = [c for c in payload.customers if (c.get("segment") or "").strip().lower() == seg]
+    if not filtered:
+        raise HTTPException(400, f"Không có khách nào thuộc segment '{seg}' trong danh sách đã gửi.")
+
+    if len(filtered) > 200:
+        raise HTTPException(400, "Tối đa 200 khách mỗi lần soạn.")
+
+    # Resolve brand
+    brand_context: str | None = None
+    if payload.brand_id:
+        br_one = await db.execute(
+            select(Brand).where(Brand.id == payload.brand_id, Brand.user_id == current_user.id)
+        )
+        brand_row = br_one.scalar_one_or_none()
+        if brand_row:
+            brand_context = _format_brand_for_smart_contact(brand_row)
+    else:
+        br_latest = await db.execute(
+            select(Brand)
+            .where(Brand.user_id == current_user.id)
+            .order_by(Brand.updated_at.desc())
+            .limit(1)
+        )
+        brand_latest = br_latest.scalar_one_or_none()
+        if brand_latest:
+            brand_context = _format_brand_for_smart_contact(brand_latest)
+
+    purpose_key = (payload.purpose or "nhac_nhe").strip().lower()
+    if purpose_key not in OUTREACH_PURPOSE_INSTRUCTION:
+        purpose_key = "nhac_nhe"
+    purpose_instruction = OUTREACH_PURPOSE_INSTRUCTION[purpose_key]
+
+    # Compose song song cho tất cả khách
+    async def safe_compose(c: dict):
+        try:
+            return await _compose_single_email(
+                c, brand_context, purpose_instruction, customer_list.list_name
+            )
+        except Exception as exc:
+            return {
+                "name": (c.get("name") or "?").strip() or "?",
+                "email": (c.get("email") or "").strip(),
+                "phone": (c.get("phone") or "").strip(),
+                "subject": "Lỗi soạn",
+                "body": f"Lỗi: {str(exc)[:200]}",
+            }
+
+    results = await asyncio.gather(*[safe_compose(c) for c in filtered])
+    return {"results": list(results)}
+
+
+# ---------------------------------------------------------------------------
+# Smart Contact Batch Send — gửi email từ danh sách đã soạn
+# ---------------------------------------------------------------------------
+
+
+class BatchSendItem(BaseModel):
+    name: str = ""
+    email: str | None = None
+    phone: str | None = None
+    subject: str = ""
+    body: str = ""
+
+
+class SmartContactBatchSendPayload(BaseModel):
+    items: list[BatchSendItem]
+
+
+@router.post("/customer-lists/{customer_list_id}/smart-contact-batch-send")
+async def smart_contact_batch_send(
+    customer_list_id: uuid.UUID,
+    payload: SmartContactBatchSendPayload,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    list_result = await db.execute(
+        select(CustomerList).where(
+            CustomerList.id == customer_list_id,
+            CustomerList.user_id == current_user.id,
+        )
+    )
+    if not list_result.scalar_one_or_none():
+        raise HTTPException(404, "Customer list không tồn tại")
+
+    items = payload.items or []
+    if not items:
+        raise HTTPException(400, "Danh sách gửi trống.")
+    if len(items) > 200:
+        raise HTTPException(400, "Tối đa 200 người nhận mỗi lần gửi.")
+
+    if not settings.SMTP_HOST or not settings.SMTP_USER:
+        raise HTTPException(
+            503,
+            "Chưa cấu hình SMTP (SMTP_HOST, SMTP_USER trong .env).",
+        )
+    from services.campaign_delivery_service import send_smtp_sync
+
+    results: list[dict[str, str | None]] = []
+
+    for item in items:
+        email_addr = (item.email or "").strip()
+        name = (item.name or "").strip() or "bạn"
+        if not email_addr:
+            results.append({"to": name, "status": "skipped", "detail": "Thiếu email"})
+            continue
+
+        # Render template variables
+        r = QuickOutreachRecipient(
+            name=name,
+            email=email_addr,
+            phone=(item.phone or "").strip(),
+            variables={},
+        )
+        rendered_subject = _render_smart_contact_template(item.subject or "Thông báo", r)
+        rendered_body = _render_smart_contact_template(item.body or "", r)
+
+        safe_html = html.escape(rendered_body).replace("\n", "<br>\n")
+        html_body = f"<!DOCTYPE html><html><body><div>{safe_html}</div></body></html>"
+        try:
+            await asyncio.to_thread(send_smtp_sync, email_addr, rendered_subject, rendered_body, html_body)
+            results.append({"to": email_addr, "status": "sent", "detail": None})
+        except Exception as exc:
+            results.append({"to": email_addr, "status": "failed", "detail": str(exc)[:300]})
+
+    return {"results": results}

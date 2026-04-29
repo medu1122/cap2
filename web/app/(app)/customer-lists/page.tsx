@@ -23,12 +23,16 @@ import {
   Filter,
   Loader2,
   Mail,
+  Megaphone,
+  MessageSquare,
+  Palette,
   RefreshCw,
   Send,
   Sparkles,
   Star,
   StarOff,
   TrendingUp,
+  Type,
   UserPlus,
   Wrench,
   X,
@@ -2011,10 +2015,9 @@ export default function CustomerListsPage() {
                                     type="button"
                                     className="btn-primary text-[10px]"
                                     onClick={() => {
-                                      const list = recipientsFromAnalysisSegment("churn_risk");
                                       setAnalysisModalOpen(false);
                                       setSegmentHubPanel(null);
-                                      openQuickOutreach(list);
+                                      void router.push("/outreach/churn");
                                     }}
                                   >
                                     Gửi email nhóm có khả năng
@@ -2288,10 +2291,9 @@ export default function CustomerListsPage() {
                                       className="btn-secondary text-[11px]"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        const list = recipientsFromAnalysisSegment(item.id);
                                         setAnalysisModalOpen(false);
                                         setSegmentHubPanel(null);
-                                        openQuickOutreach(list);
+                                        void router.push(`/outreach/${item.id === "churn_risk" ? "churn" : item.id}`);
                                       }}
                                     >
                                       Liên hệ nhanh
@@ -2359,7 +2361,7 @@ export default function CustomerListsPage() {
                   </div>
                   <div className="min-w-0">
                     <h3 id="quick-outreach-title" className="text-[15px] font-semibold leading-tight text-slate-900">
-                      Gửi email — Smart Contact
+                      Gửi email
                     </h3>
                     <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
                       <span className="tabular-nums font-medium text-slate-700">{quickOutreachRecipients?.length ?? 0}</span>{" "}
@@ -2386,7 +2388,8 @@ export default function CustomerListsPage() {
 
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5">
               <div className="rounded-xl border border-slate-100 bg-white px-3 py-2.5 shadow-sm">
-                <label className="text-[11px] font-medium text-slate-600" htmlFor="smart-contact-campaign-pick">
+                <label className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600" htmlFor="smart-contact-campaign-pick">
+                  <Megaphone className="h-3.5 w-3.5 text-sky-500" />
                   Điền từ chiến dịch có sẵn
                 </label>
                 <select
@@ -2409,15 +2412,12 @@ export default function CustomerListsPage() {
                 </select>
                 {!quickOutreachCampaignsLoading && quickOutreachCampaignList.length === 0 ? (
                   <p className="mt-1 text-[10px] text-amber-700">Chưa có chiến dịch nào có kênh Email. Tạo chiến dịch ở mục Chiến dịch hoặc nhập tay bên dưới.</p>
-                ) : (
-                  <p className="mt-1 text-[10px] text-slate-500">
-                    Chọn để lấy tiêu đề và nội dung đã soạn trong chiến dịch (bản email đã tạo hoặc ít nhất mục tiêu / dịch vụ).
-                  </p>
-                )}
+                ) : null}
               </div>
 
               <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 px-3 py-2.5">
-                <label className="text-[11px] font-medium text-emerald-950" htmlFor="smart-contact-brand-pick">
+                <label className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-950" htmlFor="smart-contact-brand-pick">
+                  <Palette className="h-3.5 w-3.5 text-emerald-600" />
                   Hồ sơ thương hiệu (khi dùng AI)
                 </label>
                 <select
@@ -2440,15 +2440,14 @@ export default function CustomerListsPage() {
                   <p className="mt-1 text-[10px] text-amber-800">
                     Chưa có hồ sơ thương hiệu — tạo trong mục Brand Vault để AI soạn đúng ngành hình và giọng điệu.
                   </p>
-                ) : (
-                  <p className="mt-1 text-[10px] leading-snug text-emerald-950/85">
-                    Icon gợi ý AI sẽ căn theo profile này (mô tả, tone, dịch vụ…). Chọn thương hiệu cụ thể nếu bạn có nhiều hồ sơ.
-                  </p>
-                )}
+                ) : null}
               </div>
 
               <div className="rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2.5">
-                <label className="text-[11px] font-medium text-slate-600">Tiêu đề email</label>
+                <label className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600">
+                  <Type className="h-3.5 w-3.5 text-slate-400" />
+                  Tiêu đề email
+                </label>
                 <input
                   type="text"
                   className="input mt-1 w-full text-sm"
@@ -2460,7 +2459,10 @@ export default function CustomerListsPage() {
               </div>
 
               <div>
-                <label className="text-[11px] font-medium text-slate-600">Nội dung</label>
+                <label className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600">
+                  <Mail className="h-3.5 w-3.5 text-slate-400" />
+                  Nội dung
+                </label>
                 <div ref={aiMenuWrapRef} className="relative mt-1">
                   <textarea
                     ref={quickOutreachTextareaRef}
@@ -2530,9 +2532,6 @@ export default function CustomerListsPage() {
                     </div>
                   ) : null}
                 </div>
-                <p className="mt-1.5 text-[10px] leading-snug text-slate-500">
-                  Không cần chèn biến tay: khi gọi AI, hệ thống gửi kèm họ tên, ngày, dịch vụ… của khách đã chọn.
-                </p>
               </div>
 
               <div className="rounded-xl border border-slate-200/80 bg-slate-50/90 px-3 py-2.5">

@@ -19,6 +19,7 @@ from .insight_report_run import InsightReportRun
 from .insight_report_schema_map import InsightReportSchemaMap
 from .insight_agent_trace import InsightAgentTrace
 from .insight_result_snapshot import InsightResultSnapshot
+from .customer_analysis_snapshot import CustomerAnalysisSnapshot
 
 __all__ = [
     "User",
