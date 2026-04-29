@@ -196,7 +196,7 @@ def analyze_customer_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     if segment_summary["churn_risk"] > 0:
         suggested_actions.append(
             {
-                "title": "Kích hoạt lại nhóm nguy cơ rời bỏ",
+                "title": "Kích hoạt lại nhóm có khả năng rời bỏ cao",
                 "priority": "high",
                 "target_segment": "churn_risk",
                 "goal": "Tăng khách quay lại trong 7 ngày",

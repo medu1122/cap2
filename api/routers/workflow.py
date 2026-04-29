@@ -391,6 +391,8 @@ class SmartContactComposePayload(BaseModel):
     context_one_liner: str | None = None
     # Tóm tắt khách đã chọn (tự build từ bảng) — đưa vào system để model không cần user chọn biến tay
     recipients_data_context: str | None = None
+    # Hồ sơ thương hiệu trong Brand Vault — không gửi thì server dùng bản user cập nhật gần nhất (nếu có)
+    brand_id: uuid.UUID | None = None
 
 
 def _render_smart_contact_template(text: str, r: QuickOutreachRecipient) -> str:
@@ -403,6 +405,40 @@ def _render_smart_contact_template(text: str, r: QuickOutreachRecipient) -> str:
     for key in sorted(merged.keys(), key=len, reverse=True):
         out = out.replace("{{" + key + "}}", merged[key])
     return out
+
+
+def _format_brand_for_smart_contact(brand: Brand) -> str:
+    """Gọn, tiếng Việt — đưa vào system prompt Smart Contact."""
+    parts: list[str] = []
+    parts.append(f"Tên thương hiệu: {brand.brand_name.strip()}")
+    if (brand.tagline or "").strip():
+        parts.append(f"Slogan / dòng phụ: {(brand.tagline or '').strip()[:400]}")
+    bd = (brand.brand_description or "").strip()
+    if bd:
+        parts.append(f"Mô tả ngành hình & giá trị: {bd[:1600]}")
+    parts.append(f"Giọng điệu (tone_of_voice): {(brand.tone_of_voice or '').strip()}")
+    ta = (brand.target_audience or "").strip()
+    if ta:
+        parts.append(f"Khách hàng mục tiêu: {ta[:900]}")
+    if brand.key_products:
+        kp = ", ".join(str(x).strip() for x in brand.key_products[:24] if x and str(x).strip())
+        if kp:
+            parts.append(f"Dịch vụ / sản phẩm chính (tham khảo khi viết): {kp}")
+    if (brand.preferred_salutation or "").strip():
+        parts.append(f"Cách chào / xưng hô ưu tiên: {brand.preferred_salutation.strip()}")
+    if (brand.preferred_cta or "").strip():
+        parts.append(f"CTA gợi ý (có thể dùng nhẹ nếu phù hợp): {brand.preferred_cta.strip()}")
+    if brand.forbidden_words:
+        fw = ", ".join(str(x).strip() for x in brand.forbidden_words[:30] if x and str(x).strip())
+        if fw:
+            parts.append(f"Tuyệt đối không dùng các từ/cụm: {fw}")
+    sp = (brand.sample_post or "").strip()
+    if sp:
+        parts.append(
+            "Tham khảo phong cách (viết mới theo yêu cầu mail, không copy dán):\n"
+            f"{sp[:700]}",
+        )
+    return "\n".join(parts)
 
 
 def _normalize_smart_contact_compose_output(raw: str, mode: str) -> str:
@@ -438,6 +474,7 @@ def _smart_contact_compose_system_prompt(
     mode: str,
     context_one_liner: str | None,
     recipients_data: str | None,
+    brand_context: str | None,
 ) -> str:
     channel_rules = (
         "ĐỊNH DẠNG SMS:\n"
@@ -445,43 +482,58 @@ def _smart_contact_compose_system_prompt(
         "- Không mở đầu «Kính gửi» dài dòng.\n"
         if mode == "sms"
         else "ĐỊNH DẠNG EMAIL:\n"
-        "- 2–5 câu ngắn; có thể ngắt đoạn bằng một dòng trống; không lan man.\n"
-        "- Không ghi dòng «Tiêu đề:» (tiêu đề do người dùng nhập riêng trên giao diện).\n"
+        "- 3–8 câu được phép nếu cần làm rõ giá trị và ngành hình; có thể ngắt đoạn bằng một dòng trống.\n"
+        "- Không ghi dòng «Tiêu đề:» trong nội dung (tiêu đề do form riêng).\n"
+        "- Nội dung phải «có thịt»: gợi đúng loại hình kinh doanh từ HỒ SƠ THƯƠNG HIỆU (khi có); tránh câu chung chung áp dụng được cho mọi shop.\n"
     )
-    base = (
-        "Bạn là trợ lý soạn tin chăm sóc khách bằng tiếng Việt (có dấu), phong cách chủ spa / cửa hàng SME.\n\n"
-        "ĐẦU RA (bắt buộc):\n"
-        "- Chỉ trả về đúng nội dung gửi khách, plain text.\n"
-        "- Không markdown, không bullet, không đánh số, không khung code.\n"
-        "- Không thêm lời dẫn («Dưới đây là…», «Nội dung:», «Chào bạn, đây là…» trước bản thân nội dung).\n"
-        "- Giọng thân thiện, tự nhiên; tránh cứng nhắc.\n"
-        "- Có thể giữ biến để cá nhân hóa khi hợp lý (đúng chính tả, hai ngoặc nhọn mỗi bên): "
+    role = (
+        "Bạn là người viết email chăm sóc khách một-một, tiếng Việt có dấu.\n\n"
+        if brand_context
+        else "Bạn là người viết email chăm sóc khách một-một (tiếng Việt có dấu), phong cách thân thiện, phù hợp chủ cửa hàng / dịch vụ địa phương khi không có hồ sơ thương hiệu đủ chi tiết.\n\n"
+    )
+    base = role
+    if brand_context:
+        base += (
+            "════════════════════════════════════════\n"
+            "HỒ SƠ THƯƠNG HIỆU (Brand Vault — bắt buộc áp dụng)\n"
+            "════════════════════════════════════════\n"
+            f"{brand_context[:2800]}\n\n"
+            "Yêu cầu đối với đoạn email:\n"
+            "- Thể hiện đúng ngành hình và cách đứng thương hiệu (không chỉ «xin chào quý khách» vô căn).\n"
+            "- Bám giọng điệu và xưng hô trong hồ sơ.\n"
+            "- Nếu có dịch vụ/sản phẩm chính trong hồ sơ, có thể nhắc tự nhiên (đúng chức năng), không ép bán hàng gượng ép.\n"
+            "- Tuyệt đối tôn trọng các từ/khối đã liệt kê là không dùng (nếu có).\n\n"
+        )
+    base += (
+        "ĐẦU RA:\n"
+        "- Chỉ trả về đúng nội dung gửi khách (plain text). Không markdown, không bullet có dấu -/• kiểu list dài.\n"
+        "- Không lời dẫn meta («Dưới đây là…», «Nội dung:», «Đây là email…»).\n"
+        "- Có thể dùng biến placeholder khi hợp lý (giữ hai ngoặc nhọn): "
         "{{HoVaTen}}, {{phone}}, {{LanCuoiChiTra}}, {{days_since_last}}, "
         "{{DichVuLanCuoiSuDung}}, {{DichVuSuDungNhieuNhat}}, {{TongSoLanQuayLai}}.\n\n"
-        "CẤM (trừ khi trong YÊU CẦU người dùng nói rõ muốn nhắc khuyến mãi):\n"
-        "- Hứa giảm giá, voucher, tặng kèm, flash sale, «ưu đãi đặc biệt».\n\n"
-        "DỮ LIỆU:\n"
-        "- Không bịa ngày, số tiền, tên dịch vụ cụ thể nếu không có trong ngữ cảnh; "
-        "khi thiếu thì viết chung chung hoặc dùng placeholder ở trên.\n\n"
+        "KHÔNG tự nhắc khuyến mãi, giảm giá, voucher — trừ khi trong YÊU CẦU NGƯỜI DÙNG có nói rõ.\n"
+        "- Không bịa ngày, số tiền, chi nhánh không có trong dữ liệu khách (khi có khối dữ liệu khách bên dưới).\n\n"
         f"{channel_rules}\n"
     )
     if recipients_data:
         base += (
-            "\nDỮ LIỆU KHÁCH (từ hệ thống — chỉ dùng để cá nhân hóa; không tự bịa thêm người hay số liệu ngoài danh sách):\n"
+            "\nDỮ LIỆU KHÁCH (từ hệ thống — chỉ cá nhân hóa, không thêm khách không có trong danh sách):\n"
             f"{recipients_data[:2800]}\n"
         )
     elif context_one_liner:
         base += (
-            "Ngữ cảnh một khách mẫu (chỉ tham khảo, không tự thêm chi tiết không có): "
+            "Ngữ cảnh một khách mẫu (chỉ tham khảo): "
             f"{context_one_liner[:500]}\n"
         )
-    base += (
-        "\nTuân thủ toàn bộ quy tắc. Trả lời bằng đúng một khối nội dung gửi khách.\n"
-    )
+    base += "\nTrả về một khối nội dung email hoàn chỉnh, không giải thích thêm.\n"
     return base
 
 
-async def _smart_contact_compose_text(payload: SmartContactComposePayload) -> str:
+async def _smart_contact_compose_text(
+    payload: SmartContactComposePayload,
+    *,
+    brand_context: str | None = None,
+) -> str:
     up = (payload.user_prompt or "").strip()
     if not up:
         raise HTTPException(400, "Nhập yêu cầu soạn nội dung.")
@@ -490,17 +542,19 @@ async def _smart_contact_compose_text(payload: SmartContactComposePayload) -> st
     rd = (payload.recipients_data_context or "").strip() or None
     if rd and len(rd) > 4000:
         raise HTTPException(400, "Dữ liệu ngữ cảnh khách quá dài.")
+    if brand_context and len(brand_context) > 4500:
+        raise HTTPException(400, "Dữ liệu thương hiệu quá dài.")
     mode = (payload.mode or "email").strip().lower()
     if mode not in ("email", "sms"):
         mode = "email"
     ctx = (payload.context_one_liner or "").strip() or None
-    sys = _smart_contact_compose_system_prompt(mode, ctx, rd)
+    sys = _smart_contact_compose_system_prompt(mode, ctx, rd, brand_context.strip() if brand_context else None)
     user_block = f"YÊU CẦU CỦA NGƯỜI DÙNG:\n{up}"
     messages = [
         {"role": "system", "content": sys},
         {"role": "user", "content": user_block},
     ]
-    temp = 0.32 if mode == "sms" else 0.38
+    temp = 0.32 if mode == "sms" else (0.42 if brand_context else 0.38)
     try:
         resp = await asyncio.wait_for(
             _qwen.chat.completions.create(
@@ -1326,7 +1380,27 @@ async def customer_list_smart_contact_compose(
     )
     if not list_result.scalar_one_or_none():
         raise HTTPException(404, "Customer list không tồn tại")
-    text = await _smart_contact_compose_text(payload)
+
+    brand_context: str | None = None
+    if payload.brand_id:
+        br_one = await db.execute(
+            select(Brand).where(Brand.id == payload.brand_id, Brand.user_id == current_user.id)
+        )
+        brand_row = br_one.scalar_one_or_none()
+        if brand_row:
+            brand_context = _format_brand_for_smart_contact(brand_row)
+    else:
+        br_latest = await db.execute(
+            select(Brand)
+            .where(Brand.user_id == current_user.id)
+            .order_by(Brand.updated_at.desc())
+            .limit(1)
+        )
+        brand_latest = br_latest.scalar_one_or_none()
+        if brand_latest:
+            brand_context = _format_brand_for_smart_contact(brand_latest)
+
+    text = await _smart_contact_compose_text(payload, brand_context=brand_context)
     return {"text": text}
 
 

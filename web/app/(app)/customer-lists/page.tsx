@@ -162,7 +162,7 @@ const COLUMN_LABELS: Record<string, string> = {
 };
 
 const SEGMENT_FRIENDLY: Record<string, string> = {
-  churn_risk: "Nguy cơ rời bỏ",
+  churn_risk: "Khả năng rời bỏ",
   vip: "VIP",
   potential: "Tiềm năng",
   new: "Khách mới",
@@ -196,7 +196,7 @@ function buildAnalysisInsightBullets(analysis: CustomerAnalysisResponse["analysi
     lines.push(`⚠️ ${inactive30} khách >30 ngày không quay lại${suffix}`);
   }
   if (s.churn_risk > 0) {
-    lines.push(`🔥 ${s.churn_risk} khách nguy cơ rời bỏ`);
+    lines.push(`🔥 ${s.churn_risk} khách có khả năng rời bỏ`);
   }
   if (s.vip > 0) {
     lines.push(`💰 ${s.vip} khách VIP giá trị cao`);
@@ -255,16 +255,17 @@ type OutreachAiPurposeKey = keyof typeof OUTREACH_TEMPLATES;
 
 const OUTREACH_AI_INSTRUCTION: Record<OutreachAiPurposeKey, string> = {
   nhac_nhe:
-    "Mục đích: nhắc khách đã lâu chưa quay lại — giọng nhẹ, không gây áp lực; không nhắc khuyến mãi trừ khi bản nháp đã có.",
+    "Mục đích: nhắc khách đã lâu chưa quay lại — nhẹ nhàng, không gây áp lực; thể hiện đúng loại hình & giọng trong hồ sơ thương hiệu; không nhắc khuyến mãi trừ khi bản nháp đã có.",
   cham_soc:
-    "Mục đích: hỏi thăm trải nghiệm lần gần nhất, thể hiện quan tâm chân thành.",
+    "Mục đích: hỏi thăm trải nghiệm lần gần nhất, đúng ngữ cảnh dịch vụ trong hồ sơ thương hiệu, quan tâm chân thành.",
   kich_hoat:
-    "Mục đích: mời khách ghé lại (có cải tiến / làm mới), không hứa hẹn giá hay ưu đãi.",
-  khach_moi: "Mục đích: chào khách mới, cảm ơn, sẵn sàng hỗ trợ — ngắn gọn.",
+    "Mục đích: mời khách ghé lại có lý do (cập nhật / trải nghiệm) gắn với giá trị thương hiệu, không hứa giá hay ưu đãi.",
+  khach_moi:
+    "Mục đích: chào khách mới, giọng và cách nhắc phù hợp Brand Vault — ngắn, rõ.",
 };
 
 const REFINE_DRAFT_INSTRUCTION =
-  "Mục đích: hoàn thiện bản nháp người dùng — chỉnh cho súc tích, thân thiện; dùng biến {{HoVaTen}}, {{days_since_last}}, {{DichVuLanCuoiSuDung}}, {{DichVuSuDungNhieuNhat}}, v.v. khi hợp lý với dữ liệu từng khách. Không thêm khuyến mãi nếu bản nháp không có.";
+  "Mục đích: hoàn thiện bản nháp — súc tích, đúng giọng hồ sơ thương hiệu; dùng biến {{HoVaTen}}, {{days_since_last}}, {{DichVuLanCuoiSuDung}}, v.v. khi hợp lệ với dữ liệu khách; không thêm khuyến mãi nếu bản nháp không có.";
 
 function parseLastPaymentDate(raw: string): Date | null {
   const s = raw.trim();
@@ -380,7 +381,7 @@ function getCampaignActionForSegment(
     }
   > = {
     churn_risk: {
-      title: "Kích hoạt lại nhóm nguy cơ",
+      title: "Kích hoạt lại nhóm có khả năng rời bỏ cao",
       target_segment: "churn_risk",
       priority: "high",
       goal: "Kéo khách quay lại trong 7 ngày tới.",
@@ -601,6 +602,16 @@ export default function CustomerListsPage() {
   const quickOutreachTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const aiMenuWrapRef = useRef<HTMLDivElement | null>(null);
 
+  /** Chiến dịch có kênh email — dùng điền nhanh tiêu đề/nội dung trong Smart Contact */
+  const [quickOutreachCampaignList, setQuickOutreachCampaignList] = useState<
+    Array<{ id: string; campaign_name: string; channels: string[] }>
+  >([]);
+  const [quickOutreachCampaignsLoading, setQuickOutreachCampaignsLoading] = useState(false);
+  /** "" = không gắn chiến dịch */
+  const [smartContactCampaignId, setSmartContactCampaignId] = useState("");
+  /** Hồ sơ thương hiệu gửi kèm API AI — "" = server dùng bản mới nhất */
+  const [smartContactBrandList, setSmartContactBrandList] = useState<Array<{ id: string; brand_name: string }>>([]);
+  const [smartContactBrandPick, setSmartContactBrandPick] = useState("");
   useEffect(() => {
     if (!aiPurposeMenuOpen) return;
     const onDocMouseDown = (e: MouseEvent) => {
@@ -610,6 +621,24 @@ export default function CustomerListsPage() {
     document.addEventListener("mousedown", onDocMouseDown);
     return () => document.removeEventListener("mousedown", onDocMouseDown);
   }, [aiPurposeMenuOpen]);
+
+  /** Khi mở form gửi mail: load chiến dịch (email), hồ sơ thương hiệu; reset dropdown */
+  useEffect(() => {
+    if (!quickOutreachOpen) return;
+    setSmartContactCampaignId("");
+    setSmartContactBrandPick("");
+    setQuickOutreachCampaignsLoading(true);
+    Promise.all([
+      api
+        .get<Array<{ id: string; campaign_name: string; channels: string[] }>>("/campaigns")
+        .then((rows) => setQuickOutreachCampaignList(rows.filter((c) => (c.channels || []).includes("email"))))
+        .catch(() => setQuickOutreachCampaignList([])),
+      api
+        .get<Array<{ id: string; brand_name: string }>>("/brands")
+        .then(setSmartContactBrandList)
+        .catch(() => setSmartContactBrandList([])),
+    ]).finally(() => setQuickOutreachCampaignsLoading(false));
+  }, [quickOutreachOpen]);
 
   const allColumns = useMemo(() => {
     const extra = new Set<string>();
@@ -709,7 +738,7 @@ export default function CustomerListsPage() {
     return [
       { name: "VIP", value: s.vip, fill: "#7c3aed" },
       { name: "Tiềm năng", value: s.potential, fill: "#0ea5e9" },
-      { name: "Nguy cơ rời bỏ", value: s.churn_risk, fill: "#ef4444" },
+      { name: "Khả năng rời bỏ", value: s.churn_risk, fill: "#ef4444" },
       { name: "Khách mới", value: s.new, fill: "#22c55e" },
     ];
   }, [analysisResult]);
@@ -754,14 +783,14 @@ export default function CustomerListsPage() {
       return [
         { name: "VIP", key: "vip", value: 0, fill: "#7c3aed" },
         { name: "Tiềm năng", key: "potential", value: 0, fill: "#0ea5e9" },
-        { name: "Nguy cơ rời bỏ", key: "churn_risk", value: 0, fill: "#ef4444" },
+        { name: "Khả năng rời bỏ", key: "churn_risk", value: 0, fill: "#ef4444" },
         { name: "Khách mới", key: "new", value: 0, fill: "#22c55e" },
       ];
     }
     return [
       { name: "VIP", key: "vip", value: r.vip, fill: "#7c3aed" },
       { name: "Tiềm năng", key: "potential", value: r.potential, fill: "#0ea5e9" },
-      { name: "Nguy cơ rời bỏ", key: "churn_risk", value: r.churn_risk, fill: "#ef4444" },
+      { name: "Khả năng rời bỏ", key: "churn_risk", value: r.churn_risk, fill: "#ef4444" },
       { name: "Khách mới", key: "new", value: r.new, fill: "#22c55e" },
     ];
   }, [analysisResult]);
@@ -1250,6 +1279,7 @@ export default function CustomerListsPage() {
           user_prompt,
           mode: "email",
           recipients_data_context: dataCtx || undefined,
+          ...(smartContactBrandPick.trim() ? { brand_id: smartContactBrandPick.trim() } : {}),
         },
       );
       setQuickOutreachBody(res.text);
@@ -1258,6 +1288,40 @@ export default function CustomerListsPage() {
       setMessage(e instanceof Error ? e.message : "AI không soạn được.");
     } finally {
       setSmartComposeLoading(false);
+    }
+  }
+
+  /** Lấy nội dung email đã tạo trong chiến dịch — ưu tiên bản nháp kênh Email, thiếu thì gom mục tiêu/dịch vụ */
+  async function applyCampaignContentToSmartContact(campaignId: string) {
+    if (!campaignId) return;
+    try {
+      const detail = await api.get<{
+        campaign_name: string;
+        objective: string;
+        product_or_service?: string | null;
+        brand_id?: string | null;
+        content_items: Array<{ channel: string; content_json: Record<string, unknown> }>;
+      }>(`/campaigns/${campaignId}`);
+      const emailItem = detail.content_items.find((ci) => ci.channel === "email");
+      const cj = emailItem?.content_json;
+      let subject = "";
+      let body = "";
+      if (cj && typeof cj.subject === "string") subject = cj.subject.trim();
+      if (cj && typeof cj.body === "string") body = cj.body.trim();
+      if (!subject) subject = detail.campaign_name;
+      if (!body) {
+        const chunks = [detail.objective, detail.product_or_service || ""].map((s) => String(s || "").trim()).filter(Boolean);
+        body = chunks.join("\n\n");
+      }
+      setQuickOutreachSubject(subject || detail.campaign_name);
+      setQuickOutreachBody(body);
+      if (detail.brand_id) {
+        setSmartContactBrandPick(detail.brand_id);
+      }
+      setMessage("Đã điền tiêu đề và nội dung từ chiến dịch. Kiểm tra trước khi gửi.");
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Không tải được chiến dịch.");
+      setSmartContactCampaignId("");
     }
   }
 
@@ -1301,7 +1365,7 @@ export default function CustomerListsPage() {
         .filter(Boolean),
     );
     if (churnNamesLower.size === 0) {
-      setMessage("Phân tích không có khách thuộc nhóm nguy cơ rời bỏ.");
+      setMessage("Phân tích không có khách thuộc nhóm có khả năng rời bỏ.");
       return;
     }
     const targets = rows
@@ -1313,7 +1377,7 @@ export default function CustomerListsPage() {
       }))
       .filter((t) => t.customer_name);
     if (targets.length === 0) {
-      setMessage("Không khớp dòng bảng với tên khách nguy cơ trong phân tích. Kiểm tra cột họ tên.");
+      setMessage("Không khớp dòng bảng với tên khách có khả năng rời bỏ trong phân tích. Kiểm tra cột họ tên.");
       return;
     }
     setApplyingChurnPriority(true);
@@ -1338,7 +1402,7 @@ export default function CustomerListsPage() {
       });
       setOnlyPriorityTableView(true);
       setAnalysisTableSegmentFilter("churn_risk");
-      setMessage(`Đã đánh dấu ưu tiên ${targets.length} khách (nhóm nguy cơ theo phân tích) và bật lọc bảng.`);
+      setMessage(`Đã đánh dấu ưu tiên ${targets.length} khách (theo nhóm có khả năng rời bỏ trong phân tích) và bật lọc bảng.`);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Không áp dụng được ưu tiên từ phân tích.");
     } finally {
@@ -1904,11 +1968,11 @@ export default function CustomerListsPage() {
                               <p className="text-sm font-semibold text-gray-900 leading-snug">
                                 {seg.churn_risk > 0 ? (
                                   <>
-                                    <span className="text-red-600">⚠️</span> Nguy cơ (rule):{" "}
+                                    <span className="text-red-600">⚠️</span> Khả năng (rule):{" "}
                                     <span className="tabular-nums">{seg.churn_risk}</span> khách
                                   </>
                                 ) : (
-                                  "✅ Không có nguy cơ đáng kể (rule)"
+                                  "✅ Không có khả năng rời bỏ đáng kể (rule)"
                                 )}
                               </p>
                               <p className="text-[10px] text-gray-600 mt-1.5 tabular-nums">
@@ -1938,10 +2002,10 @@ export default function CustomerListsPage() {
                                     onClick={() => {
                                       setAnalysisTableSegmentFilter("churn_risk");
                                       setAnalysisModalOpen(false);
-                                      setMessage("Đã bật lọc nhóm nguy cơ trên bảng.");
+                                      setMessage("Đã bật lọc nhóm có khả năng rời bỏ trên bảng.");
                                     }}
                                   >
-                                    Lọc nhóm nguy cơ
+                                    Lọc nhóm có khả năng
                                   </button>
                                   <button
                                     type="button"
@@ -1953,7 +2017,7 @@ export default function CustomerListsPage() {
                                       openQuickOutreach(list);
                                     }}
                                   >
-                                    Gửi email nhóm nguy cơ
+                                    Gửi email nhóm có khả năng
                                   </button>
                                 </div>
                               ) : null}
@@ -2092,7 +2156,7 @@ export default function CustomerListsPage() {
                             },
                             {
                               id: "churn_risk" as const,
-                              label: "Nguy cơ",
+                              label: "Khả năng",
                               count: analysisResult.analysis.segmentation.summary.churn_risk,
                             },
                             { id: "new" as const, label: "Khách mới", count: analysisResult.analysis.segmentation.summary.new },
@@ -2143,7 +2207,7 @@ export default function CustomerListsPage() {
                                 },
                                 {
                                   id: "churn_risk" as const,
-                                  label: "Nguy cơ rời bỏ",
+                                  label: "Khả năng rời bỏ",
                                   count: analysisResult.analysis.segmentation.summary.churn_risk,
                                 },
                                 { id: "new" as const, label: "Khách mới", count: analysisResult.analysis.segmentation.summary.new },
@@ -2299,7 +2363,7 @@ export default function CustomerListsPage() {
                     </h3>
                     <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
                       <span className="tabular-nums font-medium text-slate-700">{quickOutreachRecipients?.length ?? 0}</span>{" "}
-                      người nhận · dữ liệu khách đã chọn được đưa vào AI tự động khi bạn dùng icon gợi ý.
+                      người nhận
                     </p>
                   </div>
                 </div>
@@ -2321,6 +2385,68 @@ export default function CustomerListsPage() {
             </header>
 
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5">
+              <div className="rounded-xl border border-slate-100 bg-white px-3 py-2.5 shadow-sm">
+                <label className="text-[11px] font-medium text-slate-600" htmlFor="smart-contact-campaign-pick">
+                  Điền từ chiến dịch có sẵn
+                </label>
+                <select
+                  id="smart-contact-campaign-pick"
+                  className="input mt-1 w-full text-sm"
+                  value={smartContactCampaignId}
+                  disabled={quickOutreachSending || quickOutreachCampaignsLoading}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setSmartContactCampaignId(id);
+                    if (id) void applyCampaignContentToSmartContact(id);
+                  }}
+                >
+                  <option value="">{quickOutreachCampaignsLoading ? "Đang tải…" : "— Chọn chiến dịch (tuỳ chọn) —"}</option>
+                  {quickOutreachCampaignList.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.campaign_name}
+                    </option>
+                  ))}
+                </select>
+                {!quickOutreachCampaignsLoading && quickOutreachCampaignList.length === 0 ? (
+                  <p className="mt-1 text-[10px] text-amber-700">Chưa có chiến dịch nào có kênh Email. Tạo chiến dịch ở mục Chiến dịch hoặc nhập tay bên dưới.</p>
+                ) : (
+                  <p className="mt-1 text-[10px] text-slate-500">
+                    Chọn để lấy tiêu đề và nội dung đã soạn trong chiến dịch (bản email đã tạo hoặc ít nhất mục tiêu / dịch vụ).
+                  </p>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 px-3 py-2.5">
+                <label className="text-[11px] font-medium text-emerald-950" htmlFor="smart-contact-brand-pick">
+                  Hồ sơ thương hiệu (khi dùng AI)
+                </label>
+                <select
+                  id="smart-contact-brand-pick"
+                  className="input mt-1 w-full text-sm"
+                  value={smartContactBrandPick}
+                  disabled={quickOutreachSending || quickOutreachCampaignsLoading}
+                  onChange={(e) => setSmartContactBrandPick(e.target.value)}
+                >
+                  <option value="">
+                    {quickOutreachCampaignsLoading ? "Đang tải…" : "— Mặc định: hồ sơ cập nhật gần nhất —"}
+                  </option>
+                  {smartContactBrandList.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.brand_name}
+                    </option>
+                  ))}
+                </select>
+                {!quickOutreachCampaignsLoading && smartContactBrandList.length === 0 ? (
+                  <p className="mt-1 text-[10px] text-amber-800">
+                    Chưa có hồ sơ thương hiệu — tạo trong mục Brand Vault để AI soạn đúng ngành hình và giọng điệu.
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[10px] leading-snug text-emerald-950/85">
+                    Icon gợi ý AI sẽ căn theo profile này (mô tả, tone, dịch vụ…). Chọn thương hiệu cụ thể nếu bạn có nhiều hồ sơ.
+                  </p>
+                )}
+              </div>
+
               <div className="rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2.5">
                 <label className="text-[11px] font-medium text-slate-600">Tiêu đề email</label>
                 <input
@@ -2687,17 +2813,17 @@ export default function CustomerListsPage() {
                     <div className="space-y-2">
                       {showPrioritySuggestion ? (
                         <p className="border-l-4 border-amber-500 pl-2 leading-snug text-amber-950">
-                          Tỷ lệ nhóm nguy cơ rời bỏ đang cao. Có thể{" "}
+                          Tỷ lệ nhóm có khả năng rời bỏ đang cao. Có thể{" "}
                           <strong>đánh dấu ưu tiên tự động</strong> theo kết quả phân tích (rule), rồi lọc bảng.
                         </p>
                       ) : (analysisResult.analysis.segmentation.summary.churn_risk ?? 0) > 0 ? (
                         <p className="leading-snug text-gray-700">
-                          Có {analysisResult.analysis.segmentation.summary.churn_risk} khách thuộc nhóm nguy cơ trong
+                          Có {analysisResult.analysis.segmentation.summary.churn_risk} khách thuộc nhóm có khả năng rời bỏ trong
                           phân tích — bạn có thể đánh dấu ưu tiên tự động khớp họ tên trên bảng.
                         </p>
                       ) : (
                         <p className="leading-snug text-gray-700">
-                          Tỷ lệ nhóm nguy cơ rời bỏ trong danh sách đang ở mức chưa cần báo động.
+                          Tỷ lệ nhóm có khả năng rời bỏ trong danh sách đang ở mức chưa đáng lo.
                         </p>
                       )}
                       {(analysisResult.analysis.segmentation.summary.churn_risk ?? 0) > 0 ? (
@@ -2711,7 +2837,7 @@ export default function CustomerListsPage() {
                             {applyingChurnPriority ? (
                               <Loader2 size={14} className="animate-spin shrink-0" />
                             ) : null}
-                            {applyingChurnPriority ? "Đang áp dụng…" : "Đánh dấu nhóm nguy cơ & bật lọc"}
+                            {applyingChurnPriority ? "Đang áp dụng…" : "Đánh dấu nhóm có khả năng & bật lọc"}
                           </button>
                           <p className="text-[10px] leading-snug text-gray-500">
                             Dựa trên phân nhóm rule (không dùng LLM). Khớp theo họ tên với bảng đang mở.
