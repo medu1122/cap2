@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from routers import auth, brands, campaigns, content, calendar, dashboard, workflow, internal, insights, tracking
+from routers import auth, brands, campaigns, content, calendar, dashboard, workflow, internal, insights, tracking, campaign_idea
 from core.config import settings
 from services.calendar_reminder_service import send_today_calendar_reminders
 from services.workflow_scheduler_service import run_due_workflow_schedules
@@ -57,6 +57,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(brands.router, prefix="/brands", tags=["brands"])
 app.include_router(campaigns.router, prefix="/campaigns", tags=["campaigns"])
+app.include_router(campaign_idea.router, prefix="/campaign-ideas", tags=["campaign-ideas"])
 app.include_router(content.router, prefix="/content", tags=["content"])
 app.include_router(calendar.router, prefix="/calendar", tags=["calendar"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])

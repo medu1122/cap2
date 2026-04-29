@@ -1,6 +1,6 @@
 "use client";
-import { use, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { useRouter, useParams } from "next/navigation";
 import {
   Mail,
   Send,
@@ -99,7 +99,7 @@ const SEGMENT_TAB_LABELS: Record<string, string> = {
 const PURPOSE_OPTIONS: Array<{ key: string; label: string }> = [
   { key: "nhac_nhe", label: "Nhắc khách quay lại" },
   { key: "cham_soc", label: "Chăm sóc, hỏi thăm" },
-  { key: "kich_hoat", label: "Kích hoạt ghé lại" },
+  { key: "kích_hoạt", label: "Khách quay trở lại" },
   { key: "khach_moi", label: "Chào khách mới" },
 ];
 
@@ -311,13 +311,12 @@ function EmailCard({ item, onSubjectChange, onBodyChange, onResend, onSend }: Em
 
 /* ── Main Page ───────────────────────────────────────────────────────────── */
 
-export default function OutreachSegmentPage({
-  params,
-}: {
-  params: Promise<{ segment: string }>;
-}) {
-  const { segment: rawSegment } = use(params);
+export default function OutreachSegmentPage() {
+  const params = useParams();
   const router = useRouter();
+
+  // Get segment from URL params
+  const rawSegment = params?.segment as string || "churn";
 
   // Normalize segment
   const segment: OutreachSegment =
@@ -330,18 +329,112 @@ export default function OutreachSegmentPage({
   // Active list
   const [activeListId, setActiveListId] = useState<string | null>(null);
   const [activeListName, setActiveListName] = useState("");
+  const [allLists, setAllLists] = useState<CustomerList[]>([]);
   const [rows, setRows] = useState<CustomerRow[]>([]);
   const [analysis, setAnalysis] = useState<CustomerAnalysis | null>(null);
   const [noAnalysis, setNoAnalysis] = useState(false);
   const [brands, setBrands] = useState<BrandOption[]>([]);
-  const [brandPick, setBrandPick] = useState("");
-  const [purpose, setPurpose] = useState("nhac_nhe");
+  const [brandPick, setBrandPick] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("outreach_brand_pick") || "";
+    }
+    return "";
+  });
+  const [purpose, setPurpose] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("outreach_purpose") || "nhac_nhe";
+    }
+    return "nhac_nhe";
+  });
   const [composing, setComposing] = useState(false);
   const [sendingAll, setSendingAll] = useState(false);
   const [message, setMessage] = useState("");
   const [initialLoading, setInitialLoading] = useState(true);
   const [emails, setEmails] = useState<EmailItem[]>([]);
+  const [listSelectorOpen, setListSelectorOpen] = useState(false);
   const sendingRef = useRef<Set<string>>(new Set());
+
+  // Helper to clear draft for a sent email
+  function clearDraftForEmail(emailId: string) {
+    if (!activeListId || !segment) return;
+    const key = `outreach_drafts_${activeListId}_${segment}`;
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved) as EmailItem[];
+          const filtered = parsed.filter((e) => e.id !== emailId);
+          if (filtered.length > 0) {
+            localStorage.setItem(key, JSON.stringify(filtered));
+          } else {
+            localStorage.removeItem(key);
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      }
+    }
+  }
+
+  // Helper to clear all drafts for current list/segment
+  function clearAllDrafts() {
+    if (!activeListId || !segment) return;
+    const key = `outreach_drafts_${activeListId}_${segment}`;
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(key);
+    }
+  }
+
+  // Save emails to localStorage when they change
+  useEffect(() => {
+    if (!activeListId || !segment) return;
+    const key = `outreach_drafts_${activeListId}_${segment}`;
+    if (typeof window !== "undefined" && emails.length > 0) {
+      localStorage.setItem(key, JSON.stringify(emails));
+    }
+  }, [emails, activeListId, segment]);
+
+  // Save purpose and brand to localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("outreach_purpose", purpose);
+      if (brandPick) {
+        localStorage.setItem("outreach_brand_pick", brandPick);
+      }
+    }
+  }, [purpose, brandPick]);
+
+  // Restore emails from localStorage when list/segment changes
+  useEffect(() => {
+    if (!activeListId || !segment) return;
+    const key = `outreach_drafts_${activeListId}_${segment}`;
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved) as EmailItem[];
+          // Only restore if we have analysis data
+          if (analysis && parsed.length > 0) {
+            setEmails(parsed);
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      }
+    }
+  }, [activeListId, segment, analysis]);
+
+  // Clear saved emails when segment changes
+  useEffect(() => {
+    if (!activeListId || !segment) return;
+    const key = `outreach_drafts_${activeListId}_${segment}`;
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(key);
+      if (!saved && emails.length > 0) {
+        // Don't clear, keep drafts per segment
+      }
+    }
+  }, [segment]);
 
   // Redirect invalid segment after mount
   useEffect(() => {
@@ -358,10 +451,14 @@ export default function OutreachSegmentPage({
     setEmails([]);
     setAnalysis(null);
 
+    // Get saved list ID from localStorage
+    const savedListId = typeof window !== "undefined" ? localStorage.getItem("outreach_active_list_id") : null;
+
     Promise.all([
       api.get<CustomerList[]>("/workflow/customer-lists").catch(() => []),
       api.get<BrandOption[]>("/brands").catch(() => []),
     ]).then(([lists, brandList]) => {
+      setAllLists(lists);
       setBrands(brandList);
       if (brandList.length > 0 && !brandPick) {
         setBrandPick(brandList[0].id);
@@ -371,14 +468,22 @@ export default function OutreachSegmentPage({
         setInitialLoading(false);
         return;
       }
-      const listId = lists[0].id;
-      setActiveListId(listId);
-      setActiveListName(lists[0].list_name);
+
+      // Use saved list ID or first list
+      let listToUse = lists[0];
+      if (savedListId) {
+        const found = lists.find((l) => l.id === savedListId);
+        if (found) listToUse = found;
+      }
+
+      setActiveListId(listToUse.id);
+      setActiveListName(listToUse.list_name);
+
       return Promise.all([
-        api.get<CustomerTableRowsResponse>(`/workflow/customer-lists/${listId}/rows`),
+        api.get<CustomerTableRowsResponse>(`/workflow/customer-lists/${listToUse.id}/rows`),
         api
           .get<{ list_id: string; list_name: string; analysis: CustomerAnalysis }>(
-            `/workflow/customer-lists/${listId}/analysis`,
+            `/workflow/customer-lists/${listToUse.id}/analysis`,
           )
           .catch(() => null),
       ]);
@@ -407,8 +512,53 @@ export default function OutreachSegmentPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Change active list
+  function changeActiveList(listId: string) {
+    const list = allLists.find((l) => l.id === listId);
+    if (!list) return;
+
+    // Save to localStorage
+    if (typeof window !== "undefined") {
+      localStorage.setItem("outreach_active_list_id", listId);
+    }
+
+    setActiveListId(listId);
+    setActiveListName(list.list_name);
+    setInitialLoading(true);
+    setEmails([]);
+    setAnalysis(null);
+    setNoAnalysis(false);
+
+    Promise.all([
+      api.get<CustomerTableRowsResponse>(`/workflow/customer-lists/${listId}/rows`),
+      api
+        .get<{ list_id: string; list_name: string; analysis: CustomerAnalysis }>(
+          `/workflow/customer-lists/${listId}/analysis`,
+        )
+        .catch(() => null),
+    ]).then((results) => {
+      if (!results) return;
+      const [rowsData, analysisData] = results as [
+        CustomerTableRowsResponse,
+        { list_id: string; list_name: string; analysis: CustomerAnalysis } | null,
+      ];
+      setRows(rowsData.rows);
+      if (!analysisData) {
+        setNoAnalysis(true);
+        return;
+      }
+      setAnalysis(analysisData.analysis);
+      setActiveListName(analysisData.list_name);
+    }).catch(() => {
+      setMessage("Không tải được dữ liệu.");
+    }).finally(() => {
+      setInitialLoading(false);
+    });
+  }
+
   // Build emails when segment/analysis/rows change
   useEffect(() => {
+    // Only build when we have BOTH analysis data AND rows loaded
     if (!analysis || rows.length === 0) return;
 
     const segKey = SEGMENT_REVERSE_MAP[segment as OutreachSegment] ?? segment;
@@ -572,9 +722,19 @@ export default function OutreachSegmentPage({
 
   // Send single
   async function handleSend(id: string) {
-    if (!activeListId) return;
+    if (!activeListId) {
+      setMessage("Vui lòng chọn danh sách khách hàng.");
+      return;
+    }
+    if (noAnalysis) {
+      setMessage("Chưa có kết quả phân tích. Vui lòng chạy phân tích trong mục Danh sách khách hàng.");
+      return;
+    }
     const email = emails.find((e) => e.id === id);
-    if (!email || !email.body) return;
+    if (!email || !email.body) {
+      setMessage("Email chưa được soạn. Vui lòng bấm 'Soạn tất cả' trước.");
+      return;
+    }
 
     sendingRef.current.add(id);
     setEmails((prev) => prev.map((e) => (e.id === id ? { ...e, status: "sending" as const } : e)));
@@ -584,13 +744,25 @@ export default function OutreachSegmentPage({
         items: [{ name: email.name, email: email.email, phone: email.phone, subject: email.subject, body: email.body }],
       });
       setEmails((prev) => prev.map((e) => (e.id === id ? { ...e, status: "sent" as const } : e)));
-      setMessage((m) => `Đã gửi email cho ${email.name}.`);
-    } catch (exc) {
+      setMessage(`Đã gửi email cho ${email.name}.`);
+      clearDraftForEmail(id);
+    } catch (exc: unknown) {
+      let errorMsg = "Lỗi gửi";
+      if (exc && typeof exc === "object" && "message" in exc) {
+        errorMsg = String((exc as { message: unknown }).message);
+      } else if (exc instanceof Error) {
+        errorMsg = exc.message;
+      }
+      // Make error message more user-friendly
+      if (errorMsg.includes("SMTP") || errorMsg.includes("503")) {
+        errorMsg = "Chưa cấu hình SMTP. Vui lòng kiểm tra cài đặt email.";
+      }
       setEmails((prev) =>
         prev.map((e) =>
-          e.id === id ? { ...e, status: "failed" as const, errorMsg: exc instanceof Error ? exc.message : "Lỗi gửi" } : e,
+          e.id === id ? { ...e, status: "failed" as const, errorMsg } : e,
         ),
       );
+      setMessage(`Lỗi: ${errorMsg}`);
     } finally {
       sendingRef.current.delete(id);
     }
@@ -603,7 +775,8 @@ export default function OutreachSegmentPage({
     if (toSend.length === 0) return;
 
     setSendingAll(true);
-    const results: Array<{ name: string; email: string; status: string }> = [];
+    const results: Array<{ name: string; email: string; status: string; error?: string; id?: string }> = [];
+    const sentIds: string[] = [];
 
     for (const email of toSend) {
       sendingRef.current.add(email.id);
@@ -613,23 +786,43 @@ export default function OutreachSegmentPage({
           items: [{ name: email.name, email: email.email, phone: email.phone, subject: email.subject, body: email.body }],
         });
         setEmails((prev) => prev.map((e) => (e.id === email.id ? { ...e, status: "sent" as const } : e)));
-        results.push({ name: email.name, email: email.email, status: "sent" });
-      } catch (exc) {
+        results.push({ name: email.name, email: email.email, status: "sent", id: email.id });
+        sentIds.push(email.id);
+      } catch (exc: unknown) {
+        let errorMsg = "Lỗi gửi";
+        if (exc && typeof exc === "object" && "message" in exc) {
+          errorMsg = String((exc as { message: unknown }).message);
+        } else if (exc instanceof Error) {
+          errorMsg = exc.message;
+        }
+        if (errorMsg.includes("SMTP") || errorMsg.includes("503")) {
+          errorMsg = "Chưa cấu hình SMTP";
+        }
         setEmails((prev) =>
           prev.map((e) =>
-            e.id === email.id ? { ...e, status: "failed" as const, errorMsg: exc instanceof Error ? exc.message : "Lỗi gửi" } : e,
+            e.id === email.id ? { ...e, status: "failed" as const, errorMsg } : e,
           ),
         );
-        results.push({ name: email.name, email: email.email, status: "failed" });
+        results.push({ name: email.name, email: email.email, status: "failed", error: errorMsg, id: email.id });
       } finally {
         sendingRef.current.delete(email.id);
       }
     }
 
+    // Clear drafts for successfully sent emails
+    for (const id of sentIds) {
+      clearDraftForEmail(id);
+    }
+
     setSendingAll(false);
     const sent = results.filter((r) => r.status === "sent").length;
     const failed = results.filter((r) => r.status === "failed").length;
-    setMessage(`Đã gửi: ${sent} thành công, ${failed} thất bại.`);
+    const smtpError = results.find((r) => r.error?.includes("SMTP"));
+    if (smtpError) {
+      setMessage(`Lỗi SMTP: ${smtpError.error}. Vui lòng kiểm tra cài đặt email trong .env`);
+    } else {
+      setMessage(`Đã gửi: ${sent} thành công, ${failed} thất bại.`);
+    }
   }
 
   // Update email field
@@ -694,6 +887,21 @@ export default function OutreachSegmentPage({
       {/* ── Toolbar ── */}
       <div className="border-b border-amber-200 bg-white px-6 py-3">
         <div className="flex flex-wrap items-center gap-3">
+          {/* Customer List */}
+          <div className="flex items-center gap-2">
+            <span className="text-[12px] text-slate-500">Danh sách:</span>
+            <select
+              className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[12px] text-slate-700 outline-none focus:border-amber-400"
+              value={activeListId || ""}
+              onChange={(e) => changeActiveList(e.target.value)}
+            >
+              {allLists.length === 0 && <option value="">Chưa có danh sách</option>}
+              {allLists.map((l) => (
+                <option key={l.id} value={l.id}>{l.list_name}</option>
+              ))}
+            </select>
+          </div>
+
           {/* Brand */}
           <div className="flex items-center gap-2">
             <Palette className="h-4 w-4 text-emerald-600" />
@@ -771,11 +979,35 @@ export default function OutreachSegmentPage({
         ) : emails.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-amber-200 bg-white py-20 text-center">
             <Mail className="mb-3 h-10 w-10 text-slate-300" />
-            <p className="text-[14px] text-slate-500">
-              Không có khách nào trong nhóm{" "}
-              <span className="font-medium text-slate-700">{SEGMENT_LABELS[segment as OutreachSegment] ?? segment}</span>
-              {segCount > 0 ? ` (${segCount} người — có thể chưa có email hoặc SĐT)` : "."}
-            </p>
+            {segCount > 0 ? (
+              <>
+                <p className="text-[14px] text-slate-500">
+                  Có <strong>{segCount}</strong> khách trong nhóm{" "}
+                  <span className="font-medium text-slate-700">{SEGMENT_LABELS[segment as OutreachSegment] ?? segment}</span>{" "}
+                  nhưng chưa có email hoặc SĐT trong danh sách.
+                </p>
+                <p className="mt-2 text-[12px] text-slate-400">
+                  Kiểm tra dữ liệu trong mục "Danh sách khách hàng" để thêm thông tin liên hệ.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-[14px] text-slate-500">
+                  Chưa có khách nào trong nhóm{" "}
+                  <span className="font-medium text-slate-700">{SEGMENT_LABELS[segment as OutreachSegment] ?? segment}</span>.
+                </p>
+                <p className="mt-2 text-[12px] text-slate-400">
+                  Vui lòng chạy phân tích trong mục "Danh sách khách hàng" trước.
+                </p>
+              </>
+            )}
+            <button
+              type="button"
+              className="mt-4 rounded-lg bg-amber-500 px-4 py-2 text-[13px] font-semibold text-white hover:bg-amber-600"
+              onClick={() => router.push("/customer-lists")}
+            >
+              Đi đến Danh sách khách hàng
+            </button>
           </div>
         ) : (
           <div className="grid auto-rows-max gap-4 sm:grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">

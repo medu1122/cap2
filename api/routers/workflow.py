@@ -421,6 +421,15 @@ def _format_brand_for_smart_contact(brand: Brand) -> str:
     ta = (brand.target_audience or "").strip()
     if ta:
         parts.append(f"Khách hàng mục tiêu: {ta[:900]}")
+
+    # Thông tin liên hệ và địa chỉ (quan trọng cho email)
+    if (brand.contact_email or "").strip():
+        parts.append(f"Email liên hệ: {(brand.contact_email or '').strip()}")
+    if (brand.phone or "").strip():
+        parts.append(f"Số điện thoại: {(brand.phone or '').strip()}")
+    if (brand.address or "").strip():
+        parts.append(f"Địa chỉ: {(brand.address or '').strip()}")
+
     if brand.key_products:
         kp = ", ".join(str(x).strip() for x in brand.key_products[:24] if x and str(x).strip())
         if kp:
@@ -1576,20 +1585,36 @@ class SmartContactBatchPayload(BaseModel):
 
 OUTREACH_PURPOSE_INSTRUCTION: dict[str, str] = {
     "nhac_nhe": (
-        "Mục đích: nhắc khách đã lâu chưa quay lại — nhẹ nhàng, không gây áp lực; "
-        "thể hiện đúng ngành hình và giọng trong hồ sơ thương hiệu; "
-        "không nhắc khuyến mãi trừ khi hồ sơ thương hiệu có ghi rõ."
+        "Mục đích: nhắc khách đã lâu chưa quay lại.\n"
+        "- Giọng văn: thân thiện, nhẹ nhàng, không gây áp lực, như đang trò chuyện với người quen.\n"
+        "- Nội dung: Thể hiện sự quan tâm chân thành, nhắc nhở nhẹ về trải nghiệm tốt đã có, không đề cập khuyến mãi.\n"
+        "- Cấu trúc: Chào hỏi ấm áp → Nhắc kỷ niệm/trải nghiệm đẹp → Mời ghé thăm tự nhiên.\n"
+        "- Độ dài: 150-200 từ.\n"
+        "- Phong cách: Như tin nhắn của người bạn thân, không phải email quảng cáo."
     ),
     "cham_soc": (
-        "Mục đích: hỏi thăm trải nghiệm gần nhất, đúng ngữ cảnh dịch vụ trong hồ sơ thương hiệu, "
-        "quan tâm chân thành."
+        "Mục đích: chăm sóc, hỏi thăm khách hàng về trải nghiệm gần nhất.\n"
+        "- Giọng văn: quan tâm chân thành, đặt khách hàng làm trung tâm.\n"
+        "- Nội dung: Hỏi thăm về trải nghiệm/dịch vụ đã sử dụng, thể hiện sự trân trọng, mời góp ý nếu phù hợp.\n"
+        "- Cấu trúc: Chào hỏi ấm áp → Hỏi thăm về dịch vụ đã dùng → Cam kết chất lượng → Mời quay lại.\n"
+        "- Độ dài: 120-180 từ.\n"
+        "- Phong cách: Như tin nhắn cảm ơn từ quản lý cửa hàng, không phải khảo sát."
     ),
-    "kich_hoat": (
-        "Mục đích: mời khách ghé lại có lý do (cập nhật / trải nghiệm) gắn với giá trị thương hiệu, "
-        "không hứa giá hay ưu đãi."
+    "kích_hoạt": (
+        "Mục đích: kích hoạt khách quay trở lại sau thời gian dài vắng bóng.\n"
+        "- Giọng văn: háo hứng như gặp lại người bạn cũ, có lý do thú vị để quay lại.\n"
+        "- Nội dung: Chia sẻ cập nhật mới (dịch vụ mới, không gian mới, chương trình mới), tạo sự tò mò.\n"
+        "- Cấu trúc: Chào hỏi niềm nở → Chia sẻ điều mới/món mới → Mời ghé thử ngay.\n"
+        "- Độ dài: 150-200 từ.\n"
+        "- Phong cách: Như lời mời riêng từ người bạn, không phải thư mời sự kiện."
     ),
     "khach_moi": (
-        "Mục đích: chào khách mới, giọng và cách nhắc phù hợp Brand Vault — ngắn, rõ, cảm ơn."
+        "Mục đích: chào đón khách hàng mới, cảm ơn đã tin tưởng.\n"
+        "- Giọng văn: nồng ấm, chân thành, tràn đầy năng lượng tích cực.\n"
+        "- Nội dung: Cảm ơn đã đến/lựa chọn, giới thiệu ngắn gọn điểm hấp dẫn nhất, mời quay lại.\n"
+        "- Cấu trúc: Chào mừng nồng ấm → Cảm ơn đã tin tưởng → Giới thiệu điểm đặc biệt → Kêu gọi quay lại.\n"
+        "- Độ dài: 100-150 từ.\n"
+        "- Phong cách: Như lời chào từ một người chủ cửa hàng tử tế, không phải email chào hàng."
     ),
 }
 
@@ -1599,6 +1624,8 @@ async def _compose_single_email(
     brand_context: str | None,
     purpose_instruction: str,
     list_name: str,
+    purpose_key: str = "nhac_nhe",
+    segment: str = "potential",
 ) -> dict:
     """Soạn 1 email cho 1 khách, trả về dict có name/email/phone/subject/body."""
     name = (customer.get("name") or "").strip() or "khách"
@@ -1637,22 +1664,33 @@ async def _compose_single_email(
 
     body = await _smart_contact_compose_text(payload, brand_context=brand_context)
 
-    # Subject: lấy từ brand slogan hoặc tên danh sách
+    # Generate professional subject line based on segment and purpose
+    segment_label = {
+        "churn_risk": "khách cũ",
+        "potential": "khách tiềm năng",
+        "new": "khách mới",
+        "vip": "VIP",
+    }.get(seg or "potential", "khách hàng")
+
+    purpose_subject = {
+        "nhac_nhe": ["Những kỷ niệm đẹp đang chờ bạn quay lại", "Đã lâu rồi bạn ơi, ghé thăm nhé", "Bạn ơi, chúng tôi nhớ bạn rồi!"],
+        "cham_soc": ["Cảm ơn bạn đã đồng hành cùng chúng tôi", "Hôm nay bạn thế nào?", "Chúng tôi luôn ở đây vì bạn"],
+        "kích_hoạt": ["Đã có gì mới ở nơi của bạn, bạn biết không?", "Bạn ơi, chúng tôi có điều muốn chia sẻ", "Lâu rồi không gặp, có nhiều thứ hay ho lắm!"],
+        "khach_moi": ["Chào mừng bạn đến với gia đình của chúng tôi", "Cảm ơn bạn đã tin tưởng", "Chúng tôi rất vui được gặp bạn!"],
+    }.get(purpose_key, ["Tin nhắn từ chúng tôi"])
+
+    # Try to extract brand name for more personalized subject
+    brand_name = "Chúng tôi"
     if brand_context:
-        # Trích slogan từ brand_context để làm subject gợi ý
         for line in brand_context.splitlines():
-            if line.startswith("Slogan / dòng phụ:"):
-                subject = line.split(":", 1)[1].strip()
-                if subject:
-                    body = body.rstrip()
-                    return {
-                        "name": name,
-                        "email": email_addr,
-                        "phone": phone,
-                        "subject": subject,
-                        "body": body,
-                    }
-    subject = f"Tin nhắn từ {list_name}"
+            if line.startswith("Tên thương hiệu:"):
+                brand_name = line.split(":", 1)[1].strip().split()[0] if ":" in line else "Chúng tôi"
+                break
+
+    import random
+    base_subject = random.choice(purpose_subject)
+    subject = f"{brand_name}: {base_subject}"
+
     return {
         "name": name,
         "email": email_addr,
@@ -1724,7 +1762,8 @@ async def smart_contact_batch(
     async def safe_compose(c: dict):
         try:
             return await _compose_single_email(
-                c, brand_context, purpose_instruction, customer_list.list_name
+                c, brand_context, purpose_instruction, customer_list.list_name,
+                purpose_key=purpose_key, segment=seg
             )
         except Exception as exc:
             return {

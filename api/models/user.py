@@ -20,3 +20,4 @@ class User(Base):
 
     brands: Mapped[list["Brand"]] = relationship("Brand", back_populates="user")
     campaigns: Mapped[list["Campaign"]] = relationship("Campaign", back_populates="user")
+    campaign_ideas: Mapped[list["CampaignIdea"]] = relationship("CampaignIdea", back_populates="user")
