@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Check, Loader2, Clock, AlertCircle, ImagePlus, Upload, Wand2, Mail, Smartphone } from "lucide-react";
+import { ChevronLeft, Check, Loader2, Clock, AlertCircle, ImagePlus, Upload, Wand2, Mail, Smartphone, CalendarDays } from "lucide-react";
 import { API_BASE, api } from "@/lib/api-client";
 import { STATUS_LABELS, STATUS_COLORS, CHANNEL_LABELS, formatDate, cn } from "@/lib/utils";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
@@ -883,6 +883,24 @@ function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpda
   );
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function _formatDateShort(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00");
+  return d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" });
+}
+
+function _getContentPreview(item: ContentItem): string {
+  const c = item.content_json;
+  if (item.channel === "facebook_post") return (c.copy as string) || "";
+  if (item.channel === "email") return (c.subject as string) || "";
+  if (item.channel === "video_script") {
+    const hook = (c.hook as string) || "";
+    return hook ? `Hook: ${hook.slice(0, 60)}` : "Kịch bản video";
+  }
+  return "";
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function CampaignDetailPage() {
@@ -1062,6 +1080,53 @@ export default function CampaignDetailPage() {
                 ) : null}
               </dl>
             </div>
+
+            {/* Lịch trình đề xuất */}
+            {campaign.content_items.length > 0 && (
+              <div className="card">
+                <div className="flex items-center gap-2 mb-3">
+                  <CalendarDays size={16} className="text-gray-500" />
+                  <h2 className="font-semibold text-gray-800">Lịch đăng dự kiến</h2>
+                  <span className="text-xs text-gray-400 ml-auto">
+                    Đăng xong → xuất hiện trong{" "}
+                    <a href="/calendar" className="text-blue-600 hover:underline">Lịch marketing</a>
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {campaign.content_items
+                    .slice()
+                    .sort((a, b) => {
+                      if (!a.scheduled_date) return 1;
+                      if (!b.scheduled_date) return -1;
+                      return a.scheduled_date.localeCompare(b.scheduled_date);
+                    })
+                    .map((item) => (
+                      <div key={item.id} className="flex items-center gap-3 text-sm">
+                        <div className="w-28 shrink-0 text-center border border-gray-200 rounded py-1 px-2 bg-gray-50">
+                          <p className="text-xs text-gray-500">{item.scheduled_date ? _formatDateShort(item.scheduled_date) : "—"}</p>
+                        </div>
+                        <span className="badge bg-gray-100 text-gray-600 text-xs shrink-0">
+                          {CHANNEL_LABELS[item.channel]}
+                        </span>
+                        <span className={cn("badge text-xs shrink-0", STATUS_COLORS[item.status])}>
+                          {STATUS_LABELS[item.status]}
+                        </span>
+                        <p className="text-gray-600 truncate flex-1 min-w-0">
+                          {_getContentPreview(item)}
+                        </p>
+                        {!item.scheduled_date && (
+                          <span className="text-xs text-amber-600 shrink-0">Chưa có lịch</span>
+                        )}
+                      </div>
+                    ))}
+                </div>
+                {campaign.content_items.some((c) => !c.scheduled_date) && (
+                  <p className="text-xs text-amber-600 mt-2">
+                    Một số nội dung chưa có ngày đăng. Duyệt nội dung để hệ thống tự đề xuất lịch.
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Content items */}
             {campaign.content_items.length > 0 && (
