@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, postNdjsonStream, type DeepAnalysisStreamEvent } from "@/lib/api-client";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
-import { Upload, Table2, MessageSquare, TrendingUp, AlertTriangle, CheckCircle2, Sparkles, BarChart3, FileSpreadsheet, ChevronRight, Loader2 } from "lucide-react";
+import { Upload, Table2, MessageSquare, TrendingUp, AlertTriangle, CheckCircle2, Sparkles, BarChart3, FileSpreadsheet, ChevronRight, Loader2, Maximize2, X, Plus } from "lucide-react";
 
 // ============= TYPES =============
 
@@ -83,7 +83,6 @@ interface DeepAnalysisResult {
 // ============= TYPES FOR UI STATE =============
 
 type AppStep = "input" | "analyzing" | "results";
-type InputMethod = "create" | "upload" | null;
 
 // ============= HELPERS =============
 
@@ -147,148 +146,36 @@ const PIPELINE_STEPS = [
 // Hero Section Component
 function HeroSection() {
   return (
-    <div className="bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 rounded-2xl p-8 text-white mb-6">
+    <div className="bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 rounded-2xl p-6 text-white mb-6">
       <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-              <BarChart3 className="w-6 h-6" />
-            </div>
-            <h1 className="text-2xl font-bold">AI Analyst</h1>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+            <BarChart3 className="w-5 h-5" />
           </div>
-          <p className="text-blue-100 text-lg max-w-2xl">
-            Phân tích dữ liệu thông minh với AI. Upload file hoặc tạo bảng, để AI khám phá insights và trả lời mọi câu hỏi của bạn.
-          </p>
+          <div>
+            <h1 className="text-xl font-bold">AI Analyst</h1>
+            <p className="text-blue-100 text-sm mt-0.5">
+              Phân tích dữ liệu thông minh với AI
+            </p>
+          </div>
         </div>
         <HelpDialogButton
           title="Hướng dẫn AI Analyst"
-          summary="AI Analyst giúp bạn phân tích dữ liệu một cách thông minh: upload file, để AI phân tích, và trò chuyện để khám phá insights."
+          summary="AI Analyst giúp bạn phân tích dữ liệu: upload file hoặc tạo bảng, AI phân tích và trả lời mọi câu hỏi."
           steps={[
-            "Chọn cách nhập dữ liệu: Upload file hoặc tạo bảng mới",
-            "Nhấn 'Phân tích' để AI xử lý",
+            "Nhập dữ liệu: Upload file CSV/Excel hoặc tạo bảng mới",
+            "Nhấn 'Phân tích' để AI xử lý dữ liệu",
             "Xem KPIs, Insights và Actions được AI đề xuất",
             "Trò chuyện với AI để hiểu sâu hơn về dữ liệu",
           ]}
         />
       </div>
-      
-      {/* 3-Step Flow */}
-      <div className="mt-8 grid grid-cols-3 gap-4">
-        <StepCard 
-          number={1} 
-          icon={<FileSpreadsheet className="w-5 h-5" />}
-          title="Nhập dữ liệu"
-          description="Upload file CSV/Excel hoặc tạo bảng mới"
-        />
-        <StepCard 
-          number={2} 
-          icon={<Sparkles className="w-5 h-5" />}
-          title="AI phân tích"
-          description="Tự động tính KPIs, tìm insights và đề xuất hành động"
-        />
-        <StepCard 
-          number={3} 
-          icon={<MessageSquare className="w-5 h-5" />}
-          title="Trò chuyện"
-          description="Hỏi AI bất cứ điều gì về dữ liệu của bạn"
-        />
-      </div>
     </div>
   );
 }
 
-function StepCard({ number, icon, title, description }: { number: number; icon: React.ReactNode; title: string; description: string }) {
-  return (
-    <div className="bg-white/10 backdrop-blur rounded-xl p-4 flex items-start gap-3">
-      <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0">
-        {number}
-      </div>
-      <div>
-        <div className="flex items-center gap-2 font-medium">
-          {icon}
-          {title}
-        </div>
-        <p className="text-blue-100 text-sm mt-1">{description}</p>
-      </div>
-    </div>
-  );
-}
-
-// Input Method Selection
-function InputMethodSelector({
-  selected,
-  onSelect,
-}: {
-  selected: InputMethod;
-  onSelect: (method: InputMethod) => void;
-}) {
-  return (
-    <div className="grid grid-cols-2 gap-4 mb-6">
-      <MethodCard
-        selected={selected === "upload"}
-        onClick={() => onSelect("upload")}
-        icon={<Upload className="w-6 h-6" />}
-        title="Upload file"
-        subtitle="CSV, XLSX, XLS"
-        description="Upload file có sẵn từ Excel, Google Sheets hoặc export từ phần mềm khác"
-      />
-      <MethodCard
-        selected={selected === "create"}
-        onClick={() => onSelect("create")}
-        icon={<Table2 className="w-6 h-6" />}
-        title="Tạo bảng mới"
-        subtitle="Nhập thủ công"
-        description="Tạo cấu trúc bảng và nhập dữ liệu trực tiếp"
-      />
-    </div>
-  );
-}
-
-function MethodCard({
-  selected,
-  onClick,
-  icon,
-  title,
-  subtitle,
-  description,
-}: {
-  selected: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  title: string;
-  subtitle: string;
-  description: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`text-left p-5 rounded-xl border-2 transition-all ${
-        selected
-          ? "border-blue-500 bg-blue-50 shadow-md"
-          : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm"
-      }`}
-    >
-      <div className="flex items-start gap-4">
-        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-          selected ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-600"
-        }`}>
-          {icon}
-        </div>
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-gray-900">{title}</h3>
-            <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded">{subtitle}</span>
-          </div>
-          <p className="text-sm text-gray-500 mt-1">{description}</p>
-        </div>
-        {selected && <CheckCircle2 className="w-5 h-5 text-blue-500 flex-shrink-0" />}
-      </div>
-    </button>
-  );
-}
-
-// File Upload Component
-function FileUploader({
+// File Upload Button
+function FileUploadButton({
   onUpload,
   uploading,
 }: {
@@ -298,10 +185,7 @@ function FileUploader({
   const inputRef = useRef<HTMLInputElement>(null);
 
   return (
-    <div
-      onClick={() => inputRef.current?.click()}
-      className="border-2 border-dashed border-gray-300 rounded-xl p-12 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-all"
-    >
+    <div className="flex items-center gap-2">
       <input
         ref={inputRef}
         type="file"
@@ -313,20 +197,19 @@ function FileUploader({
           e.currentTarget.value = "";
         }}
       />
-      {uploading ? (
-        <div className="flex flex-col items-center">
-          <Loader2 className="w-10 h-10 text-blue-500 animate-spin mb-3" />
-          <p className="text-gray-600">Đang đọc file...</p>
-        </div>
-      ) : (
-        <>
-          <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Upload className="w-8 h-8 text-blue-600" />
-          </div>
-          <p className="font-medium text-gray-900 mb-1">Kéo thả file hoặc click để chọn</p>
-          <p className="text-sm text-gray-500">Hỗ trợ: CSV, XLSX, XLS</p>
-        </>
-      )}
+      <button
+        onClick={() => inputRef.current?.click()}
+        disabled={uploading}
+        className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors disabled:opacity-50"
+      >
+        {uploading ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <Upload className="w-4 h-4" />
+        )}
+        Upload file
+      </button>
+      <span className="text-xs text-gray-400">CSV, XLSX</span>
     </div>
   );
 }
@@ -339,6 +222,8 @@ function TableBuilder({
   onRowsChange,
   tableName,
   onTableNameChange,
+  fullscreen,
+  onFullscreen,
 }: {
   columns: Column[];
   rows: TableRow[];
@@ -346,21 +231,35 @@ function TableBuilder({
   onRowsChange: (rows: TableRow[]) => void;
   tableName: string;
   onTableNameChange: (name: string) => void;
+  fullscreen: boolean;
+  onFullscreen: () => void;
 }) {
   const [editingCol, setEditingCol] = useState<string | null>(null);
   const [newColName, setNewColName] = useState("");
+  const tableRef = useRef<HTMLDivElement>(null);
 
-  function addColumn() {
-    if (!newColName.trim()) return;
-    const newCol: Column = {
-      id: generateId(),
-      name: newColName.trim(),
-      dataType: "text",
-    };
-    onColumnsChange([...columns, newCol]);
-    const updatedRows = rows.map((r) => ({ ...r, [newCol.name]: "" }));
-    onRowsChange(updatedRows);
-    setNewColName("");
+  // Auto-add row when typing in last row
+  function addRowIfNeeded(rowIndex: number) {
+    if (rowIndex === rows.length - 1) {
+      const newRow: TableRow = {};
+      columns.forEach((c) => { newRow[c.name] = ""; });
+      onRowsChange([...rows, newRow]);
+    }
+  }
+
+  // Auto-add column when typing in column input
+  function handleColumnInputKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" && newColName.trim()) {
+      const newCol: Column = {
+        id: generateId(),
+        name: newColName.trim(),
+        dataType: "text",
+      };
+      onColumnsChange([...columns, newCol]);
+      const updatedRows = rows.map((r) => ({ ...r, [newCol.name]: "" }));
+      onRowsChange(updatedRows);
+      setNewColName("");
+    }
   }
 
   function updateColumn(id: string, updates: Partial<Column>) {
@@ -391,17 +290,13 @@ function TableBuilder({
     onRowsChange(updatedRows);
   }
 
-  function addRow() {
-    const newRow: TableRow = {};
-    columns.forEach((c) => { newRow[c.name] = ""; });
-    onRowsChange([...rows, newRow]);
-  }
-
   function updateCell(rowIndex: number, colName: string, value: string) {
     const updatedRows = rows.map((r, i) =>
       i === rowIndex ? { ...r, [colName]: value } : r
     );
     onRowsChange(updatedRows);
+    // Auto add row if typing in last row
+    addRowIfNeeded(rowIndex);
   }
 
   function deleteRow(index: number) {
@@ -409,7 +304,12 @@ function TableBuilder({
   }
 
   return (
-    <div className="border border-gray-200 rounded-xl overflow-hidden">
+    <div 
+      ref={tableRef}
+      className={`border border-gray-200 rounded-xl overflow-hidden bg-white ${
+        fullscreen ? "fixed inset-4 z-50 flex flex-col" : ""
+      }`}
+    >
       {/* Header */}
       <div className="bg-gray-50 px-4 py-3 flex items-center justify-between border-b border-gray-200">
         <div className="flex items-center gap-3">
@@ -426,73 +326,60 @@ function TableBuilder({
           </span>
         </div>
         <button
-          onClick={addRow}
-          className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+          onClick={onFullscreen}
+          className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+          title={fullscreen ? "Thu nhỏ" : "Phóng to"}
         >
-          <span className="text-lg">+</span> Thêm dòng
+          {fullscreen ? <X className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
         </button>
       </div>
 
-      {/* Column Management */}
-      <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium text-gray-600">Cột:</span>
-          {columns.map((col) => (
-            <div key={col.id} className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-2 py-1">
-              {editingCol === col.id ? (
-                <input
-                  type="text"
-                  value={col.name}
-                  onChange={(e) => updateColumn(col.id, { name: e.target.value })}
-                  onBlur={() => setEditingCol(null)}
-                  onKeyDown={(e) => e.key === "Enter" && setEditingCol(null)}
-                  className="w-24 text-sm bg-transparent border-0 focus:outline-none"
-                  autoFocus
-                />
-              ) : (
+      {/* Column Management - Only show existing columns */}
+      {columns.length > 0 && (
+        <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium text-gray-600">Các cột:</span>
+            {columns.map((col) => (
+              <div key={col.id} className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-2 py-1">
+                {editingCol === col.id ? (
+                  <input
+                    type="text"
+                    value={col.name}
+                    onChange={(e) => updateColumn(col.id, { name: e.target.value })}
+                    onBlur={() => setEditingCol(null)}
+                    onKeyDown={(e) => e.key === "Enter" && setEditingCol(null)}
+                    className="w-28 text-sm bg-transparent border-0 focus:outline-none"
+                    autoFocus
+                  />
+                ) : (
+                  <button
+                    onClick={() => setEditingCol(col.id)}
+                    className="text-sm text-gray-700 hover:text-blue-600"
+                  >
+                    {col.name}
+                  </button>
+                )}
+                <span className="text-xs text-gray-400">({col.dataType})</span>
                 <button
-                  onClick={() => setEditingCol(col.id)}
-                  className="text-sm text-gray-700 hover:text-blue-600"
+                  onClick={() => deleteColumn(col.id)}
+                  className="text-gray-400 hover:text-red-500 ml-1"
                 >
-                  {col.name}
+                  ×
                 </button>
-              )}
-              <span className="text-xs text-gray-400">({col.dataType})</span>
-              <button
-                onClick={() => deleteColumn(col.id)}
-                className="text-gray-400 hover:text-red-500 ml-1"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-          <div className="flex items-center gap-1">
-            <input
-              type="text"
-              value={newColName}
-              onChange={(e) => setNewColName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addColumn()}
-              placeholder="Tên cột mới..."
-              className="w-32 text-sm px-2 py-1 border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <button
-              onClick={addColumn}
-              className="text-sm text-blue-600 hover:text-blue-700 font-medium px-2"
-            >
-              + Thêm
-            </button>
+              </div>
+            ))}
           </div>
         </div>
-      </div>
+      )}
 
       {/* Table Data */}
-      <div className="max-h-[300px] overflow-auto">
+      <div className={`overflow-auto ${fullscreen ? "flex-1" : "max-h-[400px]"}`}>
         <table className="w-full text-sm">
           <thead className="bg-gray-100 sticky top-0">
             <tr>
               <th className="border-b border-gray-200 px-3 py-2 w-12 text-left text-gray-500 font-medium">#</th>
               {columns.map((col) => (
-                <th key={col.id} className="border-b border-gray-200 px-3 py-2 text-left font-medium text-gray-700">
+                <th key={col.id} className="border-b border-gray-200 px-3 py-2 text-left font-medium text-gray-700 whitespace-nowrap">
                   {col.name}
                 </th>
               ))}
@@ -502,13 +389,18 @@ function TableBuilder({
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={columns.length + 2} className="px-3 py-8 text-center text-gray-400">
-                  Chưa có dữ liệu. Nhấn "Thêm dòng" để bắt đầu.
+                <td colSpan={Math.max(columns.length + 2, 3)} className="px-3 py-8 text-center text-gray-400">
+                  Thêm cột bên dưới để bắt đầu
                 </td>
               </tr>
             ) : (
               rows.map((row, rowIdx) => (
-                <tr key={rowIdx} className={rowIdx % 2 === 0 ? "bg-white" : "bg-gray-50/50"}>
+                <tr 
+                  key={rowIdx} 
+                  className={`${rowIdx % 2 === 0 ? "bg-white" : "bg-gray-50/50"} ${
+                    rowIdx === rows.length - 1 ? "border-b-2 border-blue-200" : ""
+                  }`}
+                >
                   <td className="border-b border-gray-100 px-3 py-1.5 text-gray-400">{rowIdx + 1}</td>
                   {columns.map((col) => (
                     <td key={col.id} className="border-b border-gray-100 px-3 py-1.5">
@@ -516,17 +408,19 @@ function TableBuilder({
                         type="text"
                         value={String(row[col.name] ?? "")}
                         onChange={(e) => updateCell(rowIdx, col.name, e.target.value)}
-                        className="w-full bg-transparent border-0 p-0 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        className="w-full bg-transparent border-0 p-0 focus:outline-none focus:ring-1 focus:ring-blue-400 whitespace-nowrap"
                       />
                     </td>
                   ))}
                   <td className="border-b border-gray-100 px-3 py-1.5">
-                    <button
-                      onClick={() => deleteRow(rowIdx)}
-                      className="text-gray-400 hover:text-red-500"
-                    >
-                      ×
-                    </button>
+                    {rows.length > 1 && (
+                      <button
+                        onClick={() => deleteRow(rowIdx)}
+                        className="text-gray-400 hover:text-red-500"
+                      >
+                        ×
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))
@@ -534,6 +428,27 @@ function TableBuilder({
           </tbody>
         </table>
       </div>
+
+      {/* Footer - Add Column */}
+      <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 flex items-center gap-2">
+        <Plus className="w-4 h-4 text-gray-400" />
+        <input
+          type="text"
+          value={newColName}
+          onChange={(e) => setNewColName(e.target.value)}
+          onKeyDown={handleColumnInputKeyDown}
+          placeholder="Nhập tên cột mới và nhấn Enter..."
+          className="flex-1 text-sm bg-transparent border-0 focus:outline-none focus:ring-0 placeholder:text-gray-400"
+        />
+      </div>
+
+      {/* Fullscreen backdrop */}
+      {fullscreen && (
+        <div 
+          className="fixed inset-0 bg-black/20 -z-10"
+          onClick={onFullscreen}
+        />
+      )}
     </div>
   );
 }
@@ -781,7 +696,7 @@ function DataSourcePills({
   if (dataSources.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap gap-2 mb-6">
+    <div className="flex flex-wrap gap-2 mb-4">
       <span className="text-sm font-medium text-gray-500 py-1">Bảng đã lưu:</span>
       {dataSources.map((ds) => (
         <button
@@ -876,7 +791,7 @@ export default function InsightsPage() {
   const [streamHint, setStreamHint] = useState("");
   const [elapsedSec, setElapsedSec] = useState(0);
   const [appStep, setAppStep] = useState<AppStep>("input");
-  const [inputMethod, setInputMethod] = useState<InputMethod>(null);
+  const [tableFullscreen, setTableFullscreen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Load data sources on mount
@@ -962,7 +877,6 @@ export default function InsightsPage() {
       setColumns(detectedColumns);
       setRows(parsedRows);
       setTableName(file.name.replace(/\.[^/.]+$/, ""));
-      setInputMethod("upload");
       setActiveSourceId(null);
       setAnalysisResult(null);
     } catch (e) {
@@ -973,8 +887,8 @@ export default function InsightsPage() {
   }
 
   async function handleAnalyze() {
-    if (rows.length === 0) {
-      setError("Cần có dữ liệu để phân tích.");
+    if (rows.length === 0 || columns.length === 0) {
+      setError("Cần thêm ít nhất 1 cột và dữ liệu để phân tích.");
       return;
     }
     setAnalyzing(true);
@@ -983,6 +897,7 @@ export default function InsightsPage() {
     setStreamHint("");
     setElapsedSec(0);
     setError(null);
+    setTableFullscreen(false);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15 * 60 * 1000);
@@ -1032,7 +947,9 @@ export default function InsightsPage() {
         setStreamProgress((p) => ({ ...p, current: 4, running: null }));
       }, 500);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Phân tích thất bại.");
+      console.error("Analysis error:", e);
+      const errorMessage = e instanceof Error ? e.message : "Phân tích thất bại. Vui lòng thử lại.";
+      setError(errorMessage);
       setAnalyzing(false);
       setAppStep("input");
     } finally {
@@ -1080,7 +997,6 @@ export default function InsightsPage() {
         }))
       );
       setRows(detail.data.rows);
-      setInputMethod(null);
       setAnalysisResult(null);
       setChatSession(null);
     } catch {
@@ -1117,16 +1033,34 @@ export default function InsightsPage() {
 
         {/* Input Step */}
         {appStep === "input" && (
-          <div className="bg-white rounded-2xl border border-gray-200 p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">1. Nhập dữ liệu</h2>
-            
-            <InputMethodSelector selected={inputMethod} onSelect={setInputMethod} />
+          <div className="space-y-4">
+            {/* Table Header with Actions */}
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <Table2 className="w-5 h-5 text-gray-500" />
+                  <input
+                    type="text"
+                    value={tableName}
+                    onChange={(e) => setTableName(e.target.value)}
+                    className="font-semibold text-gray-900 bg-transparent border-0 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-1"
+                    placeholder="Tên bảng..."
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <FileUploadButton onUpload={handleFileUpload} uploading={uploading} />
+                  <button
+                    onClick={handleAnalyze}
+                    disabled={analyzing || rows.length === 0 || columns.length === 0}
+                    className="px-5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg font-medium text-sm hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-lg shadow-blue-500/25"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Phân tích với AI
+                  </button>
+                </div>
+              </div>
 
-            {inputMethod === "upload" && (
-              <FileUploader onUpload={handleFileUpload} uploading={uploading} />
-            )}
-
-            {inputMethod === "create" && (
+              {/* Table Builder */}
               <TableBuilder
                 columns={columns}
                 rows={rows}
@@ -1134,21 +1068,10 @@ export default function InsightsPage() {
                 onRowsChange={setRows}
                 tableName={tableName}
                 onTableNameChange={setTableName}
+                fullscreen={tableFullscreen}
+                onFullscreen={() => setTableFullscreen(!tableFullscreen)}
               />
-            )}
-
-            {inputMethod && rows.length > 0 && (
-              <div className="mt-6 flex justify-end">
-                <button
-                  onClick={handleAnalyze}
-                  disabled={analyzing || rows.length === 0}
-                  className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-medium hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-lg shadow-blue-500/25"
-                >
-                  <Sparkles className="w-5 h-5" />
-                  Phân tích với AI
-                </button>
-              </div>
-            )}
+            </div>
           </div>
         )}
 
@@ -1242,7 +1165,7 @@ export default function InsightsPage() {
 
             {/* Chat Section */}
             <div className="bg-white rounded-2xl border border-gray-200 p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">2. Trò chuyện với AI</h2>
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Trò chuyện với AI</h2>
               <ChatPanel chatSession={chatSession} onSendMessage={handleSendMessage} />
             </div>
           </div>
