@@ -48,13 +48,23 @@ class CampaignIdeaSuggestionItem(BaseModel):
     category: str
     channels: list[str]
     hook: str | None = None
-    timing: str | None = None  # VD: "Tháng 9 - chạy 1-2 tuần trước dịp"
-    customer_segment: str | None = None  # VD: "Khách cũ 3-6 tháng"
-    urgency_level: str | None = None  # "high", "medium", "low"
+    timing: str | None = None
+    customer_segment: str | None = None
+    urgency_level: str | None = None
 
 
 class CampaignIdeaSuggestResponse(BaseModel):
     suggestions: list[CampaignIdeaSuggestionItem]
+
+
+class CampaignIdeaCreateFromSuggestion(BaseModel):
+    suggestion_id: str
+    title: str
+    objective: str | None = None
+    channels: list[str] = []
+    hook: str | None = None
+    timing: str | None = None
+    customer_segment: str | None = None
 
 
 class CampaignIdeaGenerateBriefRequest(BaseModel):
@@ -75,13 +85,6 @@ class BriefGenerated(BaseModel):
     objective: str
     hook: str
     channels: list[str]
-    suggestion_id: str
-    title: str
-    objective: str | None = None
-    channels: list[str] = []
-    hook: str | None = None
-    timing: str | None = None
-    customer_segment: str | None = None
 
 
 class CampaignIdeaBuildEmailRequest(BaseModel):
