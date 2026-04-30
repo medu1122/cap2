@@ -18,64 +18,142 @@ router = APIRouter()
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 DAYS_BEFORE_DEADLINE = 2  # luôn kết thúc trước deadline 2 ngày
+MIN_GAP_DAYS = 2  # tối thiểu 2 ngày giữa 2 bài cùng kênh
+
+# Thứ tự ưu tiên kênh: email trước, social sau
+CHANNEL_PRIORITY = {"email": 0, "facebook_post": 1, "video_script": 2}
 
 
-def _is_good_posting_day(d: date) -> bool:
-    """Email: T2-T6, Social: T2-CN (tránh CN sáng sớm)."""
-    return d.weekday() < 5  # T2-T6 tốt cho email
+def _good_days_in_range(start: date, end: date) -> list[date]:
+    """Trả về các ngày T2-T6 trong khoảng start→end."""
+    days = []
+    current = start
+    while current <= end:
+        if current.weekday() < 5:  # T2-T6
+            days.append(current)
+        current += timedelta(days=1)
+    return days
+
+
+def _date_distance(a: date, b: date) -> int:
+    return abs((b - a).days)
+
+
+def _calculate_smart_schedule(
+    campaign_deadline: date | None,
+    campaign_start: date,
+    all_channels: list[str],
+    existing_items: list[tuple[str, date]],
+) -> dict[str, date]:
+    """
+    Tính lịch thông minh cho tất cả kênh.
+    - Ưu tiên email đăng trước (email là kênh chính thức)
+    - Các kênh social dàn đều, cách nhau ít nhất MIN_GAP_DAYS ngày
+    - Tất cả nằm trong khoảng start → deadline - 2 ngày
+    """
+    if not campaign_deadline:
+        return {}
+
+    valid_end = campaign_deadline - timedelta(days=DAYS_BEFORE_DEADLINE)
+    if valid_end <= campaign_start:
+        valid_end = campaign_deadline - timedelta(days=1)
+
+    # Các ngày T2-T6 có thể dùng
+    good_days = _good_days_in_range(campaign_start, valid_end)
+    if not good_days:
+        return {}
+
+    # Ghép kênh đã có với kênh cần thêm
+    existing_map = {ch: d for ch, d in existing_items}
+    needed_channels = [ch for ch in all_channels if ch not in existing_map]
+
+    # Sắp xếp theo priority
+    sorted_needed = sorted(needed_channels, key=lambda ch: CHANNEL_PRIORITY.get(ch, 99))
+    all_sorted = sorted(
+        [(ch, existing_map[ch]) for ch in all_channels if ch in existing_map]
+        + [(ch, None) for ch in sorted_needed],
+        key=lambda x: CHANNEL_PRIORITY.get(x[0], 99),
+    )
+
+    # Gán ngày cho từng kênh còn thiếu
+    schedule: dict[str, date] = {ch: d for ch, d in existing_items}
+
+    for ch, _ in all_sorted:
+        if ch in schedule:
+            continue
+
+        # Tìm ngày tốt nhất cho kênh này:
+        # - Không trùng với kênh khác (với social: cách nhau MIN_GAP_DAYS)
+        # - Ưu tiên gần đầu cho email, gần cuối cho video
+        is_social = ch in ("facebook_post", "video_script")
+        target_pos = (CHANNEL_PRIORITY.get(ch, 0) + 1) / max(len(all_channels), 1)
+        ideal_date = good_days[int(len(good_days) * target_pos)] if good_days else valid_end
+
+        best_date = None
+        best_score = 999_999
+
+        for day in good_days:
+            if day in schedule.values():
+                continue
+
+            # Kiểm tra khoảng cách với social channels
+            too_close = False
+            for sched_ch, sched_date in schedule.items():
+                if sched_ch in ("facebook_post", "video_script"):
+                    if _date_distance(day, sched_date) < MIN_GAP_DAYS:
+                        too_close = True
+                        break
+
+            if too_close:
+                continue
+
+            # Tính score: ưu tiên gần ideal_date
+            score = abs((day - ideal_date).days)
+            if score < best_score:
+                best_score = score
+                best_date = day
+
+        if best_date:
+            schedule[ch] = best_date
+        else:
+            # Fallback: ngày trống đầu tiên
+            for day in good_days:
+                if day not in schedule.values():
+                    schedule[ch] = day
+                    break
+
+    return schedule
 
 
 def _calculate_scheduled_date(
     campaign_deadline: date | None,
     campaign_start: date,
     channel: str,
-    existing_dates: list[date],
+    all_channels: list[str],
+    existing_dates: list[tuple[str, date]],
 ) -> date | None:
-    """Tính ngày đăng tối ưu: dàn đều trong khoảng campaign, tránh trùng."""
+    """Tính ngày đăng cho một content mới, dùng smart schedule."""
+    schedule = _calculate_smart_schedule(
+        campaign_deadline, campaign_start, all_channels, existing_dates
+    )
+    if channel in schedule:
+        return schedule[channel]
+
+    # Fallback cũ: tìm ngày T2-T6 gần nhất không trùng
     if not campaign_deadline:
         return None
 
-    # Khoảng hợp lệ: start → deadline - 2 ngày
-    valid_start = campaign_start
     valid_end = campaign_deadline - timedelta(days=DAYS_BEFORE_DEADLINE)
-    if valid_end <= valid_start:
+    if valid_end <= campaign_start:
         valid_end = campaign_deadline - timedelta(days=1)
 
-    total_days = (valid_end - valid_start).days
-    if total_days < 1:
-        return valid_end  # chỉ còn 1 ngày → đăng ngày cuối
+    good_days = _good_days_in_range(campaign_start, valid_end)
+    existing_set = set(d for _, d in existing_dates)
 
-    # Số content hợp lý: dàn đều
-    existing_count = len(existing_dates)
-    target_count = existing_count + 1
-
-    # Vị trí lý tưởng cho content mới (theo thứ tự 1-based)
-    ideal_slot = target_count  # content mới luôn là slot cuối trong timeline hiện tại
-
-    # Tính ideal_date dựa trên chia đều
-    # Để content mới vào cuối, chia khoảng thành target_count phần
-    ideal_date = valid_start + timedelta(days=int(total_days * (ideal_slot - 1) / max(target_count, 1)))
-    ideal_date = valid_start + timedelta(days=int(total_days * ideal_slot / max(target_count + 1, 1)))
-
-    # Làm tròn đến ngày tốt gần nhất
-    step = 1 if ideal_date <= valid_end else -1
-    candidate = ideal_date
-    for _ in range(7):  # tìm trong 7 ngày
-        if _is_good_posting_day(candidate) and candidate not in existing_dates:
-            return candidate
-        candidate += timedelta(days=step)
-        if candidate > valid_end:
-            candidate = valid_start
-        elif candidate < valid_start:
-            candidate = valid_end
-
-    # Fallback: ngày cuối cùng hợp lệ không trùng
-    fallback = valid_end
-    while fallback >= valid_start:
-        if fallback not in existing_dates:
-            return fallback
-        fallback -= timedelta(days=1)
-    return valid_end  # fallback cuối cùng
+    for day in reversed(good_days):
+        if day not in existing_set:
+            return day
+    return valid_end
 
 
 class CampaignUpdate(BaseModel):
@@ -198,15 +276,17 @@ async def create_content_internal(
         campaign = campaign_result.scalar_one_or_none()
 
         if campaign:
-            # Lấy các ngày đã có của campaign này
+            # Lấy các ngày đã có của campaign này (kênh + ngày)
             existing_result = await db.execute(
-                select(ContentItem.scheduled_date)
+                select(ContentItem.channel, ContentItem.scheduled_date)
                 .where(
                     ContentItem.campaign_id == payload.campaign_id,
                     ContentItem.scheduled_date.is_not(None),
                 )
             )
-            existing_dates = [r[0] for r in existing_result.fetchall() if r[0]]
+            existing_items: list[tuple[str, date]] = [
+                (r[0], r[1]) for r in existing_result.fetchall() if r[1]
+            ]
 
             # Tính ngày tạo campaign (hoặc dùng today nếu không có)
             campaign_start = campaign.created_at.date() if hasattr(campaign, "created_at") else date.today()
@@ -215,7 +295,8 @@ async def create_content_internal(
                 campaign.deadline,
                 campaign_start,
                 payload.channel,
-                existing_dates,
+                list(campaign.channels) if campaign.channels else [payload.channel],
+                existing_items,
             )
 
     item = ContentItem(

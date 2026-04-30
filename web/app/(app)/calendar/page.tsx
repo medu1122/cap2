@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Copy, CalendarDays, Check, Sparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, CalendarDays, Check, Sparkles, Bell, BellOff } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { STATUS_COLORS, STATUS_LABELS, CHANNEL_LABELS, cn, formatDate } from "@/lib/utils";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, isToday, parseISO } from "date-fns";
@@ -49,8 +49,30 @@ export default function CalendarPage() {
   const [suggestData, setSuggestData] = useState<SuggestDatesResponse | null>(null);
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [suggestErr, setSuggestErr] = useState("");
+  const [reminderEnabled, setReminderEnabled] = useState(true);
+  const [updatingReminder, setUpdatingReminder] = useState(false);
 
   const monthStr = format(currentDate, "yyyy-MM");
+
+  // Load user reminder preference
+  useEffect(() => {
+    api.get<{ email_reminder_enabled: boolean }>("/auth/me")
+      .then((u) => setReminderEnabled(u.email_reminder_enabled !== false))
+      .catch(() => {});
+  }, []);
+
+  async function toggleReminder() {
+    setUpdatingReminder(true);
+    const next = !reminderEnabled;
+    try {
+      await api.patch("/auth/me", { email_reminder_enabled: next });
+      setReminderEnabled(next);
+    } catch {
+      // revert on error
+    } finally {
+      setUpdatingReminder(false);
+    }
+  }
 
   const overloadedDays = useMemo(() => {
     const map: Record<string, number> = {};
@@ -192,6 +214,26 @@ export default function CalendarPage() {
               "Bấm ngày gợi ý hoặc chọn ngày tay rồi Lưu; dữ liệu giữ sau F5.",
             ]}
           />
+          <button
+            onClick={toggleReminder}
+            disabled={updatingReminder}
+            className={cn(
+              "flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border transition-colors",
+              reminderEnabled
+                ? "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                : "border-gray-200 bg-gray-50 text-gray-400 hover:bg-gray-100"
+            )}
+            title={reminderEnabled ? "Nhắc lịch qua email: Bật" : "Nhắc lịch qua email: Tắt"}
+          >
+            {updatingReminder ? (
+              <span className="animate-spin text-xs">↻</span>
+            ) : reminderEnabled ? (
+              <Bell size={13} />
+            ) : (
+              <BellOff size={13} />
+            )}
+            <span>{reminderEnabled ? "Nhắc email" : "Tắt nhắc"}</span>
+          </button>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setViewMode("month")}

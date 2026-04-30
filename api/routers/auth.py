@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from core.database import get_db
@@ -38,4 +39,21 @@ async def login(payload: UserLogin, db: AsyncSession = Depends(get_db)):
 
 @router.get("/me", response_model=UserOut)
 async def me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+
+class UserPrefsUpdate(BaseModel):
+    email_reminder_enabled: bool | None = None
+
+
+@router.patch("/me", response_model=UserOut)
+async def update_me(
+    payload: UserPrefsUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if payload.email_reminder_enabled is not None:
+        current_user.email_reminder_enabled = payload.email_reminder_enabled
+        await db.commit()
+        await db.refresh(current_user)
     return current_user

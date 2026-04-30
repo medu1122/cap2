@@ -59,16 +59,20 @@ async def send_today_calendar_reminders() -> None:
             .where(
                 ContentItem.scheduled_date == today,
                 ContentItem.status.in_(["approved", "pending_approval"]),
+                User.email_reminder_enabled == True,
             )
             .order_by(User.email, Campaign.campaign_name)
         )
         rows = result.all()
 
-    grouped: dict[str, dict] = defaultdict(lambda: {"name": "", "items": []})
+    grouped: dict[str, dict] = defaultdict(lambda: {"name": "", "items": [], "email": ""})
     for item, campaign_name, email, full_name in rows:
         if not email:
             continue
+        # Đọc preference từ DB — nếu chưa load user thì skip
+        # Note: user preference đã join ở query bên trên (User.email_reminder_enabled)
         grouped[email]["name"] = full_name or "bạn"
+        grouped[email]["email"] = email
         grouped[email]["items"].append({
             "campaign_name": campaign_name,
             "channel": item.channel,

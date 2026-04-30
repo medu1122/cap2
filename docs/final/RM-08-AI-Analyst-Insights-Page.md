@@ -3,6 +3,26 @@
 > **URL:** `http://localhost:3000/insights`
 > **File:** `web/app/(app)/insights/page.tsx`
 > **API Router:** `api/routers/insights_chat.py`
+> **UI Version:** 2.0 (Redesigned - April 2026)
+
+---
+
+## UI/UX Overview
+
+### Trước khi redesign
+- Giao diện cơ bản, không có hierarchy rõ ràng
+- User không biết bắt đầu từ đâu
+- Tabs "Tạo bảng" / "Upload file" không nổi bật
+- KPI cards đơn điệu
+- Chat panel nhỏ, không có context
+
+### Sau khi redesign
+- **Hero Section** với gradient và icon rõ ràng
+- **3-Step Flow** hiển thị rõ: Nhập dữ liệu → AI phân tích → Trò chuyện
+- **Method Cards** lớn, dễ chọn (Upload file / Tạo bảng)
+- **KPI Cards** với icon, format số đẹp
+- **Insight Cards** với màu sắc theo severity
+- **Chat Panel** với header chuyên nghiệp, suggested questions
 
 ---
 
