@@ -6,6 +6,8 @@ import { ChevronLeft, Check, Loader2, Clock, AlertCircle, ImagePlus, Upload, Wan
 import { API_BASE, api } from "@/lib/api-client";
 import { STATUS_LABELS, STATUS_COLORS, CHANNEL_LABELS, formatDate, cn } from "@/lib/utils";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
+import PerformanceSection from "@/components/campaign/PerformanceSection";
+import RevenueUploadModal from "@/components/campaign/RevenueUploadModal";
 
 interface AgentLog {
   id: string;
@@ -914,6 +916,7 @@ export default function CampaignDetailPage() {
   const [abTest, setAbTest] = useState(false);
   const [execBusy, setExecBusy] = useState(false);
   const [execError, setExecError] = useState("");
+  const [showRevenueModal, setShowRevenueModal] = useState(false);
 
   const load = useCallback(() => {
     api.get<Campaign>(`/campaigns/${id}`)
@@ -1353,6 +1356,19 @@ export default function CampaignDetailPage() {
 
             {/* Image card — below content, always shown after brief */}
             {!isProcessing && <CampaignImageCard campaign={campaign} onUpdated={load} />}
+
+            {/* Performance Section — Hiệu quả chiến dịch */}
+            {!isProcessing && (
+              <div className="card space-y-4">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-semibold text-gray-800">Hiệu quả chiến dịch</h2>
+                </div>
+                <PerformanceSection 
+                  campaignId={id as string} 
+                  onAddRevenue={() => setShowRevenueModal(true)} 
+                />
+              </div>
+            )}
           </div>
 
           <div className="lg:col-span-2">
@@ -1365,6 +1381,15 @@ export default function CampaignDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Revenue Modal */}
+      {showRevenueModal && campaign && (
+        <RevenueUploadModal
+          campaignId={campaign.id}
+          campaignName={campaign.campaign_name}
+          onClose={() => setShowRevenueModal(false)}
+        />
+      )}
     </>
   );
 }

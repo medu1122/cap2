@@ -25,6 +25,7 @@ from models.content_item import ContentItem
 from models.agent_run_log import AgentRunLog
 from models.customer_list import CustomerList
 from models.campaign_execution_log import CampaignExecutionLog
+from models.campaign_revenue import CampaignRevenue
 from schemas.campaign import (
     CampaignCreate,
     CampaignListItem,
@@ -36,6 +37,13 @@ from schemas.campaign import (
     DeliverySummaryResponse,
     DeliveryMetricsOut,
     ExecutionLogOut,
+)
+from schemas.campaign_revenue import (
+    CampaignRevenueCreate,
+    CampaignRevenueUpdate,
+    CampaignRevenueOut,
+    CampaignPerformanceMetrics,
+    CampaignPerformanceResponse,
 )
 from services.agent_dispatcher import dispatch_campaign
 from services.campaign_delivery_service import (
@@ -712,3 +720,205 @@ async def upload_campaign_image(
     await _save_campaign_image_url(campaign, image_url, db)
     storage = "cloudinary" if _CLOUDINARY_ENABLED else "local"
     return {"image_url": image_url, "storage": storage}
+
+
+# ── Performance & Revenue APIs ──────────────────────────────────────────────────
+
+@router.get("/{campaign_id}/performance", response_model=CampaignPerformanceResponse)
+async def get_campaign_performance(
+    campaign_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lấy KPIs tổng hợp của 1 chiến dịch."""
+    # Verify campaign belongs to user
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.user_id == current_user.id)
+    )
+    campaign = result.scalar_one_or_none()
+    if not campaign:
+        raise HTTPException(404, "Không tìm thấy chiến dịch")
+
+    # Get all execution logs for this campaign
+    logs_result = await db.execute(
+        select(CampaignExecutionLog).where(CampaignExecutionLog.campaign_id == campaign_id)
+    )
+    logs = list(logs_result.scalars().all())
+
+    # Get all revenues
+    revenue_result = await db.execute(
+        select(CampaignRevenue)
+        .where(CampaignRevenue.campaign_id == campaign_id)
+        .order_by(CampaignRevenue.created_at.desc())
+    )
+    revenues = [CampaignRevenueOut.model_validate(r) for r in revenue_result.scalars().all()]
+
+    # Calculate metrics
+    total_sent = len(logs)
+    delivered = sum(1 for r in logs if r.status == "delivered")
+    bounced = sum(1 for r in logs if r.status == "bounced")
+    opened = sum(1 for r in logs if r.opened_at is not None)
+    clicked = sum(1 for r in logs if r.clicked_at is not None)
+    unsubscribed = sum(1 for r in logs if r.status == "unsubscribed")
+
+    total_revenue = sum(r.revenue for r in revenues)
+    total_orders = sum(r.order_count for r in revenues)
+
+    # Get campaign cost
+    campaign_cost = campaign.cost or 0
+
+    # Calculate rates
+    open_rate = round((opened / delivered) * 100, 2) if delivered > 0 else 0.0
+    click_rate = round((clicked / delivered) * 100, 2) if delivered > 0 else 0.0
+    conversion_rate = round((total_orders / delivered) * 100, 2) if delivered > 0 else 0.0
+    revenue_per_email = round(total_revenue / delivered, 0) if delivered > 0 else 0.0
+
+    # Calculate ROI
+    roi_percent = None
+    if campaign_cost > 0:
+        roi_percent = round(((total_revenue - campaign_cost) / campaign_cost) * 100, 2)
+
+    metrics = CampaignPerformanceMetrics(
+        campaign_id=campaign.id,
+        campaign_name=campaign.campaign_name,
+        status=campaign.status,
+        total_sent=total_sent,
+        delivered=delivered,
+        bounced=bounced,
+        opened=opened,
+        clicked=clicked,
+        unsubscribed=unsubscribed,
+        total_revenue=total_revenue,
+        total_orders=total_orders,
+        open_rate=open_rate,
+        click_rate=click_rate,
+        conversion_rate=conversion_rate,
+        cost=campaign_cost,
+        roi_percent=roi_percent,
+        revenue_per_email=revenue_per_email,
+    )
+
+    return CampaignPerformanceResponse(metrics=metrics, revenues=revenues)
+
+
+@router.post("/{campaign_id}/revenue", status_code=201)
+async def create_campaign_revenue(
+    campaign_id: uuid.UUID,
+    payload: CampaignRevenueCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Nhập doanh thu cho chiến dịch."""
+    # Verify campaign belongs to user
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.user_id == current_user.id)
+    )
+    campaign = result.scalar_one_or_none()
+    if not campaign:
+        raise HTTPException(404, "Không tìm thấy chiến dịch")
+
+    # Also update campaign cost if provided
+    if payload.cost and payload.cost > 0:
+        campaign.cost = payload.cost
+        await db.commit()
+
+    # Create revenue record
+    revenue = CampaignRevenue(
+        campaign_id=campaign_id,
+        user_id=current_user.id,
+        revenue=payload.revenue,
+        order_count=payload.order_count,
+        cost=payload.cost or 0,
+        source=payload.source,
+        notes=payload.notes,
+        recorded_date=payload.recorded_date,
+    )
+    db.add(revenue)
+    await db.commit()
+    await db.refresh(revenue)
+
+    return CampaignRevenueOut.model_validate(revenue)
+
+
+@router.put("/{campaign_id}/revenue/{revenue_id}", response_model=CampaignRevenueOut)
+async def update_campaign_revenue(
+    campaign_id: uuid.UUID,
+    revenue_id: uuid.UUID,
+    payload: CampaignRevenueUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cập nhật doanh thu đã nhập."""
+    result = await db.execute(
+        select(CampaignRevenue)
+        .where(
+            CampaignRevenue.id == revenue_id,
+            CampaignRevenue.campaign_id == campaign_id,
+            CampaignRevenue.user_id == current_user.id,
+        )
+    )
+    revenue = result.scalar_one_or_none()
+    if not revenue:
+        raise HTTPException(404, "Không tìm thấy bản ghi doanh thu")
+
+    # Update fields
+    if payload.revenue is not None:
+        revenue.revenue = payload.revenue
+    if payload.order_count is not None:
+        revenue.order_count = payload.order_count
+    if payload.cost is not None:
+        revenue.cost = payload.cost
+    if payload.notes is not None:
+        revenue.notes = payload.notes
+    if payload.recorded_date is not None:
+        revenue.recorded_date = payload.recorded_date
+
+    await db.commit()
+    await db.refresh(revenue)
+
+    return CampaignRevenueOut.model_validate(revenue)
+
+
+@router.delete("/{campaign_id}/revenue/{revenue_id}", status_code=204)
+async def delete_campaign_revenue(
+    campaign_id: uuid.UUID,
+    revenue_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Xóa bản ghi doanh thu."""
+    result = await db.execute(
+        select(CampaignRevenue)
+        .where(
+            CampaignRevenue.id == revenue_id,
+            CampaignRevenue.campaign_id == campaign_id,
+            CampaignRevenue.user_id == current_user.id,
+        )
+    )
+    revenue = result.scalar_one_or_none()
+    if not revenue:
+        raise HTTPException(404, "Không tìm thấy bản ghi doanh thu")
+
+    await db.delete(revenue)
+    await db.commit()
+
+
+@router.put("/{campaign_id}/cost")
+async def update_campaign_cost(
+    campaign_id: uuid.UUID,
+    cost: float,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cập nhật chi phí chiến dịch để tính ROI."""
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.user_id == current_user.id)
+    )
+    campaign = result.scalar_one_or_none()
+    if not campaign:
+        raise HTTPException(404, "Không tìm thấy chiến dịch")
+
+    campaign.cost = cost
+    await db.commit()
+
+    return {"message": "Đã cập nhật chi phí", "cost": cost}

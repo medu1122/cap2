@@ -7,7 +7,7 @@ RUN npm ci
 
 COPY . .
 
-# NEXT_PUBLIC_* được đọc khi `next build` — dùng giá trị từ web/.env.local (qua compose env_file / --env-file khi build).
+
 RUN npm run build
 
 FROM node:20-alpine AS runner

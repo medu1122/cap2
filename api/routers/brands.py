@@ -10,6 +10,7 @@ from core.database import get_db
 from core.deps import get_current_user
 from models.user import User
 from models.brand import Brand
+from models.campaign import Campaign
 from schemas.brand import BrandUpsert, BrandOut
 
 router = APIRouter()
@@ -135,12 +136,13 @@ async def update_brand(
     return brand
 
 
-@router.delete("/id/{brand_id}", status_code=204)
-async def delete_brand(
+@router.get("/id/{brand_id}/campaigns/count", response_model=dict)
+async def count_brand_campaigns(
     brand_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Đếm số chiến dịch liên quan đến brand trước khi xóa."""
     result = await db.execute(
         select(Brand).where(
             Brand.id == brand_id,
@@ -150,6 +152,38 @@ async def delete_brand(
     brand = result.scalar_one_or_none()
     if not brand:
         raise HTTPException(status_code=404, detail="Brand not found")
+
+    campaign_result = await db.execute(
+        select(Campaign).where(Campaign.brand_id == brand_id)
+    )
+    campaigns = campaign_result.scalars().all()
+    return {"count": len(campaigns), "campaigns": [{"id": str(c.id), "name": c.campaign_name} for c in campaigns]}
+
+
+@router.delete("/id/{brand_id}", status_code=204)
+async def delete_brand(
+    brand_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Xóa brand và tất cả chiến dịch liên quan."""
+    result = await db.execute(
+        select(Brand).where(
+            Brand.id == brand_id,
+            Brand.user_id == current_user.id,
+        )
+    )
+    brand = result.scalar_one_or_none()
+    if not brand:
+        raise HTTPException(status_code=404, detail="Brand not found")
+
+    # Xóa tất cả campaign liên quan đến brand
+    campaign_result = await db.execute(
+        select(Campaign).where(Campaign.brand_id == brand_id)
+    )
+    campaigns = campaign_result.scalars().all()
+    for campaign in campaigns:
+        await db.delete(campaign)
 
     await db.delete(brand)
     await db.commit()

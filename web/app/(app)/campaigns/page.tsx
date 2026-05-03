@@ -5,6 +5,7 @@ import { Plus } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { STATUS_LABELS, STATUS_COLORS, CHANNEL_LABELS, formatDate, cn } from "@/lib/utils";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
+import AIToolsMenu from "@/components/campaign-assistant/AIToolsMenu";
 import CampaignAssistantButton from "@/components/campaign-assistant/CampaignAssistantButton";
 
 interface Campaign {
@@ -136,7 +137,10 @@ export default function CampaignsPage() {
           </table>
         </div>
       )}
-      <CampaignAssistantButton />
+      <div className="flex items-center gap-3">
+        <AIToolsMenu />
+        <CampaignAssistantButton />
+      </div>
     </div>
   );
 }

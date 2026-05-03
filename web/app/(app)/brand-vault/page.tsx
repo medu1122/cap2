@@ -228,8 +228,29 @@ export default function BrandVaultPage() {
 
   async function handleDeleteBrand() {
     if (!form.id) return;
-    const ok = window.confirm(`Xoá thương hiệu "${form.brand_name}"? Hành động này không thể hoàn tác.`);
-    if (!ok) return;
+
+    // Gọi API đếm campaign liên quan
+    let campaignCount = 0;
+    let campaignNames: string[] = [];
+    try {
+      const data = await api.get<{ count: number; campaigns: { id: string; name: string }[] }>(
+        `/brands/id/${form.id}/campaigns/count`
+      );
+      campaignCount = data.count;
+      campaignNames = data.campaigns.map((c) => c.name);
+    } catch {
+      // Nếu lỗi, vẫn cho xóa
+    }
+
+    // Tạo message xác nhận
+    let confirmMsg = `Bạn có chắc muốn xóa thương hiệu "${form.brand_name}"?`;
+    if (campaignCount > 0) {
+      confirmMsg = `Thương hiệu "${form.brand_name}" có ${campaignCount} chiến dịch liên quan:\n\n${campaignNames.slice(0, 3).map((n) => `• ${n}`).join("\n")}${campaignCount > 3 ? `\n• ... và ${campaignCount - 3} chiến dịch khác` : ""}\n\nTất cả sẽ bị xóa vĩnh viễn. Tiếp tục?`;
+    } else {
+      confirmMsg += " Hành động này không thể hoàn tác.";
+    }
+
+    if (!window.confirm(confirmMsg)) return;
 
     setSaving(true);
     setError("");
@@ -243,7 +264,7 @@ export default function BrandVaultPage() {
         startNewBrand();
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Không thể xoá thương hiệu");
+      setError(err instanceof Error ? err.message : "Không thể xóa thương hiệu");
     } finally {
       setSaving(false);
     }
@@ -425,9 +446,9 @@ export default function BrandVaultPage() {
         {/* Phong cách viết */}
         <div className="card space-y-4">
           <div>
-            <label className="label">AI sẽ viết theo phong cách nào?</label>
+            <label className="label">Phong cách viết cho chiến dịch</label>
             <p className="text-xs text-gray-400 mb-2">
-              Ảnh hưởng trực tiếp đến cách AI &quot;nói chuyện&quot; trong mọi bài đăng của bạn
+              Chọn giọng văn cho nội dung bài đăng, email, video của chiến dịch
             </p>
             <select
               className="input"

@@ -2,6 +2,7 @@ from .user import User
 from .brand import Brand
 from .campaign import Campaign
 from .campaign_execution_log import CampaignExecutionLog
+from .campaign_revenue import CampaignRevenue
 from .content_item import ContentItem
 from .agent_run_log import AgentRunLog
 from .workflow_job import WorkflowJob
@@ -27,6 +28,7 @@ __all__ = [
     "Brand",
     "Campaign",
     "CampaignExecutionLog",
+    "CampaignRevenue",
     "ContentItem",
     "AgentRunLog",
     "WorkflowJob",
