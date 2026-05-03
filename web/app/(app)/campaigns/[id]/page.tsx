@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Check, Loader2, Clock, AlertCircle, ImagePlus, Upload, Wand2, Mail, Smartphone, CalendarDays } from "lucide-react";
+import { ChevronLeft, Check, Loader2, Clock, AlertCircle, ImagePlus, Upload, Wand2, Mail, Smartphone, CalendarDays, Trash2 } from "lucide-react";
 import { API_BASE, api } from "@/lib/api-client";
 import { STATUS_LABELS, STATUS_COLORS, CHANNEL_LABELS, formatDate, cn } from "@/lib/utils";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
@@ -911,12 +911,26 @@ export default function CampaignDetailPage() {
   const [loading, setLoading] = useState(true);
   const [customerLists, setCustomerLists] = useState<WorkflowCustomerList[]>([]);
   const [deliverySummary, setDeliverySummary] = useState<DeliverySummary | null>(null);
-  const [execMode, setExecMode] = useState<"email" | "sms_demo">("email");
+  const [execMode] = useState("email");
   const [listId, setListId] = useState("");
-  const [abTest, setAbTest] = useState(false);
   const [execBusy, setExecBusy] = useState(false);
   const [execError, setExecError] = useState("");
   const [showRevenueModal, setShowRevenueModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const router = useRouter();
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      await api.delete(`/campaigns/${id}`);
+      router.push("/campaigns");
+    } catch {
+      alert("Xóa thất bại");
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  }
 
   const load = useCallback(() => {
     api.get<Campaign>(`/campaigns/${id}`)
@@ -995,11 +1009,11 @@ export default function CampaignDetailPage() {
     setExecBusy(true);
     try {
       await api.post(`/campaigns/${id}/execute`, {
-        mode: execMode,
+        mode: "email",
         customer_list_id: listId,
-        ab_test: abTest && execMode === "email",
+        ab_test: false,
       });
-      await loadDelivery();
+      window.open(`/campaigns/${id}/sending`, "_blank");
     } catch (e: unknown) {
       const msg =
         e && typeof e === "object" && "message" in e
@@ -1034,6 +1048,24 @@ export default function CampaignDetailPage() {
           />
           <span className={cn("badge", STATUS_COLORS[campaign.status])}>{STATUS_LABELS[campaign.status]}</span>
           {isProcessing && <Loader2 size={14} className="text-blue-400 animate-spin" />}
+          {!isProcessing && !showDeleteConfirm && (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="btn-danger text-xs py-1 px-2 flex items-center gap-1"
+            >
+              <Trash2 size={12} />
+              Xóa
+            </button>
+          )}
+          {showDeleteConfirm && (
+            <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-1">
+              <span className="text-xs text-red-700">Xóa chiến dịch?</span>
+              <button onClick={handleDelete} disabled={deleting} className="btn-danger text-xs py-0.5 px-2">
+                {deleting ? "..." : "Xóa"}
+              </button>
+              <button onClick={() => setShowDeleteConfirm(false)} className="btn-secondary text-xs py-0.5 px-2">Hủy</button>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
@@ -1246,62 +1278,54 @@ export default function CampaignDetailPage() {
                   <div className="flex flex-wrap gap-3">
                     <label
                       className={cn(
-                        "flex items-center gap-2 text-sm cursor-pointer",
-                        !hasEmailChannel && "opacity-50 cursor-not-allowed",
+                        "flex items-center gap-2 text-sm",
+                        !hasEmailChannel && "opacity-50",
                       )}
                     >
                       <input
                         type="radio"
                         name="execMode"
-                        checked={execMode === "email"}
+                        checked={true}
                         disabled={!hasEmailChannel}
-                        onChange={() => setExecMode("email")}
                       />
                       <Mail size={14} />
-                      Email (thật)
+                      Email (gửi mail khách hàng)
                     </label>
-                    <label className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input
-                        type="radio"
-                        name="execMode"
-                        checked={execMode === "sms_demo"}
-                        onChange={() => setExecMode("sms_demo")}
-                      />
+                    <label className="flex items-center gap-2 text-sm opacity-50">
+                      <input type="radio" name="execMode" disabled />
                       <Smartphone size={14} />
-                      SMS (mô phỏng)
+                      SMS (Chưa hỗ trợ)
+                    </label>
+                    <label className="flex items-center gap-2 text-sm opacity-50">
+                      <input type="radio" name="execMode" disabled />
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                      </svg>
+                      Đăng Facebook (Chưa hỗ trợ)
                     </label>
                   </div>
                   {!hasEmailChannel ? (
                     <p className="text-xs text-amber-700">Chiến dịch chưa gồm kênh Email.</p>
                   ) : null}
 
-                  {execMode === "email" ? (
-                    <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={abTest}
-                        onChange={(e) => setAbTest(e.target.checked)}
-                      />
-                      Thử A/B trên nội dung email (nhóm A / B ngẫu nhiên)
-                    </label>
-                  ) : null}
-
-                  <button
-                    type="button"
-                    onClick={runCampaignExecution}
-                    disabled={
-                      execBusy ||
-                      sendingDelivery ||
-                      !listId ||
-                      (execMode === "email" && !hasEmailChannel)
-                    }
-                    className="btn-primary text-sm py-1.5 px-4 inline-flex items-center gap-2"
-                  >
-                    {execBusy || sendingDelivery ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : null}
-                    Chạy chiến dịch
-                  </button>
+                  <div className="pt-3 border-t border-gray-100 mt-3">
+                    <button
+                      type="button"
+                      onClick={runCampaignExecution}
+                      disabled={
+                        execBusy ||
+                        sendingDelivery ||
+                        !listId ||
+                        !hasEmailChannel
+                      }
+                      className="btn-primary text-sm py-1.5 px-4 inline-flex items-center gap-2"
+                    >
+                      {execBusy || sendingDelivery ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : null}
+                      Chạy chiến dịch
+                    </button>
+                  </div>
                   {execError ? <p className="text-xs text-red-600">{execError}</p> : null}
                 </div>
 

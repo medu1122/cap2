@@ -48,6 +48,14 @@ export function formatDate(dateStr: string | null | undefined): string {
   });
 }
 
+export function formatDateShort(dateStr: string | null | undefined): string {
+  if (!dateStr) return "—";
+  return new Date(dateStr).toLocaleDateString("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+  });
+}
+
 export function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
