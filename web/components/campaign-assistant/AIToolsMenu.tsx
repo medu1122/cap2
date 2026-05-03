@@ -1,7 +1,7 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type ComponentType } from "react";
 import Link from "next/link";
-import { Sparkles, BarChart3, X } from "lucide-react";
+import { Sparkles, BarChart3, type LucideProps } from "lucide-react";
 import CampaignAssistantModal from "./CampaignAssistantModal";
 
 interface AIToolsMenuProps {
@@ -25,7 +25,16 @@ export default function AIToolsMenu({ className = "", buttonClassName = "" }: AI
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const tools = [
+  const tools: Array<{
+    id: string;
+    icon: ComponentType<LucideProps>;
+    label: string;
+    sublabel: string;
+    color: string;
+    href?: string;
+    openNewTab?: boolean;
+    onClick?: () => void;
+  }> = [
     {
       id: "suggestion",
       icon: Sparkles,
@@ -44,6 +53,7 @@ export default function AIToolsMenu({ className = "", buttonClassName = "" }: AI
       sublabel: "Xem kết quả & ROI",
       color: "from-teal-500 to-emerald-500",
       href: "/campaigns/analytics",
+      openNewTab: true,
       onClick: undefined,
     },
   ];
@@ -93,21 +103,39 @@ export default function AIToolsMenu({ className = "", buttonClassName = "" }: AI
                   }}
                   className="w-full group"
                 >
-                  <Link href={tool.href || "#"} className="block">
-                    <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
-                      <div
-                        className={`w-10 h-10 rounded-xl bg-gradient-to-br ${tool.color} flex items-center justify-center shadow-sm group-hover:shadow-md transition-shadow`}
-                      >
-                        <Icon size={18} className="text-white" />
+                  {tool.href && tool.openNewTab ? (
+                    <a href={tool.href} target="_blank" rel="noopener noreferrer" className="block">
+                      <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
+                        <div
+                          className={`w-10 h-10 rounded-xl bg-gradient-to-br ${tool.color} flex items-center justify-center shadow-sm group-hover:shadow-md transition-shadow`}
+                        >
+                          <Icon size={18} className="text-white" />
+                        </div>
+                        <div className="text-left flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-800 group-hover:text-gray-900">
+                            {tool.label}
+                          </p>
+                          <p className="text-xs text-gray-400 truncate">{tool.sublabel}</p>
+                        </div>
                       </div>
-                      <div className="text-left flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-800 group-hover:text-gray-900">
-                          {tool.label}
-                        </p>
-                        <p className="text-xs text-gray-400 truncate">{tool.sublabel}</p>
+                    </a>
+                  ) : (
+                    <Link href={tool.href || "#"} className="block">
+                      <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
+                        <div
+                          className={`w-10 h-10 rounded-xl bg-gradient-to-br ${tool.color} flex items-center justify-center shadow-sm group-hover:shadow-md transition-shadow`}
+                        >
+                          <Icon size={18} className="text-white" />
+                        </div>
+                        <div className="text-left flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-800 group-hover:text-gray-900">
+                            {tool.label}
+                          </p>
+                          <p className="text-xs text-gray-400 truncate">{tool.sublabel}</p>
+                        </div>
                       </div>
-                    </div>
-                  </Link>
+                    </Link>
+                  )}
                 </button>
               );
             })}
