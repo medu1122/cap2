@@ -50,34 +50,34 @@ export default function AIToolsMenu({ className = "", buttonClassName = "" }: AI
 
   return (
     <>
-      <div ref={menuRef} className={`relative inline-block ${className}`}>
-        {/* Main Button */}
+      <div ref={menuRef} className={`fixed bottom-6 right-6 z-40 ${className}`}>
+        {/* Main Button - Floating style */}
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className={`flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-colors ${buttonClassName}`}
+          className={`flex items-center gap-2 px-4 py-3 rounded-full bg-gradient-to-r from-[#377D73] to-[#2d6a61] text-white shadow-lg hover:shadow-xl transition-all ${buttonClassName} ${isOpen ? "rounded-b-none" : ""}`}
         >
           <div className="flex -space-x-1">
-            <span className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center">
+            <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center">
               <Sparkles size={10} className="text-white" />
             </span>
-            <span className="w-5 h-5 rounded-full bg-gradient-to-br from-teal-500 to-emerald-500 flex items-center justify-center">
+            <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center">
               <BarChart3 size={10} className="text-white" />
             </span>
           </div>
-          <span className="text-sm font-medium text-gray-700">AI Tools</span>
+          <span className="text-sm font-medium">Công cụ hỗ trợ</span>
           <svg
-            className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? "rotate-180" : ""}`}
+            className={`w-4 h-4 transition-transform ${isOpen ? "rotate-180" : ""}`}
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
           </svg>
         </button>
 
-        {/* Dropdown Menu - Windows Desktop Style */}
+        {/* Dropdown Menu */}
         {isOpen && (
-          <div className="absolute top-full left-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-gray-100 p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="absolute bottom-full left-0 mb-0 w-64 bg-white rounded-t-xl shadow-xl border border-gray-100 p-2 z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
             <div className="px-2 py-1.5 text-xs font-medium text-gray-400 uppercase tracking-wide">
               Công cụ AI
             </div>

@@ -4,7 +4,6 @@ import Link from "next/link";
 import { api } from "@/lib/api-client";
 import { CHANNEL_LABELS, CHANNEL_COLORS } from "@/lib/utils";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
-import AIToolsMenu from "@/components/campaign-assistant/AIToolsMenu";
 
 interface Stats {
   total_campaigns: number;
@@ -64,9 +63,8 @@ export default function DashboardPage() {
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
 
-      {/* Header với nút hướng dẫn và AI Tools */}
+      {/* Header với nút hướng dẫn */}
       <div className="flex items-center justify-end gap-2">
-        <AIToolsMenu />
         <HelpDialogButton
           title="AIMAP - Hướng dẫn sử dụng"
           summary="AIMAP là nền tảng marketing tự động hóa bằng AI, giúp doanh nghiệp nhỏ quản lý chiến dịch, tạo nội dung và chăm sóc khách hàng dễ dàng."
