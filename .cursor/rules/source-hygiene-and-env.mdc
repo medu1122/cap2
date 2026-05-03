@@ -34,3 +34,4 @@ alwaysApply: true
 
 - Không tự tạo thêm file migration trong `api/alembic/versions` nếu user không yêu cầu explicit.
 - Khi cần thay đổi schema DB, ưu tiên ghi câu SQL trực tiếp trong chat để user tự copy/paste chạy trên database.
+ # hỗ trợ tạo commit trên git nên viết tiếng việt giúp t

@@ -29,6 +29,7 @@ from models.user import User
 from models.workflow_job import WorkflowJob
 from models.workflow_schedule import WorkflowSchedule
 from models.customer_analysis_snapshot import CustomerAnalysisSnapshot
+from models.outreach_log import OutreachLog
 from services.agent_dispatcher import dispatch_campaign
 from services.customer_analysis_service import analyze_customer_rows
 
@@ -382,6 +383,7 @@ class QuickOutreachPayload(BaseModel):
     subject: str = "Thông báo"
     message: str
     recipients: list[QuickOutreachRecipient]
+    campaign_id: uuid.UUID | None = None
 
 
 class SmartContactComposePayload(BaseModel):
@@ -1371,7 +1373,25 @@ async def customer_list_quick_outreach(
     if not list_result.scalar_one_or_none():
         raise HTTPException(404, "Customer list không tồn tại")
 
+    # Verify campaign if provided
+    campaign = None
+    if payload.campaign_id:
+        camp_result = await db.execute(
+            select(Campaign).where(
+                Campaign.id == payload.campaign_id,
+                Campaign.user_id == current_user.id,
+            )
+        )
+        campaign = camp_result.scalar_one_or_none()
+        if not campaign:
+            raise HTTPException(404, "Chiến dịch không tồn tại hoặc không thuộc tài khoản của bạn")
+
     results: list[dict[str, str | None]] = []
+    sent_count = 0
+    failed_count = 0
+
+    # Generate batch_id for tracking
+    batch_id = uuid.uuid4()
 
     if payload.mode == "email":
         if not settings.SMTP_HOST or not settings.SMTP_USER:
@@ -1395,22 +1415,77 @@ async def customer_list_quick_outreach(
             try:
                 await asyncio.to_thread(send_smtp_sync, email_addr, subject, text_body, html_body)
                 results.append({"to": email_addr, "status": "sent", "detail": None})
+                sent_count += 1
             except Exception as exc:
                 results.append({"to": email_addr, "status": "failed", "detail": str(exc)[:300]})
-        return {"results": results}
+                failed_count += 1
 
-    for r in payload.recipients:
-        phone = (r.phone or "").strip()
-        label = phone or (r.email or "").strip() or (r.name or "?")
-        if not phone:
-            results.append({"to": label, "status": "skipped", "detail": "Thiếu SĐT (SMS mô phỏng)"})
-            continue
-        preview = _render_smart_contact_template(payload.message or "", r)
-        detail_preview = preview if len(preview) <= 160 else preview[:157] + "…"
-        if random.random() < 0.85:
-            results.append({"to": phone, "status": "sent", "detail": f"Mô phỏng · {detail_preview}"})
-        else:
-            results.append({"to": phone, "status": "failed", "detail": "Mô phỏng: lỗi gửi"})
+            # Log to CampaignExecutionLog if campaign_id provided
+            if campaign:
+                from models.campaign_execution_log import CampaignExecutionLog
+                log_entry = CampaignExecutionLog(
+                    campaign_id=campaign.id,
+                    user_id=current_user.id,
+                    channel="email",
+                    recipient_email=email_addr,
+                    recipient_name=name,
+                    recipient_phone=phone,
+                    subject=subject,
+                    status="delivered",
+                    batch_id=batch_id,
+                )
+                db.add(log_entry)
+
+    else:  # SMS
+        for r in payload.recipients:
+            phone = (r.phone or "").strip()
+            label = phone or (r.email or "").strip() or (r.name or "?")
+            if not phone:
+                results.append({"to": label, "status": "skipped", "detail": "Thiếu SĐT (SMS mô phỏng)"})
+                continue
+            preview = _render_smart_contact_template(payload.message or "", r)
+            detail_preview = preview if len(preview) <= 160 else preview[:157] + "…"
+            if random.random() < 0.85:
+                results.append({"to": phone, "status": "sent", "detail": f"Mô phỏng · {detail_preview}"})
+                sent_count += 1
+            else:
+                results.append({"to": phone, "status": "failed", "detail": "Mô phỏng: lỗi gửi"})
+                failed_count += 1
+
+            # Log to CampaignExecutionLog if campaign_id provided
+            if campaign:
+                from models.campaign_execution_log import CampaignExecutionLog
+                log_entry = CampaignExecutionLog(
+                    campaign_id=campaign.id,
+                    user_id=current_user.id,
+                    channel="sms",
+                    recipient_email=(r.email or "").strip(),
+                    recipient_name=(r.name or "").strip() or "bạn",
+                    recipient_phone=phone,
+                    message=preview,
+                    status="delivered",
+                    batch_id=batch_id,
+                )
+                db.add(log_entry)
+
+    # Save outreach log
+    if campaign or sent_count > 0 or failed_count > 0:
+        from models.outreach_log import OutreachLog
+        outreach_log = OutreachLog(
+            user_id=current_user.id,
+            customer_list_id=customer_list_id,
+            campaign_id=payload.campaign_id,
+            mode=payload.mode,
+            subject=payload.subject,
+            message=payload.message,
+            recipient_count=len(payload.recipients),
+            sent_count=sent_count,
+            failed_count=failed_count,
+        )
+        db.add(outreach_log)
+
+    await db.commit()
+
     return {"results": results}
 
 

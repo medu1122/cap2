@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, date, timezone
-from sqlalchemy import String, Text, DateTime, Date, ForeignKey, ARRAY
+from sqlalchemy import String, Text, DateTime, Date, ForeignKey, ARRAY, Numeric
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from core.database import Base
@@ -23,6 +23,7 @@ class Campaign(Base):
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="pending_agent", index=True)
     error_message: Mapped[str | None] = mapped_column(Text)
     campaign_plan_json: Mapped[dict | None] = mapped_column(JSONB)
+    cost: Mapped[float] = mapped_column(Numeric(15, 2), default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -34,3 +35,4 @@ class Campaign(Base):
     execution_logs: Mapped[list["CampaignExecutionLog"]] = relationship(
         "CampaignExecutionLog", back_populates="campaign", cascade="all, delete-orphan"
     )
+    outreach_logs: Mapped[list["OutreachLog"]] = relationship("OutreachLog", back_populates="campaign")

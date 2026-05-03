@@ -1346,13 +1346,15 @@ export default function CustomerListsPage() {
             phone: r.phone || null,
             variables: r.variables,
           })),
+          campaign_id: smartContactCampaignId || null,
         },
       );
       setQuickOutreachResults(res.results);
       const ok = res.results.filter((x) => x.status === "sent").length;
       const fail = res.results.filter((x) => x.status === "failed").length;
       const skip = res.results.filter((x) => x.status === "skipped").length;
-      setMessage(`Liên hệ nhanh: ${ok} gửi được, ${fail} lỗi, ${skip} bỏ qua.`);
+      const campaignNote = smartContactCampaignId ? " (gắn với chiến dịch)" : "";
+      setMessage(`Liên hệ nhanh${campaignNote}: ${ok} gửi được, ${fail} lỗi, ${skip} bỏ qua.`);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Gửi thất bại");
     } finally {
@@ -2366,6 +2368,11 @@ export default function CustomerListsPage() {
                     <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
                       <span className="tabular-nums font-medium text-slate-700">{quickOutreachRecipients?.length ?? 0}</span>{" "}
                       người nhận
+                      {smartContactCampaignId && (
+                        <span className="ml-1.5 inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                          Track KPIs
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -2390,7 +2397,7 @@ export default function CustomerListsPage() {
               <div className="rounded-xl border border-slate-100 bg-white px-3 py-2.5 shadow-sm">
                 <label className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600" htmlFor="smart-contact-campaign-pick">
                   <Megaphone className="h-3.5 w-3.5 text-sky-500" />
-                  Điền từ chiến dịch có sẵn
+                  Gắn chiến dịch (để track KPIs)
                 </label>
                 <select
                   id="smart-contact-campaign-pick"

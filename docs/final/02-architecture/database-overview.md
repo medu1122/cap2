@@ -1245,7 +1245,55 @@ CREATE INDEX ix_campaign_revenue_user_id ON campaign_revenue(user_id);
 CREATE INDEX ix_campaign_revenue_recorded_date ON campaign_revenue(recorded_date DESC);
 ```
 
-## 9) Bang Campaign Performance (Tong hop KPIs)
+## 9) Bang Outreach Logs (Customer Outreach Tracking)
+
+Bang nay luu lich su gui email/SMS tu chuc nang Customer Outreach, cho phep track KPIs vao Campaign.
+
+#### `outreach_logs`
+| Cột | Kiểu | Ràng buộc | Mô tả |
+|---|---|---|---|
+| id | UUID | PK | |
+| user_id | UUID | FK -> users | |
+| customer_list_id | UUID | FK -> customer_lists (nullable) | |
+| campaign_id | UUID | FK -> campaigns (nullable) | Chiến dịch để track KPIs |
+| mode | VARCHAR(10) | NOT NULL | `'email'` hoặc `'sms'` |
+| subject | TEXT | | Tiêu đề email |
+| message | TEXT | | Nội dung đã gửi |
+| recipient_count | INTEGER | | Số người nhận |
+| sent_count | INTEGER | | Số gửi thành công |
+| failed_count | INTEGER | | Số gửi thất bại |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() | |
+
+```sql
+CREATE TABLE IF NOT EXISTS outreach_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    customer_list_id UUID REFERENCES customer_lists(id) ON DELETE SET NULL,
+    campaign_id UUID REFERENCES campaigns(id) ON DELETE SET NULL,
+    mode VARCHAR(10) NOT NULL,
+    subject TEXT,
+    message TEXT,
+    recipient_count INTEGER,
+    sent_count INTEGER,
+    failed_count INTEGER,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+#### Indexes cho `outreach_logs`
+```sql
+CREATE INDEX IF NOT EXISTS ix_outreach_logs_campaign_id ON outreach_logs(campaign_id);
+CREATE INDEX IF NOT EXISTS ix_outreach_logs_user_id ON outreach_logs(user_id);
+```
+
+Ghi chú:
+- Khi gui email tu Customer Outreach, he thong se ghi vao BANG:
+  - `outreach_logs`: luu AI-generated content
+  - `campaign_execution_logs`: de track KPIs (neu co campaign_id)
+- Neu `campaign_id` duoc cung cap, kết quả gửi se đi vào KPIs của Campaign đó
+- Xem them: muc 10) RELATIONSHIPS MOI
+
+## 10) Bang Campaign Performance (Tong hop KPIs)
 
 ### Bang `campaigns` - them cot
 
@@ -2120,6 +2168,10 @@ campaigns ||--o{ campaign_revenue : has
 campaigns ||--o{ v_campaign_performance : summarized_by
 campaign_revenue }o--|| users : belongs_to
 campaign_revenue }o--|| file_uploads : imported_from
+
+outreach_logs }o--|| users : belongs_to
+outreach_logs }o--|| campaigns : tracked_in
+outreach_logs }o--|| customer_lists : from_list
 ```
 
 ## 11) API ENDPOINTS MOI
@@ -2132,15 +2184,18 @@ campaign_revenue }o--|| file_uploads : imported_from
 | DELETE | `/campaigns/{id}/revenue/{revenue_id}` | Xoa doanh thu |
 | POST | `/campaigns/{id}/revenue/import` | Import tu CSV |
 | GET | `/campaigns/performance/summary` | Tong hop tat ca chien dich |
+| POST | `/workflow/customer-lists/{id}/quick-outreach` | Gui email tu Customer (co track KPIs) |
 
 ---
 
 > **Huong dan su dung:**
 > 1. Ket noi PostgreSQL: `psql -h localhost -U postgres -d aimap`
-> 2. Copy SQL o muc 9 va paste vao pgAdmin/DBeaver
+> 2. Copy SQL o muc 9, 10 va paste vao pgAdmin/DBeaver
 > 3. Hoac chay truc tiep: `\i performance-tracking.sql`
 
 > **Ghi chu:**
 > - Bang `campaign_revenue` cho phep nhap doanh thu thu cong de tinh ROI
+> - Bang `outreach_logs` luu lich su gui tu Customer Outreach
 > - View `v_campaign_performance` tong hop tat ca KPIs tu nhieu bang
 > - Chi phi (`cost`) trong `campaigns` de tinh ROI cho tung chien dich
+> - Khi gui email tu Customer Outreach voi `campaign_id`, KPIs se tu dong tong hop
