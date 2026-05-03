@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Check, Loader2, Clock, AlertCircle, ImagePlus, Upload, Wand2, Mail, Smartphone, CalendarDays, Trash2 } from "lucide-react";
+import { ChevronLeft, Check, Loader2, Clock, AlertCircle, ImagePlus, Upload, Wand2, Mail, Smartphone, CalendarDays, Trash2, Calendar } from "lucide-react";
 import { API_BASE, api } from "@/lib/api-client";
 import { STATUS_LABELS, STATUS_COLORS, CHANNEL_LABELS, formatDate, cn } from "@/lib/utils";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
@@ -918,6 +918,9 @@ export default function CampaignDetailPage() {
   const [showRevenueModal, setShowRevenueModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [autoSchedule, setAutoSchedule] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
+  const [scheduleMsg, setScheduleMsg] = useState("");
   const router = useRouter();
 
   async function handleDelete() {
@@ -929,6 +932,23 @@ export default function CampaignDetailPage() {
       alert("Xóa thất bại");
       setDeleting(false);
       setShowDeleteConfirm(false);
+    }
+  }
+
+  async function handleScheduleToggle() {
+    if (!id) return;
+    setScheduling(true);
+    setScheduleMsg("");
+    try {
+      await api.post(`/campaigns/${id}/schedule-auto`, {
+        enabled: !autoSchedule,
+      });
+      setAutoSchedule(!autoSchedule);
+      setScheduleMsg(!autoSchedule ? "Đã bật gửi tự động theo lịch" : "Đã tắt gửi tự động");
+    } catch (err) {
+      setScheduleMsg("Lỗi khi cập nhật");
+    } finally {
+      setScheduling(false);
     }
   }
 
@@ -1327,9 +1347,41 @@ export default function CampaignDetailPage() {
                     </button>
                   </div>
                   {execError ? <p className="text-xs text-red-600">{execError}</p> : null}
-                </div>
 
-                {deliverySummary && deliverySummary.logs.length > 0 ? (
+                {/* Auto Schedule Toggle */}
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Calendar size={14} className="text-gray-500" />
+                      <div>
+                        <p className="text-xs font-medium text-gray-700">Gửi tự động theo lịch</p>
+                        <p className="text-[10px] text-gray-400">Hệ thống tự gửi email đến khách hàng mới mỗi ngày</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleScheduleToggle}
+                      disabled={scheduling || !hasEmailChannel}
+                      className={cn(
+                        "relative w-11 h-6 rounded-full transition-colors focus:outline-none",
+                        autoSchedule ? "bg-[#377D73]" : "bg-gray-200",
+                        (!hasEmailChannel || scheduling) && "opacity-50"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform",
+                          autoSchedule && "translate-x-5"
+                        )}
+                      />
+                    </button>
+                  </div>
+                  {scheduleMsg && (
+                    <p className="text-xs text-[#377D73] mt-2">{scheduleMsg}</p>
+                  )}
+                </div>
+              </div>
+
+              {deliverySummary && deliverySummary.logs.length > 0 ? (
                   <div className="overflow-x-auto border border-gray-100 rounded-md">
                     <table className="w-full text-xs">
                       <thead>

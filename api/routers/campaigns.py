@@ -510,6 +510,30 @@ async def delete_campaign(
     await db.commit()
 
 
+class ScheduleAutoRequest(BaseModel):
+    enabled: bool
+
+
+@router.post("/{campaign_id}/schedule-auto")
+async def toggle_auto_schedule(
+    campaign_id: uuid.UUID,
+    body: ScheduleAutoRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Campaign).where(Campaign.id == campaign_id, Campaign.user_id == current_user.id))
+    campaign = result.scalar_one_or_none()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    plan = dict(campaign.campaign_plan_json or {})
+    plan["auto_schedule_enabled"] = body.enabled
+    campaign.campaign_plan_json = plan
+    await db.commit()
+
+    return {"message": "Auto schedule updated", "enabled": body.enabled}
+
+
 # ── Image helpers ──────────────────────────────────────────────────────────────
 
 async def _save_campaign_image_url(campaign: Campaign, url: str, db: AsyncSession) -> None:
