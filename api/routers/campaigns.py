@@ -51,6 +51,10 @@ from services.campaign_delivery_service import (
     run_email_delivery,
     run_sms_simulation,
 )
+from services.image_prompt_generator import (
+    generate_image_prompt,
+    build_context_from_campaign,
+)
 
 router = APIRouter()
 
@@ -643,7 +647,7 @@ async def generate_campaign_image(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate campaign image and persist on Cloudinary/local storage."""
+    """Generate campaign image using GPT-4o to create context-rich prompts, then DALL-E 3 for final image."""
     result = await db.execute(
         select(Campaign).where(Campaign.id == campaign_id, Campaign.user_id == current_user.id)
     )
@@ -652,6 +656,8 @@ async def generate_campaign_image(
         raise HTTPException(404, "Không tìm thấy chiến dịch")
 
     plan = campaign.campaign_plan_json or {}
+
+    # Get brand info
     brand_row = await db.execute(
         select(Brand)
         .where(Brand.user_id == current_user.id)
@@ -659,26 +665,70 @@ async def generate_campaign_image(
         .limit(1)
     )
     brand = brand_row.scalar_one_or_none()
-    brand_contact = None
+    brand_data = None
     if brand:
-        brand_contact = {
+        brand_data = {
             "brand_name": brand.brand_name,
+            "description": brand.brand_description,  # Use brand_description
+            "brand_description": brand.brand_description,
+            "color_palette": [brand.primary_color] if brand.primary_color else None,  # Use primary_color as list
+            "visual_style": brand.tone_of_voice,  # Use tone_of_voice as visual style hint
+            "sample_post": brand.sample_post,
+            "tagline": brand.tagline,
             "contact_email": brand.contact_email,
             "phone": brand.phone,
             "address": brand.address,
         }
 
-    prompt = (
-        payload.prompt
-        or plan.get("image_prompt_final")
-        or plan.get("image_prompt_qwen")
-        or _fallback_dalle_prompt(campaign, plan, brand_contact)
+    # Get content items
+    content_result = await db.execute(
+        select(ContentItem).where(ContentItem.campaign_id == campaign_id)
     )
+    content_items = []
+    for ci in content_result.scalars().all():
+        content_items.append({
+            "channel": ci.channel,
+            "status": ci.status,
+            "content_json": ci.content_json,
+        })
+
+    # Build campaign context
+    campaign_data = {
+        "campaign_name": campaign.campaign_name,
+        "objective": campaign.objective,
+        "product_or_service": campaign.product_or_service,
+        "target_audience": getattr(campaign, "target_audience", None),
+        "offer_or_hook": getattr(campaign, "offer_or_hook", None),
+        "additional_notes": getattr(campaign, "additional_notes", None),
+        "channels": campaign.channels,
+    }
+
+    context = build_context_from_campaign(campaign_data, brand_data, content_items)
+
+    # Generate high-quality prompt using GPT-4o
+    dalle_prompt = await generate_image_prompt(context, payload.prompt)
+
+    # Optionally save the generated prompt
+    if dalle_prompt != payload.prompt:  # Only save if not user override
+        current_plan = dict(plan)
+        current_plan["image_prompt_final"] = dalle_prompt
+        campaign.campaign_plan_json = current_plan
+        await db.commit()
 
     try:
+        # Try with HD quality first for best results
         response = await _openai.images.generate(
             model="dall-e-3",
-            prompt=prompt,
+            prompt=dalle_prompt,
+            size="1024x1024",
+            quality="hd",
+            n=1,
+        )
+    except Exception as hd_error:
+        # Fallback to standard quality if HD not available
+        response = await _openai.images.generate(
+            model="dall-e-3",
+            prompt=dalle_prompt,
             size="1024x1024",
             quality="standard",
             n=1,
@@ -703,7 +753,7 @@ async def generate_campaign_image(
 
     await _save_campaign_image_url(campaign, image_url, db)
     storage = "cloudinary" if _CLOUDINARY_ENABLED else "local"
-    return {"image_url": image_url, "prompt_used": prompt, "storage": storage}
+    return {"image_url": image_url, "prompt_used": dalle_prompt, "storage": storage}
 
 
 @router.post("/{campaign_id}/image/upload")
