@@ -170,57 +170,11 @@ function AIProcessingOverlay({ campaign }: { campaign: Campaign }) {
   );
 }
 
-// ── Image overlays ───────────────────────────────────────────────────────────────
-
-function ImageGenerationOverlay({ campaignName, phase }: { campaignName: string; phase: number }) {
-  const labels = ["Đang chuẩn bị...", "DALL-E đang tạo...", "Đang lưu...", "Hoàn tất!"];
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-xl shadow-lg p-5 w-full max-w-xs mx-4 space-y-3">
-        <p className="text-center text-[10px] text-gray-400 uppercase tracking-wider">Tạo ảnh AI</p>
-        <h2 className="text-center text-sm font-medium text-gray-800">{campaignName}</h2>
-        <div className="flex justify-center gap-1">
-          {[0, 1, 2, 3].map((i) => (
-            <span key={i} className={cn(
-              "w-2 h-2 rounded-full",
-              phase > i ? "bg-[#377D73]" : phase === i ? "bg-[#377D73]/40 animate-pulse" : "bg-gray-200"
-            )} />
-          ))}
-        </div>
-        <p className="text-center text-xs text-gray-500">{labels[Math.min(phase, 3)]}</p>
-      </div>
-    </div>
-  );
-}
-
-function ImageUploadOverlay({ campaignName, phase }: { campaignName: string; phase: number }) {
-  const msgs = ["Đang tải lên...", "Đang lưu...", "Hoàn tất!"];
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-xl shadow-lg p-5 w-full max-w-xs mx-4 space-y-3">
-        <p className="text-center text-[10px] text-gray-400 uppercase tracking-wider">Upload ảnh</p>
-        <h2 className="text-center text-sm font-medium text-gray-800">{campaignName}</h2>
-        <div className="flex justify-center gap-1">
-          {[0, 1, 2].map((i) => (
-            <span key={i} className={cn(
-              "w-2 h-2 rounded-full",
-              phase > i ? "bg-[#377D73]" : phase === i ? "bg-[#377D73]/40 animate-pulse" : "bg-gray-200"
-            )} />
-          ))}
-        </div>
-        <p className="text-center text-xs text-gray-500">{msgs[Math.min(phase, 2)]}</p>
-      </div>
-    </div>
-  );
-}
-
 // ── CampaignImageCard ─────────────────────────────────────────────────────────
 
 function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpdated: () => void }) {
   const [generating, setGenerating] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [imageGenPhase, setImageGenPhase] = useState(0);
-  const [uploadPhase, setUploadPhase] = useState(0);
+  const [genPhase, setGenPhase] = useState(0);
   const [error, setError] = useState("");
   const [customPrompt, setCustomPrompt] = useState("");
   const [showPromptInput, setShowPromptInput] = useState(false);
@@ -232,38 +186,49 @@ function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpda
   const imageUrl = plan.image_url as string | undefined;
   const savedPrompt = plan.image_prompt_final as string | undefined;
 
-  async function handleGenerate() {
+  const handleGenerate = async () => {
     setGenerating(true);
-    setImageGenPhase(0);
+    setGenPhase(0);
     setError("");
-    const t1 = setTimeout(() => setImageGenPhase(1), 400);
+
     try {
-      const res = await api.post<{ Image_url: string; prompt_used: string }>(`/campaigns/${campaign.id}/image/generate`, {
-        ...(customPrompt ? { prompt: customPrompt } : {}),
-      });
+      // Phase 0: Preparing
+      await new Promise((r) => setTimeout(r, 500));
+      setGenPhase(1);
+
+      // Phase 1: AI creating prompt + generating image
+      const res = await api.post<{ image_url: string; prompt_used: string }>(
+        `/campaigns/${campaign.id}/image/generate`,
+        { ...(customPrompt ? { prompt: customPrompt } : {}) }
+      );
+
       setLastPrompt(res.prompt_used);
-      setImageGenPhase(2);
-      await new Promise((r) => setTimeout(r, 450));
-      setImageGenPhase(3);
-      await new Promise((r) => setTimeout(r, 400));
+      setGenPhase(2);
+
+      // Phase 2: Saving
+      await new Promise((r) => setTimeout(r, 500));
+      setGenPhase(3);
+
+      // Refresh data
       onUpdated();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Tạo ảnh thất bại");
+      setGenPhase(-1);
     } finally {
-      clearTimeout(t1);
-      setGenerating(false);
-      setImageGenPhase(0);
+      setTimeout(() => {
+        setGenerating(false);
+        setGenPhase(0);
+      }, 800);
     }
-  }
+  };
 
-  async function handleUpload(file: File) {
-    setUploading(true);
-    setUploadPhase(0);
-    setError("");
+  const handleUpload = async (file: File) => {
     const form = new FormData();
     form.append("file", file);
     try {
-      const uploadUrl = API_BASE ? `${API_BASE}/campaigns/${campaign.id}/image/upload` : `/campaigns/${campaign.id}/image/upload`;
+      const uploadUrl = API_BASE
+        ? `${API_BASE}/campaigns/${campaign.id}/image/upload`
+        : `/campaigns/${campaign.id}/image/upload`;
       const res = await fetch(uploadUrl, {
         method: "POST",
         headers: { Authorization: `Bearer ${localStorage.getItem("aimap_token") || ""}` },
@@ -273,84 +238,156 @@ function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpda
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || "Upload thất bại");
       }
-      setUploadPhase(1);
-      await new Promise((r) => setTimeout(r, 250));
-      setUploadPhase(2);
-      await new Promise((r) => setTimeout(r, 350));
       onUpdated();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Upload thất bại");
-    } finally {
-      setUploading(false);
-      setUploadPhase(0);
     }
-  }
+  };
+
+  const phaseLabels = ["Đang chuẩn bị...", "AI đang tạo ảnh...", "Đang lưu...", "Hoàn tất!"];
 
   return (
-    <>
-      {generating && <ImageGenerationOverlay campaignName={campaign.campaign_name} phase={imageGenPhase} />}
-      {uploading && <ImageUploadOverlay campaignName={campaign.campaign_name} phase={uploadPhase} />}
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <ImagePlus size={14} className="text-[#377D73]" />
-          <h3 className="text-sm font-medium text-gray-800">Ảnh</h3>
-          {(savedPrompt || lastPrompt) && (
-            <button onClick={() => setShowPrompt(!showPrompt)} className="ml-auto text-[9px] text-[#377D73] hover:underline">
-              {showPrompt ? "Ẩn prompt" : "Xem prompt"}
-            </button>
-          )}
-        </div>
-
-        {/* Prompt display */}
-        {showPrompt && (savedPrompt || lastPrompt) && (
-          <div className="bg-gray-50 rounded-lg p-2 text-[10px] text-gray-500 leading-relaxed max-h-32 overflow-y-auto border border-gray-100">
-            <p className="text-[9px] text-gray-400 uppercase tracking-wide mb-1">Prompt đã dùng:</p>
-            <p className="whitespace-pre-wrap">{lastPrompt || savedPrompt}</p>
-          </div>
-        )}
-
-        {imageUrl ? (
-          <img src={imageUrl} alt="Campaign" className="w-full rounded-lg border border-gray-100 bg-gray-50 object-cover" style={{ maxHeight: 200 }} />
-        ) : (
-          <div className="border-2 border-dashed border-gray-200 rounded-lg py-6 flex flex-col items-center gap-1.5 text-center bg-gray-50">
-            <ImagePlus size={20} className="text-gray-300" />
-            <p className="text-xs text-gray-400">Chưa có ảnh</p>
-          </div>
-        )}
-
-        {/* Custom prompt input */}
-        {showPromptInput && (
-          <div className="space-y-1">
-            <textarea
-              className="input text-[10px] resize-none w-full"
-              rows={3}
-              placeholder="Nhập prompt tùy chỉnh cho ảnh..."
-              value={customPrompt}
-              onChange={(e) => setCustomPrompt(e.target.value)}
-            />
-            <p className="text-[9px] text-gray-400">Để trống = dùng prompt tự động từ nội dung campaign</p>
-          </div>
-        )}
-
-        <div className="flex gap-2">
-          <button onClick={handleGenerate} disabled={generating || uploading} className="btn-primary text-[11px] py-1.5 px-3 flex items-center gap-1 flex-1 justify-center">
-            {generating ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
-            {imageUrl ? "Tạo lại" : "Tạo ảnh"}
+    <div className="space-y-3">
+      {/* Header */}
+      <div className="flex items-center gap-2">
+        <ImagePlus size={14} className="text-[#377D73]" />
+        <h3 className="text-sm font-medium text-gray-800">Ảnh</h3>
+        {(savedPrompt || lastPrompt) && (
+          <button
+            onClick={() => setShowPrompt(!showPrompt)}
+            className="ml-auto text-[9px] text-[#377D73] hover:underline"
+          >
+            {showPrompt ? "Ẩn prompt" : "Xem prompt"}
           </button>
-          <button onClick={() => setShowPromptInput(!showPromptInput)} className={cn("btn-secondary text-[11px] py-1.5 px-2", showPromptInput && "bg-[#377D73]/10 border-[#377D73]/30")}>
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-            </svg>
-          </button>
-          <button onClick={() => fileRef.current?.click()} disabled={generating || uploading} className="btn-secondary text-[11px] py-1.5 px-3 flex items-center gap-1 flex-1 justify-center">
-            {uploading ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
-            Upload
-          </button>
-        </div>
-        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0])} />
-        {error && <p className="text-[10px] text-red-500">{error}</p>}
+        )}
       </div>
-    </>
+
+      {/* Prompt display */}
+      {showPrompt && (savedPrompt || lastPrompt) && (
+        <div className="bg-gray-50 rounded-lg p-2 text-[10px] text-gray-500 leading-relaxed max-h-24 overflow-y-auto border border-gray-100">
+          <p className="text-[9px] text-gray-400 uppercase tracking-wide mb-1">Prompt đã dùng:</p>
+          <p className="whitespace-pre-wrap">{lastPrompt || savedPrompt}</p>
+        </div>
+      )}
+
+      {/* Image preview or placeholder */}
+      {generating ? (
+        <div className="relative rounded-lg overflow-hidden bg-gradient-to-br from-gray-100 to-gray-50 border border-gray-100" style={{ minHeight: 180 }}>
+          {/* Blurred placeholder */}
+          {imageUrl && (
+            <img
+              src={imageUrl}
+              alt="Preview"
+              className="w-full object-cover blur-sm opacity-30"
+              style={{ height: 180 }}
+            />
+          )}
+          {/* Loading overlay */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm">
+            <Loader2 size={24} className="text-[#377D73] animate-spin mb-2" />
+            <p className="text-xs font-medium text-gray-700">{phaseLabels[genPhase] || "Đang xử lý..."}</p>
+            <div className="flex gap-1 mt-2">
+              {[0, 1, 2, 3].map((i) => (
+                <span
+                  key={i}
+                  className={cn(
+                    "w-1.5 h-1.5 rounded-full transition-all",
+                    genPhase > i ? "bg-[#377D73]" : genPhase === i ? "bg-[#377D73]/50 animate-pulse" : "bg-gray-300"
+                  )}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : imageUrl ? (
+        <img
+          src={imageUrl}
+          alt="Campaign"
+          className="w-full rounded-lg border border-gray-100 bg-gray-50 object-cover"
+          style={{ maxHeight: 180 }}
+        />
+      ) : (
+        <div className="border-2 border-dashed border-gray-200 rounded-lg py-6 flex flex-col items-center gap-1.5 text-center bg-gray-50">
+          <ImagePlus size={20} className="text-gray-300" />
+          <p className="text-xs text-gray-400">Chưa có ảnh</p>
+        </div>
+      )}
+
+      {/* Custom prompt input */}
+      {showPromptInput && (
+        <div className="space-y-1">
+          <textarea
+            className="input text-[10px] resize-none w-full"
+            rows={2}
+            placeholder="Nhập prompt tùy chỉnh..."
+            value={customPrompt}
+            onChange={(e) => setCustomPrompt(e.target.value)}
+          />
+          <p className="text-[9px] text-gray-400">Để trống = dùng prompt tự động</p>
+        </div>
+      )}
+
+      {/* Action buttons */}
+      <div className="flex gap-2">
+        <button
+          onClick={handleGenerate}
+          disabled={generating}
+          className={cn(
+            "btn-primary text-[11px] py-1.5 px-3 flex items-center gap-1 flex-1 justify-center",
+            generating && "opacity-70"
+          )}
+        >
+          {generating ? (
+            <Loader2 size={11} className="animate-spin" />
+          ) : (
+            <Wand2 size={11} />
+          )}
+          {imageUrl ? "Tạo lại" : "Tạo ảnh"}
+        </button>
+
+        <button
+          onClick={() => setShowPromptInput(!showPromptInput)}
+          className={cn(
+            "p-1.5 rounded-lg border transition-colors",
+            showPromptInput
+              ? "bg-[#377D73]/10 border-[#377D73]/30 text-[#377D73]"
+              : "bg-gray-50 border-gray-200 text-gray-400 hover:text-gray-600"
+          )}
+          title="Tùy chỉnh prompt"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+          </svg>
+        </button>
+
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={generating}
+          className={cn(
+            "btn-secondary text-[11px] py-1.5 px-3 flex items-center gap-1 flex-1 justify-center",
+            generating && "opacity-50"
+          )}
+        >
+          <Upload size={11} />
+          Upload
+        </button>
+      </div>
+
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0])}
+      />
+
+      {error && (
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          <span className="text-[10px] text-red-600 flex-1">{error}</span>
+          <button onClick={() => setError("")} className="text-red-400 hover:text-red-600">×</button>
+        </div>
+      )}
+    </div>
   );
 }
 

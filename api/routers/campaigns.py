@@ -715,8 +715,8 @@ async def generate_campaign_image(
         campaign.campaign_plan_json = current_plan
         await db.commit()
 
+    # Generate image with DALL-E 3
     try:
-        # Try with HD quality first for best results
         response = await _openai.images.generate(
             model="dall-e-3",
             prompt=dalle_prompt,
@@ -724,7 +724,7 @@ async def generate_campaign_image(
             quality="hd",
             n=1,
         )
-    except Exception as hd_error:
+    except Exception:
         # Fallback to standard quality if HD not available
         response = await _openai.images.generate(
             model="dall-e-3",
@@ -733,13 +733,15 @@ async def generate_campaign_image(
             quality="standard",
             n=1,
         )
-        temp_url: str = response.data[0].url  # type: ignore
-    except Exception as exc:
-        raise HTTPException(503, f"Không thể tạo ảnh: {exc}")
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        img_resp = await client.get(temp_url)
-        image_bytes = img_resp.content
+    temp_url: str = response.data[0].url  # type: ignore
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            img_resp = await client.get(temp_url)
+            image_bytes = img_resp.content
+    except Exception as exc:
+        raise HTTPException(503, f"Không thể tải ảnh: {exc}")
 
     public_id = f"{campaign_id}_{int(datetime.now().timestamp())}"
     if _CLOUDINARY_ENABLED:
