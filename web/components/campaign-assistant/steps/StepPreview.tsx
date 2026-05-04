@@ -151,8 +151,9 @@ export default function StepPreview({
       });
       onBriefChange(brief);
       onNext();
-    } catch {
-      setError("Không thể tạo. Vui lòng thử lại.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Không thể tạo. Vui lòng thử lại.";
+      setError(msg);
     } finally {
       setCreating(false);
     }
@@ -201,10 +202,7 @@ export default function StepPreview({
 
       {/* Form - pre-filled by AI */}
       <div className="border border-gray-200 rounded-xl p-4 space-y-4 bg-gray-50">
-        <p className="text-sm font-medium text-gray-700">
-          Chi tiết chiến dịch
-          <span className="text-xs text-gray-400 ml-1">(AI đã viết sẵn, bạn có thể sửa lại)</span>
-        </p>
+        <p className="text-sm font-medium text-gray-700">Chi tiết chiến dịch</p>
 
         {/* Tên chiến dịch */}
         <div>
@@ -292,7 +290,7 @@ export default function StepPreview({
         disabled={creating || brief.channels.length === 0}
         className="w-full btn-primary py-3 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
-        {creating ? "Đang tạo..." : "Bắt đầu viết nội dung"}
+        {creating ? "Đang tạo..." : "Tạo chiến dịch"}
         {!creating && <Check size={16} />}
       </button>
     </div>
