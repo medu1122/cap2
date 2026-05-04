@@ -536,7 +536,10 @@ Chỉ trả về JSON, không thêm text khác."""
 
     messages = [{"role": "user", "content": prompt}]
     raw = await _call_ai_safe(messages, timeout=240)
-    data = _parse_json_flexible(raw)
+    try:
+        data = _parse_json_flexible(raw)
+    except Exception:
+        raise HTTPException(503, "AI trả về dữ liệu không hợp lệ. Vui lòng thử lại.")
 
     idea.post_content = data
     await db.commit()
@@ -602,7 +605,10 @@ Chỉ trả về JSON, không thêm text khác."""
 
     messages = [{"role": "user", "content": prompt}]
     raw = await _call_ai_safe(messages, timeout=240)
-    data = _parse_json_flexible(raw)
+    try:
+        data = _parse_json_flexible(raw)
+    except Exception:
+        raise HTTPException(503, "AI trả về dữ liệu không hợp lệ. Vui lòng thử lại.")
 
     idea.video_script = data
     await db.commit()
@@ -647,7 +653,10 @@ Chỉ trả về JSON, không thêm text khác."""
 
     messages = [{"role": "user", "content": prompt}]
     raw = await _call_ai_safe(messages, timeout=180)
-    data = _parse_json_flexible(raw)
+    try:
+        data = _parse_json_flexible(raw)
+    except Exception:
+        raise HTTPException(503, "AI trả về dữ liệu không hợp lệ. Vui lòng thử lại.")
 
     prompt_text = data.get("prompt", "") if isinstance(data, dict) else str(data)
     idea.image_prompt = prompt_text
