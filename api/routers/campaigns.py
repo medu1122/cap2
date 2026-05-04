@@ -715,34 +715,26 @@ async def generate_campaign_image(
         campaign.campaign_plan_json = current_plan
         await db.commit()
 
-    # Generate image with DALL-E 3
+    # Generate image with DALL-E 3 (HD quality for best results)
     try:
-        response = await _openai.images.generate(
+        dall_e_response = await _openai.images.generate(
             model="dall-e-3",
             prompt=dalle_prompt,
             size="1024x1024",
             quality="hd",
             n=1,
         )
-    except Exception:
-        # Fallback to standard quality if HD not available
-        response = await _openai.images.generate(
-            model="dall-e-3",
-            prompt=dalle_prompt,
-            size="1024x1024",
-            quality="standard",
-            n=1,
-        )
+        temp_url = dall_e_response.data[0].url
+        model_used = "dall-e-3"
 
-    temp_url: str = response.data[0].url  # type: ignore
-
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        # Download image
+        async with httpx.AsyncClient(timeout=60) as client:
             img_resp = await client.get(temp_url)
             image_bytes = img_resp.content
     except Exception as exc:
-        raise HTTPException(503, f"Không thể tải ảnh: {exc}")
+        raise HTTPException(503, f"Không thể tạo ảnh: {exc}")
 
+    # Save image to storage
     public_id = f"{campaign_id}_{int(datetime.now().timestamp())}"
     if _CLOUDINARY_ENABLED:
         image_url = await _upload_to_cloudinary(
@@ -755,7 +747,7 @@ async def generate_campaign_image(
 
     await _save_campaign_image_url(campaign, image_url, db)
     storage = "cloudinary" if _CLOUDINARY_ENABLED else "local"
-    return {"image_url": image_url, "prompt_used": dalle_prompt, "storage": storage}
+    return {"image_url": image_url, "prompt_used": dalle_prompt, "storage": storage, "model": model_used}
 
 
 @router.post("/{campaign_id}/image/upload")

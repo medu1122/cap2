@@ -2,7 +2,11 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Loader2, ImagePlus, Upload, Wand2, Mail, CalendarDays, Trash2, Calendar } from "lucide-react";
+import {
+  ChevronLeft, Loader2, ImagePlus, Upload, Wand2, Mail, CalendarDays, Trash2, Calendar,
+  Target, TrendingUp, Users, Megaphone, Clock, CheckCircle2, XCircle, AlertCircle,
+  Play, Pause, Send, BarChart3, Sparkles, FileText, Zap, Star, Award, Gift, Facebook, Video
+} from "lucide-react";
 import { API_BASE, api } from "@/lib/api-client";
 import { STATUS_LABELS, STATUS_COLORS, CHANNEL_LABELS, formatDate, cn } from "@/lib/utils";
 import PerformanceSection from "@/components/campaign/PerformanceSection";
@@ -103,6 +107,53 @@ const RECIPIENT_STATUS_LABELS: Record<string, string> = {
   skipped_no_phone: "Bỏ qua",
 };
 
+// ── Delete Confirmation Modal ─────────────────────────────────────────────────
+
+function DeleteConfirmModal({ campaignName, onConfirm, onCancel, deleting }: {
+  campaignName: string; onConfirm: () => void; onCancel: () => void; deleting: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onCancel}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="p-6 text-center">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
+            <Trash2 size={28} className="text-red-600" />
+          </div>
+          <h3 className="text-lg font-bold text-gray-900 mb-2">Xóa chiến dịch?</h3>
+          <p className="text-sm text-gray-500 mb-1">
+            Bạn đang xóa chiến dịch:
+          </p>
+          <p className="text-sm font-semibold text-gray-800 mb-4">"{campaignName}"</p>
+          <p className="text-xs text-red-500 mb-4">Hành động này không thể hoàn tác.</p>
+        </div>
+        <div className="flex gap-3 p-4 bg-gray-50 border-t border-gray-100">
+          <button onClick={onCancel} className="flex-1 btn-secondary py-2.5 font-medium" disabled={deleting}>
+            Hủy
+          </button>
+          <button onClick={onConfirm} className="flex-1 btn-danger py-2.5 font-medium" disabled={deleting}>
+            {deleting ? <Loader2 size={14} className="animate-spin mx-auto" /> : "Xóa"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Image Lightbox ─────────────────────────────────────────────────────────────
+
+function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm" onClick={onClose}>
+      <button onClick={onClose} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors">
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+      <img src={src} alt={alt} className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl" onClick={(e) => e.stopPropagation()} />
+    </div>
+  );
+}
+
 // ── AI Processing Overlay ───────────────────────────────────────────────────────
 
 function AIProcessingOverlay({ campaign }: { campaign: Campaign }) {
@@ -170,6 +221,23 @@ function AIProcessingOverlay({ campaign }: { campaign: Campaign }) {
   );
 }
 
+// ── Channel Icon ────────────────────────────────────────────────────────────────
+
+function ChannelIcon({ channel, size = 14 }: { channel: string; size?: number }) {
+  switch (channel) {
+    case "email":
+      return <Mail size={size} className="text-blue-500" />;
+    case "facebook_post":
+      return <Facebook size={size} className="text-blue-600" />;
+    case "video_script":
+      return <Video size={size} className="text-pink-500" />;
+    case "tiktok":
+      return <Video size={size} className="text-pink-500" />;
+    default:
+      return <Megaphone size={size} className="text-gray-500" />;
+  }
+}
+
 // ── CampaignImageCard ─────────────────────────────────────────────────────────
 
 function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpdated: () => void }) {
@@ -177,14 +245,14 @@ function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpda
   const [genPhase, setGenPhase] = useState(0);
   const [error, setError] = useState("");
   const [customPrompt, setCustomPrompt] = useState("");
-  const [showPromptInput, setShowPromptInput] = useState(false);
-  const [lastPrompt, setLastPrompt] = useState<string | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const plan = campaign.campaign_plan_json || {};
   const imageUrl = plan.image_url as string | undefined;
   const savedPrompt = plan.image_prompt_final as string | undefined;
+  const lastPrompt = useRef<string | null>(null);
 
   const handleGenerate = async () => {
     setGenerating(true);
@@ -192,24 +260,20 @@ function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpda
     setError("");
 
     try {
-      // Phase 0: Preparing
       await new Promise((r) => setTimeout(r, 500));
       setGenPhase(1);
 
-      // Phase 1: AI creating prompt + generating image
       const res = await api.post<{ image_url: string; prompt_used: string }>(
         `/campaigns/${campaign.id}/image/generate`,
         { ...(customPrompt ? { prompt: customPrompt } : {}) }
       );
 
-      setLastPrompt(res.prompt_used);
+      lastPrompt.current = res.prompt_used;
       setGenPhase(2);
 
-      // Phase 2: Saving
       await new Promise((r) => setTimeout(r, 500));
       setGenPhase(3);
 
-      // Refresh data
       onUpdated();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Tạo ảnh thất bại");
@@ -226,9 +290,7 @@ function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpda
     const form = new FormData();
     form.append("file", file);
     try {
-      const uploadUrl = API_BASE
-        ? `${API_BASE}/campaigns/${campaign.id}/image/upload`
-        : `/campaigns/${campaign.id}/image/upload`;
+      const uploadUrl = API_BASE ? `${API_BASE}/campaigns/${campaign.id}/image/upload` : `/campaigns/${campaign.id}/image/upload`;
       const res = await fetch(uploadUrl, {
         method: "POST",
         headers: { Authorization: `Bearer ${localStorage.getItem("aimap_token") || ""}` },
@@ -245,149 +307,97 @@ function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpda
   };
 
   const phaseLabels = ["Đang chuẩn bị...", "AI đang tạo ảnh...", "Đang lưu...", "Hoàn tất!"];
+  const effectivePrompt = customPrompt || lastPrompt.current || savedPrompt || "";
 
   return (
-    <div className="space-y-3">
-      {/* Header */}
-      <div className="flex items-center gap-2">
-        <ImagePlus size={14} className="text-[#377D73]" />
-        <h3 className="text-sm font-medium text-gray-800">Ảnh</h3>
-        {(savedPrompt || lastPrompt) && (
-          <button
-            onClick={() => setShowPrompt(!showPrompt)}
-            className="ml-auto text-[9px] text-[#377D73] hover:underline"
-          >
-            {showPrompt ? "Ẩn prompt" : "Xem prompt"}
+    <>
+      {lightboxSrc && <ImageLightbox src={lightboxSrc} alt="Campaign" onClose={() => setLightboxSrc(null)} />}
+
+      <div className="space-y-3">
+        {/* Header */}
+        <div className="flex items-center gap-2">
+          <ImagePlus size={14} className="text-[#377D73]" />
+          <h3 className="text-sm font-medium text-gray-800">Ảnh</h3>
+          <button onClick={() => setShowPrompt(!showPrompt)} className="ml-auto text-[9px] text-[#377D73] hover:underline flex items-center gap-1">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
+            {showPrompt ? "Ẩn prompt" : "Sửa prompt"}
           </button>
-        )}
-      </div>
-
-      {/* Prompt display */}
-      {showPrompt && (savedPrompt || lastPrompt) && (
-        <div className="bg-gray-50 rounded-lg p-2 text-[10px] text-gray-500 leading-relaxed max-h-24 overflow-y-auto border border-gray-100">
-          <p className="text-[9px] text-gray-400 uppercase tracking-wide mb-1">Prompt đã dùng:</p>
-          <p className="whitespace-pre-wrap">{lastPrompt || savedPrompt}</p>
         </div>
-      )}
 
-      {/* Image preview or placeholder */}
-      {generating ? (
-        <div className="relative rounded-lg overflow-hidden bg-gradient-to-br from-gray-100 to-gray-50 border border-gray-100" style={{ minHeight: 180 }}>
-          {/* Blurred placeholder */}
-          {imageUrl && (
-            <img
-              src={imageUrl}
-              alt="Preview"
-              className="w-full object-cover blur-sm opacity-30"
-              style={{ height: 180 }}
+        {/* Prompt editor */}
+        {showPrompt && (
+          <div className="space-y-2 bg-gradient-to-r from-[#377D73]/5 to-transparent rounded-lg p-3 border border-[#377D73]/20">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-medium text-[#377D73]">Prompt tùy chỉnh</span>
+              <span className="text-[9px] text-gray-400">(để trống = dùng prompt tự động)</span>
+            </div>
+            <textarea
+              className="input text-[10px] resize-none w-full bg-white"
+              rows={3}
+              placeholder="Nhập mô tả cho ảnh muốn tạo..."
+              value={customPrompt}
+              onChange={(e) => setCustomPrompt(e.target.value)}
             />
-          )}
-          {/* Loading overlay */}
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm">
-            <Loader2 size={24} className="text-[#377D73] animate-spin mb-2" />
-            <p className="text-xs font-medium text-gray-700">{phaseLabels[genPhase] || "Đang xử lý..."}</p>
-            <div className="flex gap-1 mt-2">
-              {[0, 1, 2, 3].map((i) => (
-                <span
-                  key={i}
-                  className={cn(
-                    "w-1.5 h-1.5 rounded-full transition-all",
-                    genPhase > i ? "bg-[#377D73]" : genPhase === i ? "bg-[#377D73]/50 animate-pulse" : "bg-gray-300"
-                  )}
-                />
-              ))}
+            {effectivePrompt && effectivePrompt !== customPrompt && (
+              <p className="text-[9px] text-gray-400 italic">Đang dùng: {effectivePrompt.slice(0, 100)}...</p>
+            )}
+          </div>
+        )}
+
+        {/* Image preview */}
+        {generating ? (
+          <div className="relative rounded-lg overflow-hidden bg-gradient-to-br from-gray-100 to-gray-50 border border-gray-100" style={{ minHeight: 180 }}>
+            {imageUrl && <img src={imageUrl} alt="Preview" className="w-full object-cover blur-sm opacity-30" style={{ height: 180 }} />}
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm">
+              <Loader2 size={24} className="text-[#377D73] animate-spin mb-2" />
+              <p className="text-xs font-medium text-gray-700">{phaseLabels[genPhase] || "Đang xử lý..."}</p>
+              <div className="flex gap-1 mt-2">
+                {[0, 1, 2, 3].map((i) => (
+                  <span key={i} className={cn("w-1.5 h-1.5 rounded-full transition-all", genPhase > i ? "bg-[#377D73]" : genPhase === i ? "bg-[#377D73]/50 animate-pulse" : "bg-gray-300")} />
+                ))}
+              </div>
             </div>
           </div>
+        ) : imageUrl ? (
+          <div className="relative cursor-pointer group rounded-lg overflow-hidden border border-gray-100" onClick={() => setLightboxSrc(imageUrl)}>
+            <img src={imageUrl} alt="Campaign" className="w-full object-cover bg-gray-50" style={{ maxHeight: 180 }} />
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+              <svg className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+              </svg>
+            </div>
+          </div>
+        ) : (
+          <div className="border-2 border-dashed border-gray-200 rounded-lg py-6 flex flex-col items-center gap-1.5 text-center bg-gray-50">
+            <ImagePlus size={20} className="text-gray-300" />
+            <p className="text-xs text-gray-400">Chưa có ảnh</p>
+          </div>
+        )}
+
+        {/* Action buttons */}
+        <div className="flex gap-2">
+          <button onClick={handleGenerate} disabled={generating} className={cn("btn-primary text-[11px] py-1.5 px-3 flex items-center gap-1 flex-1 justify-center", generating && "opacity-70")}>
+            {generating ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
+            {imageUrl ? "Tạo lại" : "Tạo ảnh"}
+          </button>
+          <button onClick={() => fileRef.current?.click()} disabled={generating} className={cn("btn-secondary text-[11px] py-1.5 px-3 flex items-center gap-1 flex-1 justify-center", generating && "opacity-50")}>
+            <Upload size={11} />
+            Upload
+          </button>
         </div>
-      ) : imageUrl ? (
-        <img
-          src={imageUrl}
-          alt="Campaign"
-          className="w-full rounded-lg border border-gray-100 bg-gray-50 object-cover"
-          style={{ maxHeight: 180 }}
-        />
-      ) : (
-        <div className="border-2 border-dashed border-gray-200 rounded-lg py-6 flex flex-col items-center gap-1.5 text-center bg-gray-50">
-          <ImagePlus size={20} className="text-gray-300" />
-          <p className="text-xs text-gray-400">Chưa có ảnh</p>
-        </div>
-      )}
 
-      {/* Custom prompt input */}
-      {showPromptInput && (
-        <div className="space-y-1">
-          <textarea
-            className="input text-[10px] resize-none w-full"
-            rows={2}
-            placeholder="Nhập prompt tùy chỉnh..."
-            value={customPrompt}
-            onChange={(e) => setCustomPrompt(e.target.value)}
-          />
-          <p className="text-[9px] text-gray-400">Để trống = dùng prompt tự động</p>
-        </div>
-      )}
+        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0])} />
 
-      {/* Action buttons */}
-      <div className="flex gap-2">
-        <button
-          onClick={handleGenerate}
-          disabled={generating}
-          className={cn(
-            "btn-primary text-[11px] py-1.5 px-3 flex items-center gap-1 flex-1 justify-center",
-            generating && "opacity-70"
-          )}
-        >
-          {generating ? (
-            <Loader2 size={11} className="animate-spin" />
-          ) : (
-            <Wand2 size={11} />
-          )}
-          {imageUrl ? "Tạo lại" : "Tạo ảnh"}
-        </button>
-
-        <button
-          onClick={() => setShowPromptInput(!showPromptInput)}
-          className={cn(
-            "p-1.5 rounded-lg border transition-colors",
-            showPromptInput
-              ? "bg-[#377D73]/10 border-[#377D73]/30 text-[#377D73]"
-              : "bg-gray-50 border-gray-200 text-gray-400 hover:text-gray-600"
-          )}
-          title="Tùy chỉnh prompt"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-          </svg>
-        </button>
-
-        <button
-          onClick={() => fileRef.current?.click()}
-          disabled={generating}
-          className={cn(
-            "btn-secondary text-[11px] py-1.5 px-3 flex items-center gap-1 flex-1 justify-center",
-            generating && "opacity-50"
-          )}
-        >
-          <Upload size={11} />
-          Upload
-        </button>
+        {error && (
+          <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            <span className="text-[10px] text-red-600 flex-1">{error}</span>
+            <button onClick={() => setError("")} className="text-red-400 hover:text-red-600">×</button>
+          </div>
+        )}
       </div>
-
-      <input
-        ref={fileRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0])}
-      />
-
-      {error && (
-        <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-          <span className="text-[10px] text-red-600 flex-1">{error}</span>
-          <button onClick={() => setError("")} className="text-red-400 hover:text-red-600">×</button>
-        </div>
-      )}
-    </div>
+    </>
   );
 }
 
@@ -426,6 +436,7 @@ function ContentCard({ item, onAction }: { item: ContentItem; onAction: () => vo
     <div className="bg-white rounded-lg p-3.5 space-y-2 border-l-4 border-l-[#377D73] shadow-sm">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
+          <ChannelIcon channel={item.channel} size={12} />
           <span className="text-xs font-medium text-gray-800">{CHANNEL_LABELS[item.channel]}</span>
           <span className={cn("badge text-[10px]", STATUS_COLORS[item.status])}>{STATUS_LABELS[item.status]}</span>
         </div>
@@ -615,74 +626,93 @@ export default function CampaignDetailPage() {
   return (
     <>
       {isProcessing && <AIProcessingOverlay campaign={campaign} />}
+      {showDeleteConfirm && campaign && (
+        <DeleteConfirmModal campaignName={campaign.campaign_name} onConfirm={handleDelete} onCancel={() => setShowDeleteConfirm(false)} deleting={deleting} />
+      )}
 
       <div className="min-h-screen bg-gradient-to-br from-slate-100 via-white to-teal-50/30">
         <div className="p-6 max-w-6xl mx-auto">
           {/* Header */}
           <div className="flex items-center gap-3 mb-6">
-            <Link href="/campaigns" className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded hover:bg-gray-100">
-              <ChevronLeft size={18} />
+            <Link href="/campaigns" className="group flex items-center justify-center w-9 h-9 rounded-lg bg-gray-100 hover:bg-[#377D73]/10 transition-all">
+              <ChevronLeft size={18} className="text-gray-500 group-hover:text-[#377D73] transition-colors" />
             </Link>
-            <h1 className="flex-1 text-xl font-bold text-gray-900 truncate">{campaign.campaign_name}</h1>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl font-bold text-gray-900 truncate">{campaign.campaign_name}</h1>
+            </div>
             <span className={cn("badge shrink-0 text-[11px]", STATUS_COLORS[campaign.status])}>{STATUS_LABELS[campaign.status]}</span>
             {isProcessing && <Loader2 size={14} className="text-[#377D73] animate-spin shrink-0" />}
             {!isProcessing && !showDeleteConfirm && (
-              <button onClick={() => setShowDeleteConfirm(true)} className="p-1.5 text-gray-400 hover:text-red-500 transition-colors rounded hover:bg-red-50" title="Xóa">
-                <Trash2 size={14} />
+              <button onClick={() => setShowDeleteConfirm(true)} className="flex items-center justify-center w-9 h-9 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all" title="Xóa chiến dịch">
+                <Trash2 size={16} />
               </button>
-            )}
-            {showDeleteConfirm && (
-              <div className="flex items-center gap-1.5 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1">
-                <span className="text-[11px] text-red-700">Xóa?</span>
-                <button onClick={handleDelete} disabled={deleting} className="btn-danger text-[11px] py-0.5 px-1.5">{deleting ? "..." : "Xóa"}</button>
-                <button onClick={() => setShowDeleteConfirm(false)} className="btn-secondary text-[11px] py-0.5 px-1.5">Hủy</button>
-              </div>
             )}
           </div>
 
-          {/* Brief strip */}
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mb-6 pb-5 border-b-2 border-[#377D73]/20">
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-[#377D73] font-medium">Mục tiêu</span>
-              <span className="text-sm font-semibold text-gray-900">{campaign.objective}</span>
+          {/* Brief strip - stacked layout */}
+          <div className="bg-white/80 backdrop-blur-sm rounded-xl p-4 mb-6 border border-gray-100 shadow-sm">
+            {/* Row 1: Mục tiêu + Hạn + Kênh */}
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <div className="p-1 bg-[#377D73]/10 rounded">
+                  <Target size={12} className="text-[#377D73]" />
+                </div>
+                <span className="text-[11px] text-[#377D73] font-semibold">Mục tiêu</span>
+                <span className="text-sm font-semibold text-gray-900">{campaign.objective}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="p-1 bg-amber-100 rounded">
+                  <Clock size={12} className="text-amber-600" />
+                </div>
+                <span className="text-[11px] text-gray-500">Hạn</span>
+                <span className="text-sm text-gray-700">{formatDate(campaign.deadline)}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="p-1 bg-blue-100 rounded">
+                  <Megaphone size={12} className="text-blue-600" />
+                </div>
+                <span className="text-[11px] text-gray-500">Kênh</span>
+                <div className="flex gap-1">
+                  {campaign.channels.map((ch) => (
+                    <span key={ch} className="badge bg-[#377D73] text-white text-[10px]">{CHANNEL_LABELS[ch]}</span>
+                  ))}
+                </div>
+              </div>
+              {sourceContext?.source_insight_run_id && (
+                <div className="flex items-center gap-2">
+                  <div className="p-1 bg-indigo-100 rounded">
+                    <Sparkles size={12} className="text-indigo-600" />
+                  </div>
+                  <span className="text-[11px] text-gray-500">Insight</span>
+                  <Link href="/insights" className="text-[#377D73] hover:underline text-[11px] font-medium">{sourceContext.source_insight_run_id.slice(0, 8)}...</Link>
+                </div>
+              )}
             </div>
-            <div className="flex items-center gap-2">
+            {/* Row 2: Sản phẩm */}
+            <div className="flex items-center gap-2 pt-3">
+              <div className="p-1 bg-purple-100 rounded">
+                <Gift size={12} className="text-purple-600" />
+              </div>
               <span className="text-[11px] text-gray-500">Sản phẩm</span>
               <span className="text-sm text-gray-700">{campaign.product_or_service}</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-gray-500">Hạn</span>
-              <span className="text-sm text-gray-700">{formatDate(campaign.deadline)}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-gray-500">Kênh</span>
-              <div className="flex gap-1">
-                {campaign.channels.map((ch) => (
-                  <span key={ch} className="badge bg-[#377D73] text-white text-[11px]">{CHANNEL_LABELS[ch]}</span>
-                ))}
-              </div>
-            </div>
-            {sourceContext?.source_insight_run_id && (
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] text-gray-500">Insight</span>
-                <Link href="/insights" className="text-[#377D73] hover:underline text-[11px] font-medium">{sourceContext.source_insight_run_id.slice(0, 8)}...</Link>
-              </div>
-            )}
           </div>
 
           {/* Main 2-column grid */}
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
             {/* LEFT COLUMN - Content focused */}
             <div className="lg:col-span-3 space-y-5">
-              {/* Lịch đăng */}
+              {/* Lịch cụ thể */}
               {campaign.content_items.length > 0 && (
                 <div className="bg-gradient-to-br from-[#377D73]/5 via-white to-[#377D73]/5 rounded-xl p-4 border border-[#377D73]/20 shadow-md shadow-[#377D73]/10">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="p-1.5 bg-[#377D73]/10 rounded-lg">
-                      <CalendarDays size={16} className="text-[#377D73]" />
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="flex items-center justify-center w-10 h-10 bg-[#377D73] rounded-xl shadow-lg shadow-[#377D73]/30">
+                      <CalendarDays size={20} className="text-white" />
                     </div>
-                    <h2 className="text-base font-bold text-gray-900">Lịch đăng</h2>
-                    <span className="ml-auto text-[10px] text-[#377D73]">→ <a href="/calendar" className="hover:underline font-medium">Lịch marketing</a></span>
+                    <div className="flex-1">
+                      <h2 className="text-base font-bold text-gray-900">Lịch cụ thể</h2>
+                    </div>
+                    <span className="text-[10px] text-[#377D73]">→ <a href="/calendar" className="hover:underline font-medium">Lịch marketing</a></span>
                   </div>
                   <div className="space-y-2">
                     {campaign.content_items.slice().sort((a, b) => {
@@ -691,13 +721,18 @@ export default function CampaignDetailPage() {
                       return a.scheduled_date.localeCompare(b.scheduled_date);
                     }).map((item) => (
                       <div key={item.id} className="flex items-center gap-3 text-xs bg-white/80 backdrop-blur-sm rounded-lg px-4 py-3 border border-gray-100 shadow-sm">
-                        <div className="w-14 shrink-0 text-center bg-[#377D73]/10 rounded-lg py-1.5 px-2">
-                          <p className="text-[11px] font-bold text-[#377D73]">{item.scheduled_date ? _formatDateShort(item.scheduled_date) : "—"}</p>
+                        <div className="w-14 shrink-0 text-center bg-[#377D73] rounded-lg py-2 px-2 shadow-sm">
+                          <p className="text-[11px] font-bold text-white">{item.scheduled_date ? _formatDateShort(item.scheduled_date) : "—"}</p>
                         </div>
-                        <span className="badge bg-blue-500 text-white text-[10px] shrink-0">{CHANNEL_LABELS[item.channel]}</span>
-                        <span className={cn("badge text-[10px] shrink-0", STATUS_COLORS[item.status])}>{STATUS_LABELS[item.status]}</span>
-                        <p className="text-gray-600 truncate flex-1 min-w-0 text-[11px] font-medium">{_getContentPreview(item)}</p>
-                        {!item.scheduled_date && <span className="text-[9px] text-amber-600 shrink-0 font-medium bg-amber-50 px-2 py-0.5 rounded">chưa lịch</span>}
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2">
+                            <ChannelIcon channel={item.channel} size={12} />
+                            <span className="text-[11px] font-medium text-gray-800">{CHANNEL_LABELS[item.channel]}</span>
+                            <span className={cn("badge text-[9px] shrink-0", STATUS_COLORS[item.status])}>{STATUS_LABELS[item.status]}</span>
+                          </div>
+                          <p className="text-[10px] text-gray-500 truncate max-w-[200px]">{_getContentPreview(item)}</p>
+                        </div>
+                        {!item.scheduled_date && <span className="text-[9px] text-amber-600 shrink-0 font-semibold bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">chưa lịch</span>}
                       </div>
                     ))}
                   </div>
@@ -709,15 +744,15 @@ export default function CampaignDetailPage() {
 
               {/* Nội dung */}
               {campaign.content_items.length > 0 && (
-                <div className="bg-gradient-to-br from-purple-50/50 via-white to-purple-50/30 rounded-xl p-4 border border-purple-200/50 shadow-md">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="p-1.5 bg-purple-100 rounded-lg">
-                      <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
+                <div className="bg-gradient-to-br from-violet-50/50 via-white to-purple-50/30 rounded-xl p-4 border border-violet-200/50 shadow-md">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="flex items-center justify-center w-10 h-10 bg-gradient-to-br from-violet-500 to-purple-600 rounded-xl shadow-lg shadow-violet-200">
+                      <FileText size={20} className="text-white" />
                     </div>
-                    <h2 className="text-base font-bold text-gray-900">Nội dung</h2>
-                    <span className="badge bg-purple-500 text-white text-[11px]">{campaign.content_items.length}</span>
+                    <div className="flex-1">
+                      <h2 className="text-base font-bold text-gray-900">Nội dung</h2>
+                    </div>
+                    <span className="badge bg-gradient-to-r from-violet-500 to-purple-500 text-white text-[11px] shadow-sm">{campaign.content_items.length}</span>
                   </div>
                   <div className="space-y-2">
                     {campaign.content_items.map((item) => (
@@ -732,10 +767,10 @@ export default function CampaignDetailPage() {
             <div className="lg:col-span-2 space-y-5">
               {/* Triển khai */}
               {!isProcessing && (
-                <div className="bg-gradient-to-br from-blue-50/50 via-white to-blue-50/30 rounded-xl p-4 border border-blue-200/50 shadow-md">
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="p-1.5 bg-blue-100 rounded-lg">
-                      <Mail size={16} className="text-blue-600" />
+                <div className="bg-gradient-to-br from-blue-50/50 via-white to-cyan-50/30 rounded-xl p-4 border border-blue-200/50 shadow-md">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="flex items-center justify-center w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-xl shadow-lg shadow-blue-200">
+                      <Send size={20} className="text-white" />
                     </div>
                     <h2 className="text-base font-bold text-gray-900">Triển khai</h2>
                   </div>
@@ -762,12 +797,12 @@ export default function CampaignDetailPage() {
                     </div>
                   ) : null}
 
-                  {/* Logs table */}
+                  {/* logs table */}
                   {deliverySummary && deliverySummary.logs.length > 0 ? (
                     <div className="overflow-x-auto rounded-xl border border-blue-100/50 mb-4 bg-white shadow-sm">
                       <table className="w-full text-[11px]">
                         <thead>
-                          <tr className="bg-blue-50/50 text-left text-gray-600">
+                          <tr className="bg-gradient-to-r from-blue-50 to-cyan-50 text-left text-gray-600">
                             <th className="p-3 font-bold">Tên</th>
                             <th className="p-3 font-bold">Liên hệ</th>
                             <th className="p-3 font-bold">Trạng thái</th>
@@ -792,10 +827,10 @@ export default function CampaignDetailPage() {
                                 </span>
                               </td>
                               <td className="p-3 text-center">
-                                {row.opened_at ? <span className="text-[#377D73] font-bold">✓</span> : <span className="text-gray-300">—</span>}
+                                {row.opened_at ? <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#377D73]/10 text-[#377D73] font-bold">✓</span> : <span className="text-gray-300">—</span>}
                               </td>
                               <td className="p-3 text-center">
-                                {row.clicked_at ? <span className="text-[#377D73] font-bold">✓</span> : <span className="text-gray-300">—</span>}
+                                {row.clicked_at ? <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#377D73]/10 text-[#377D73] font-bold">✓</span> : <span className="text-gray-300">—</span>}
                               </td>
                             </tr>
                           ))}
@@ -822,8 +857,8 @@ export default function CampaignDetailPage() {
                     <div className="flex items-center gap-2">
                       <div className="w-20 shrink-0" />
                       <button type="button" onClick={runCampaignExecution} disabled={execBusy || sendingDelivery || !listId || !hasEmailChannel}
-                        className="btn-primary text-[12px] py-2 px-5 font-semibold shadow-lg shadow-[#377D73]/30">
-                        {execBusy || sendingDelivery ? <Loader2 size={12} className="animate-spin" /> : null}
+                        className="btn-primary text-[12px] py-2 px-5 font-semibold shadow-lg shadow-[#377D73]/30 flex items-center gap-2">
+                        {execBusy || sendingDelivery ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
                         Chạy chiến dịch
                       </button>
                       {execError && <span className="text-[10px] text-red-500 font-medium">{execError}</span>}
@@ -832,7 +867,7 @@ export default function CampaignDetailPage() {
                     {/* Auto schedule */}
                     <div className="flex items-center justify-between pt-3 border-t border-blue-100/50">
                       <div className="flex items-center gap-2">
-                        <div className="p-1.5 bg-amber-100 rounded-lg">
+                        <div className="flex items-center justify-center w-8 h-8 bg-amber-100 rounded-lg">
                           <Calendar size={14} className="text-amber-600" />
                         </div>
                         <span className="text-[12px] text-gray-700 font-semibold">Gửi tự động</span>
@@ -853,19 +888,17 @@ export default function CampaignDetailPage() {
 
               {/* Ảnh */}
               {!isProcessing && (
-                <div className="bg-gradient-to-br from-orange-50/50 via-white to-orange-50/30 rounded-xl p-4 border border-orange-200/50 shadow-md">
+                <div className="bg-gradient-to-br from-orange-50/50 via-white to-amber-50/30 rounded-xl p-4 border border-orange-200/50 shadow-md">
                   <CampaignImageCard campaign={campaign} onUpdated={load} />
                 </div>
               )}
 
               {/* Hiệu quả */}
               {!isProcessing && (
-                <div className="bg-gradient-to-br from-green-50/50 via-white to-green-50/30 rounded-xl p-4 border border-green-200/50 shadow-md">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="p-1.5 bg-green-100 rounded-lg">
-                      <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                      </svg>
+                <div className="bg-gradient-to-br from-green-50/50 via-white to-emerald-50/30 rounded-xl p-4 border border-green-200/50 shadow-md">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="flex items-center justify-center w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl shadow-lg shadow-green-200">
+                      <TrendingUp size={20} className="text-white" />
                     </div>
                     <h2 className="text-base font-bold text-gray-900">Hiệu quả</h2>
                   </div>
