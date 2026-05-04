@@ -36,3 +36,6 @@ class Campaign(Base):
         "CampaignExecutionLog", back_populates="campaign", cascade="all, delete-orphan"
     )
     outreach_logs: Mapped[list["OutreachLog"]] = relationship("OutreachLog", back_populates="campaign")
+    tracking_links: Mapped[list["CampaignTrackingLink"]] = relationship(
+        "CampaignTrackingLink", back_populates="campaign", cascade="all, delete-orphan"
+    )

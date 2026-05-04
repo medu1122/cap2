@@ -11,6 +11,7 @@ import { API_BASE, api } from "@/lib/api-client";
 import { STATUS_LABELS, STATUS_COLORS, CHANNEL_LABELS, formatDate, cn } from "@/lib/utils";
 import PerformanceSection from "@/components/campaign/PerformanceSection";
 import RevenueUploadModal from "@/components/campaign/RevenueUploadModal";
+import TrackingLinksManager from "@/components/campaign/TrackingLinksManager";
 
 interface AgentLog {
   id: string;
@@ -408,6 +409,21 @@ function ContentCard({ item, onAction }: { item: ContentItem; onAction: () => vo
             <p className="text-[9px] text-gray-400 uppercase tracking-wide font-medium">Nội dung</p>
             <p className="text-xs text-gray-600 whitespace-pre-line leading-relaxed">{c.body as string}</p>
           </div>
+          {(c.cta_text as string) || (c.cta_url as string) ? (
+            <div className="mt-2 pt-2 border-t border-gray-100">
+              <p className="text-[9px] text-gray-400 uppercase tracking-wide font-medium mb-1">Call-to-action</p>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center px-2.5 py-1 bg-[#377D73]/10 text-[#377D73] rounded-lg text-[10px] font-medium">
+                  {(c.cta_text as string) || "Nhấn vào đây"}
+                </span>
+                {(c.cta_url as string) && (
+                  <span className="text-[9px] text-gray-400 truncate max-w-[180px]" title={c.cta_url as string}>
+                    → {c.cta_url as string}
+                  </span>
+                )}
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -948,6 +964,11 @@ export default function CampaignDetailPage() {
                   <h2 className="text-base font-bold text-gray-900">Hiệu quả</h2>
                 </div>
                 <PerformanceSection campaignId={id as string} onAddRevenue={() => setShowRevenueModal(true)} />
+              </div>
+
+              {/* Tracking Links */}
+              <div className="bg-gradient-to-br from-blue-50/50 via-white to-indigo-50/30 rounded-xl p-4 border border-blue-200/50 shadow-md">
+                <TrackingLinksManager campaignId={id as string} />
               </div>
             </div>
           </div>

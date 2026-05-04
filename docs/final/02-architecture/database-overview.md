@@ -2293,3 +2293,107 @@ campaigns (chiến dich chính)
 > - Chi phi (`cost`) trong `campaigns` de tinh ROI cho tung chien dich
 > - Khi gui email tu Customer Outreach voi `campaign_id`, KPIs se tu dong tong hop
 > - AI Campaign Assistant tu dong tao Campaign + ContentItems khi hoan tat
+> - **Campaign Tracking Links**: User có thể nhập nhiều custom links với tên + URL để theo dõi clicks trong chiến dịch
+
+---
+
+## 15) Bang Campaign Tracking Links (Custom Links)
+
+Bang nay cho phep user nhap nhieu custom links (ten + URL) de theo doi clicks trong chiến dich. Moi link se duoc tao short code tu dong de redirect va dem so lan click.
+
+#### `campaign_tracking_links`
+
+```sql
+CREATE TABLE IF NOT EXISTS campaign_tracking_links (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    destination_url TEXT NOT NULL,
+    short_code VARCHAR(64) NOT NULL UNIQUE,
+    click_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+|| Cột | Kiểu | Ràng buộc | Mô tả |
+|---|---|---|---|---|
+| id | UUID | PK | |
+| campaign_id | UUID | FK -> campaigns | Chiến dịch cha |
+| name | VARCHAR(255) | NOT NULL | Tên hiển thị (VD: "Đặt phòng ngay") |
+| destination_url | TEXT | NOT NULL | URL đích (VD: "https://khachsandan.vn/booking") |
+| short_code | VARCHAR(64) | NOT NULL, UNIQUE | Mã rút gọn (VD: "dana-booking-2024") |
+| click_count | INTEGER | DEFAULT 0 | Số lần click |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() | |
+
+#### Indexes cho `campaign_tracking_links`
+
+```sql
+CREATE INDEX IF NOT EXISTS ix_tracking_links_short_code ON campaign_tracking_links(short_code);
+CREATE INDEX IF NOT EXISTS ix_tracking_links_campaign_id ON campaign_tracking_links(campaign_id);
+```
+
+#### API Endpoints
+
+| Method | Endpoint | Mô tả |
+|--------|----------|--------|
+| GET | `/campaigns/{id}/tracking-links` | Lấy danh sách links |
+| POST | `/campaigns/{id}/tracking-links` | Tạo link mới |
+| PUT | `/campaigns/{id}/tracking-links/{link_id}` | Cập nhật link |
+| DELETE | `/campaigns/{id}/tracking-links/{link_id}` | Xóa link |
+| GET | `/r/{short_code}` | Redirect + đếm click (public) |
+
+#### Relationships
+
+```
+campaigns ||--o{ campaign_tracking_links : has
+campaign_tracking_links }o--|| campaigns : belongs_to
+```
+
+#### SQL Migration
+
+```sql
+-- =====================================================
+-- CAMPAIGN TRACKING LINKS - SQL Migration
+-- Ngày: 04/05/2026
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS campaign_tracking_links (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    destination_url TEXT NOT NULL,
+    short_code VARCHAR(64) NOT NULL UNIQUE,
+    click_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS ix_tracking_links_short_code ON campaign_tracking_links(short_code);
+CREATE INDEX IF NOT EXISTS ix_tracking_links_campaign_id ON campaign_tracking_links(campaign_id);
+
+-- Trigger tu dong cap nhat created_at (neu can)
+-- Bang nay khong can trigger updated_at vi du lieu chi insert, khong update
+
+COMMENT ON TABLE campaign_tracking_links IS 'Luu tru custom tracking links cho chiến dich - cho phep user nhap nhieu links voi ten + URL de theo doi clicks';
+COMMENT ON COLUMN campaign_tracking_links.short_code IS 'Ma rut gon duy nhat cho redirect (VD: dana-booking-2024)';
+COMMENT ON COLUMN campaign_tracking_links.click_count IS 'So lan nguoi nhan email click vao link nay';
+```
+
+#### Ví dụ sử dụng
+
+```sql
+-- 1. Tao tracking link
+INSERT INTO campaign_tracking_links (campaign_id, name, destination_url, short_code)
+VALUES 
+    ('550e8400-e29b-41d4-a716-446655440000', 'Đặt phòng ngay', 'https://khachsandan.vn/booking', 'dana-booking-2024'),
+    ('550e8400-e29b-41d4-a716-446655440000', 'Xem ưu đãi', 'https://khachsandan.vn/deals', 'dana-deals-2024');
+
+-- 2. Redirect URL
+-- GET /r/dana-booking-2024 -> Redirect đến https://khachsandan.vn/booking
+
+-- 3. Xem click stats
+SELECT name, destination_url, click_count 
+FROM campaign_tracking_links 
+WHERE campaign_id = '550e8400-e29b-41d4-a716-446655440000'
+ORDER BY click_count DESC;
+```

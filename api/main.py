@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from routers import auth, brands, campaigns, content, calendar, dashboard, workflow, internal, insights, tracking, campaign_idea, insights_chat
+from routers import auth, brands, campaigns, content, calendar, dashboard, workflow, internal, insights, tracking, campaign_idea, insights_chat, tracking_links, redirect
 from core.config import settings
 from services.calendar_reminder_service import send_today_calendar_reminders
 from services.workflow_scheduler_service import run_due_workflow_schedules
@@ -66,6 +66,8 @@ app.include_router(insights.router, prefix="/insights", tags=["insights"])
 app.include_router(insights_chat.router, prefix="/insights", tags=["insights-chat"])
 app.include_router(tracking.router, prefix="/track", tags=["tracking"])
 app.include_router(internal.router, prefix="/internal", tags=["internal"])
+app.include_router(tracking_links.router, prefix="/campaigns", tags=["tracking-links"])
+app.include_router(redirect.router, prefix="/r", tags=["redirect"])
 
 
 @app.get("/health")

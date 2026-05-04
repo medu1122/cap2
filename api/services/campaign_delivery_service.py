@@ -20,6 +20,7 @@ from core.config import settings
 from core.database import AsyncSessionLocal
 from models.campaign import Campaign
 from models.campaign_execution_log import CampaignExecutionLog
+from models.campaign_tracking_link import CampaignTrackingLink
 from models.content_item import ContentItem
 from models.customer import Customer
 from models.customer_list import CustomerList
@@ -155,11 +156,29 @@ async def run_email_delivery(
             cta_text = str(cj.get("cta_text") or "Xem chi tiết ưu đãi")
             cta_url = str(cj.get("cta_url") or "").strip()
 
+            # Lấy tracking links của campaign (ưu tiên dùng link đầu tiên nếu có)
+            tracking_links_r = await db.execute(
+                select(CampaignTrackingLink)
+                .where(CampaignTrackingLink.campaign_id == campaign_id)
+                .order_by(CampaignTrackingLink.created_at.asc())
+                .limit(1)
+            )
+            tracking_link = tracking_links_r.scalar_one_or_none()
+
+            # Ưu tiên dùng tracking link nếu có, không thì dùng cta_url từ AI
+            if tracking_link:
+                # Dùng tracking link - sẽ redirect đến destination_url và đếm clicks
+                redirect_base = f"{settings.TRACKING_PUBLIC_BASE_URL.rstrip('/')}/r/{tracking_link.short_code}"
+                cta_text = tracking_link.name
+            elif cta_url:
+                redirect_base = cta_url
+            else:
+                redirect_base = settings.TRACKING_DEFAULT_REDIRECT_URL or "http://localhost:3000"
+
             cust_r = await db.execute(
                 select(Customer).where(Customer.customer_list_id == customer_list_id)
             )
             customers = list(cust_r.scalars().all())
-            redirect_base = cta_url if cta_url else (settings.TRACKING_DEFAULT_REDIRECT_URL or "http://localhost:3000").strip()
 
             for cust in customers:
                 email_addr = (cust.email or "").strip()
