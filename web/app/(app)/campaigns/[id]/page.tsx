@@ -520,9 +520,12 @@ function _getContentPreview(item: ContentItem): string {
 export default function CampaignDetailPage() {
   const { id } = useParams();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
-  const [loading, setLoading] = useState(true);
   const [customerLists, setCustomerLists] = useState<WorkflowCustomerList[]>([]);
+  const [customerListsLoading, setCustomerListsLoading] = useState(true);
+  const [customerListsError, setCustomerListsError] = useState("");
   const [deliverySummary, setDeliverySummary] = useState<DeliverySummary | null>(null);
+  const [deliveryLoading, setDeliveryLoading] = useState(false);
+  const [deliveryError, setDeliveryError] = useState("");
   const [listId, setListId] = useState("");
   const [execBusy, setExecBusy] = useState(false);
   const [execError, setExecError] = useState("");
@@ -562,21 +565,41 @@ export default function CampaignDetailPage() {
   }
 
   const load = useCallback(() => {
-    api.get<Campaign>(`/campaigns/${id}`).then(setCampaign).finally(() => setLoading(false));
+    api.get<Campaign>(`/campaigns/${id}`).then(setCampaign).catch(() => setCampaign(null));
   }, [id]);
 
   const loadDelivery = useCallback(() => {
     if (!id) return;
-    api.get<DeliverySummary>(`/campaigns/${id}/delivery-summary`).then(setDeliverySummary).catch(() => setDeliverySummary(null));
+    setDeliveryLoading(true);
+    setDeliveryError("");
+    api.get<DeliverySummary>(`/campaigns/${id}/delivery-summary`)
+      .then(setDeliverySummary)
+      .catch((e) => {
+        setDeliverySummary(null);
+        setDeliveryError("Không tải được dữ liệu gửi");
+      })
+      .finally(() => setDeliveryLoading(false));
   }, [id]);
+
+  const loadCustomerLists = useCallback(() => {
+    setCustomerListsLoading(true);
+    setCustomerListsError("");
+    api.get<WorkflowCustomerList[]>("/workflow/customer-lists")
+      .then(setCustomerLists)
+      .catch(() => {
+        setCustomerLists([]);
+        setCustomerListsError("Không tải được danh sách");
+      })
+      .finally(() => setCustomerListsLoading(false));
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
     const isProc = campaign?.status === "running" || campaign?.status === "pending_agent";
     if (isProc) return;
-    api.get<WorkflowCustomerList[]>("/workflow/customer-lists").then(setCustomerLists).catch(() => setCustomerLists([]));
-  }, [campaign?.status]);
+    loadCustomerLists();
+  }, [campaign?.status, loadCustomerLists]);
 
   useEffect(() => {
     const isProc = campaign?.status === "running" || campaign?.status === "pending_agent";
@@ -604,8 +627,25 @@ export default function CampaignDetailPage() {
     return () => clearInterval(interval);
   }, [campaign?.status, load]);
 
-  if (loading && !campaign) return <div className="p-6 skeleton h-40 max-w-6xl mx-auto" />;
-  if (!campaign) return <div className="p-6 text-sm text-gray-400">Không tìm thấy chiến dịch.</div>;
+  if (!campaign) return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-100 via-white to-teal-50/30 p-6">
+      <div className="max-w-6xl mx-auto space-y-5">
+        <div className="h-14 w-64 bg-gray-200 rounded-xl animate-pulse" />
+        <div className="h-24 bg-white rounded-xl animate-pulse" />
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+          <div className="lg:col-span-3 space-y-5">
+            <div className="h-48 bg-white rounded-xl animate-pulse" />
+            <div className="h-64 bg-white rounded-xl animate-pulse" />
+          </div>
+          <div className="lg:col-span-2 space-y-5">
+            <div className="h-80 bg-white rounded-xl animate-pulse" />
+            <div className="h-48 bg-white rounded-xl animate-pulse" />
+            <div className="h-64 bg-white rounded-xl animate-pulse" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   const isProcessing = campaign.status === "running" || campaign.status === "pending_agent";
   const sourceContext = (campaign.campaign_plan_json?.source_context || null) as SourceContext | null;
@@ -778,8 +818,29 @@ export default function CampaignDetailPage() {
                     <h2 className="text-base font-bold text-gray-900">Triển khai</h2>
                   </div>
 
+                  {/* Loading state */}
+                  {deliveryLoading && (
+                    <div className="space-y-3 animate-pulse">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="h-20 bg-gray-100 rounded-xl" />
+                        <div className="h-20 bg-gray-100 rounded-xl" />
+                        <div className="h-20 bg-gray-100 rounded-xl" />
+                        <div className="h-20 bg-gray-100 rounded-xl" />
+                      </div>
+                      <div className="h-32 bg-gray-100 rounded-xl" />
+                    </div>
+                  )}
+
+                  {/* Error state */}
+                  {deliveryError && !deliveryLoading && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+                      <p className="text-sm text-red-600 font-medium">{deliveryError}</p>
+                      <button onClick={loadDelivery} className="mt-2 text-xs text-red-500 hover:underline">Thử lại</button>
+                    </div>
+                  )}
+
                   {/* Metrics */}
-                  {deliverySummary && deliverySummary.metrics.total > 0 ? (
+                  {!deliveryLoading && deliveryError === "" && deliverySummary && deliverySummary.metrics.total > 0 ? (
                     <div className="grid grid-cols-2 gap-3 mb-4">
                       <div className="bg-white rounded-xl p-4 text-center border-2 border-gray-100 shadow-sm">
                         <p className="text-2xl font-bold text-gray-900">{deliverySummary.metrics.total}</p>
@@ -801,7 +862,7 @@ export default function CampaignDetailPage() {
                   ) : null}
 
                   {/* logs table */}
-                  {deliverySummary && deliverySummary.logs.length > 0 ? (
+                  {!deliveryLoading && deliveryError === "" && deliverySummary && deliverySummary.logs.length > 0 ? (
                     <div className="overflow-x-auto rounded-xl border border-blue-100/50 mb-4 bg-white shadow-sm">
                       <table className="w-full text-[11px]">
                         <thead>
@@ -844,16 +905,37 @@ export default function CampaignDetailPage() {
 
                   {/* Execute form */}
                   <div className="space-y-3 bg-white/60 rounded-xl p-4 border border-blue-100/50">
-                    <div className="flex items-center gap-2">
-                      <label className="text-[11px] text-gray-600 font-semibold w-20 shrink-0">Danh sách</label>
-                      <select className="input text-[11px] flex-1 bg-white" value={listId} onChange={(e) => setListId(e.target.value)}>
-                        {customerLists.length === 0 ? (
-                          <option value="">Chưa có danh sách</option>
-                        ) : customerLists.map((l) => (
-                          <option key={l.id} value={l.id}>{l.list_name}</option>
-                        ))}
-                      </select>
-                    </div>
+                    {/* Customer lists loading */}
+                    {customerListsLoading && (
+                      <div className="flex items-center gap-2">
+                        <div className="w-20 shrink-0">
+                          <div className="h-4 bg-gray-200 rounded animate-pulse" />
+                        </div>
+                        <div className="flex-1 h-8 bg-gray-100 rounded animate-pulse" />
+                      </div>
+                    )}
+
+                    {/* Customer lists error */}
+                    {customerListsError && !customerListsLoading && (
+                      <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-2">
+                        <span className="text-[10px] text-red-600 flex-1">{customerListsError}</span>
+                        <button onClick={loadCustomerLists} className="text-[10px] text-red-500 hover:underline">Thử lại</button>
+                      </div>
+                    )}
+
+                    {/* Customer lists */}
+                    {!customerListsLoading && customerListsError === "" && (
+                      <div className="flex items-center gap-2">
+                        <label className="text-[11px] text-gray-600 font-semibold w-20 shrink-0">Danh sách</label>
+                        <select className="input text-[11px] flex-1 bg-white" value={listId} onChange={(e) => setListId(e.target.value)}>
+                          {customerLists.length === 0 ? (
+                            <option value="">Chưa có danh sách</option>
+                          ) : customerLists.map((l) => (
+                            <option key={l.id} value={l.id}>{l.list_name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
                     {!hasEmailChannel && <p className="text-[10px] text-amber-600 font-medium">Chiến dịch chưa gồm kênh Email.</p>}
 

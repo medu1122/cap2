@@ -1,13 +1,29 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Check, Clock, Users, ChevronDown, Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Loader2, Clock, Users, Check, ChevronDown } from "lucide-react";
 import { api } from "@/lib/api-client";
 import type { SuggestionItem, BriefForm, UserPrefs } from "../CampaignAssistantModal";
 
+interface Props {
+  suggestion: SuggestionItem | null;
+  userPrefs: UserPrefs;
+  brief: BriefForm;
+  onBriefChange: (b: BriefForm) => void;
+  brandId: string;
+  onClose: () => void;
+}
+
+const DURATION_LABELS: Record<string, string> = {
+  "1_week": "1 tuần",
+  "2_4_weeks": "2-4 tuần",
+  "1_month": "Cả tháng",
+};
+
 const CHANNEL_OPTIONS = [
-  { value: "email", label: "Email" },
-  { value: "facebook_post", label: "Bài đăng Facebook" },
-  { value: "video_script", label: "Kịch bản video" },
+  { value: "email", label: "Email", icon: "📧" },
+  { value: "facebook_post", label: "Facebook", icon: "📝" },
+  { value: "video_script", label: "Content for Video TikTok", icon: "🎬" },
 ];
 
 const OBJECTIVE_OPTIONS: Record<string, { label: string; desc: string }[]> = {
@@ -39,42 +55,22 @@ const OBJECTIVE_OPTIONS: Record<string, { label: string; desc: string }[]> = {
   ],
 };
 
-const DURATION_LABELS: Record<string, string> = {
-  "1_week": "1 tuần",
-  "2_4_weeks": "2-4 tuần",
-  "1_month": "Cả tháng",
-};
-
-const BUDGET_LABELS: Record<string, string> = {
-  low: "Thấp (<5M)",
-  medium: "Trung bình",
-  high: "Cao (>20M)",
-  unknown: "Chưa xác định",
-};
-
-interface Props {
-  suggestion: SuggestionItem | null;
-  userPrefs: UserPrefs;
-  brief: BriefForm;
-  onBriefChange: (b: BriefForm) => void;
-  onIdeaIdChange: (id: string) => void;
-  onNext: () => void;
-}
-
 export default function StepPreview({
   suggestion,
   userPrefs,
   brief,
   onBriefChange,
-  onNext,
+  brandId,
+  onClose,
 }: Props) {
+  const router = useRouter();
   const [generating, setGenerating] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
-  const [showObjectivePicker, setShowObjectivePicker] = useState(false);
   const [genDone, setGenDone] = useState(false);
+  const [showObjectivePicker, setShowObjectivePicker] = useState(false);
 
-  // Khi vào step này, gọi AI generate brief
+  // Auto-generate brief when entering this step
   useEffect(() => {
     if (!suggestion || genDone || brief.title) return;
     generateBrief();
@@ -86,6 +82,7 @@ export default function StepPreview({
     setGenerating(true);
     setError("");
     try {
+      console.log("[StepPreview] Generating brief with:", { suggestion, userPrefs });
       const res = await api.post<BriefForm>("/campaign-ideas/generate-brief", {
         suggestion_id: suggestion.id,
         suggestion_title: suggestion.title,
@@ -95,34 +92,111 @@ export default function StepPreview({
         suggestion_segment: suggestion.customer_segment,
         suggestion_hook: suggestion.hook,
         target_customer: userPrefs.target_customer,
-        budget: userPrefs.budget,
+        budget: "unknown",
         duration: userPrefs.duration,
       });
+      console.log("[StepPreview] Brief generated:", res);
       onBriefChange({
         ...res,
         timing: suggestion.timing || "",
         customer_segment: suggestion.customer_segment || "",
       });
       setGenDone(true);
-    } catch {
-      // Fallback: dùng suggestion data
-      onBriefChange({
-        title: suggestion.title,
-        objective: suggestion.description,
-        channels: suggestion.channels?.length ? suggestion.channels : ["email", "facebook_post"],
-        hook: suggestion.hook || "",
-        timing: suggestion.timing || "",
-        customer_segment: suggestion.customer_segment || "",
-      });
+    } catch (err) {
+      console.error("[StepPreview] generateBrief error:", err);
+      const msg = err instanceof Error ? err.message : "Không thể tạo. Vui lòng thử lại.";
+      setError(msg);
       setGenDone(true);
     } finally {
       setGenerating(false);
     }
   }
 
-  if (!suggestion) return null;
+  async function handleCreateAndBuild() {
+    if (!suggestion || !genDone) return;
+    setCreating(true);
+    setError("");
+    try {
+      console.log("[StepPreview] Creating CampaignIdea + Campaign + Building content...");
 
-  const objectives = OBJECTIVE_OPTIONS[suggestion.category] || OBJECTIVE_OPTIONS["default"];
+      // Calculate deadline based on duration
+      const durationDays: Record<string, number> = {
+        "1_week": 7,
+        "2_4_weeks": 14,
+        "1_month": 30,
+      };
+      const days = durationDays[userPrefs.duration] || 14;
+      const deadline = new Date();
+      deadline.setDate(deadline.getDate() + days);
+
+      // 1. Create CampaignIdea record
+      const ideaRes = await api.post<{ id: string }>("/campaign-ideas", {
+        suggestion_id: suggestion.id,
+        title: brief.title,
+        objective: brief.objective,
+        channels: brief.channels,
+        hook: brief.hook,
+        timing: brief.timing,
+        customer_segment: brief.customer_segment,
+      });
+      console.log("[StepPreview] CampaignIdea created:", ideaRes.id);
+
+      // 2. Create Campaign in DB
+      const campaignRes = await api.post<{ id: string }>("/campaigns", {
+        brand_id: brandId,
+        campaign_name: brief.title,
+        objective: brief.objective,
+        channels: brief.channels,
+        product_or_service: brief.hook,
+        deadline: deadline.toISOString().split("T")[0],
+      });
+      const campaignId = campaignRes.id;
+      console.log("[StepPreview] Campaign created:", campaignId);
+
+      // 3. Build content for each selected channel
+      for (const channel of brief.channels) {
+        const apiPath = channel === "email" ? "/build/email"
+          : channel === "facebook_post" ? "/build/post"
+          : channel === "video_script" ? "/build/video"
+          : null;
+
+        if (!apiPath) continue;
+
+        try {
+          const contentRes = await api.post<Record<string, unknown>>(
+            `/campaign-ideas/${ideaRes.id}${apiPath}`
+          );
+
+          // Get content based on channel
+          const contentData = channel === "email" ? contentRes.email_content
+            : channel === "facebook_post" ? contentRes.post_content
+            : contentRes.video_script;
+
+          // Save to campaign
+          await api.post(`/campaigns/${campaignId}/content-items`, {
+            channel,
+            content_json: contentData,
+            status: "draft",
+          });
+          console.log(`[StepPreview] ${channel} saved to campaign`);
+        } catch (buildErr) {
+          console.error(`[StepPreview] Failed to build ${channel}:`, buildErr);
+        }
+      }
+
+      // 4. Close modal + redirect to campaign page
+      onClose();
+      setTimeout(() => {
+        router.push(`/campaigns/${campaignId}`);
+      }, 300);
+    } catch (err) {
+      console.error("[StepPreview] create error:", err);
+      const msg = err instanceof Error ? err.message : "Không thể tạo. Vui lòng thử lại.";
+      setError(msg);
+    } finally {
+      setCreating(false);
+    }
+  }
 
   function updateBrief(key: keyof BriefForm, value: string | string[]) {
     onBriefChange({ ...brief, [key]: value });
@@ -135,36 +209,16 @@ export default function StepPreview({
     updateBrief("channels", channels);
   }
 
-  async function handleCreate() {
-    if (!suggestion) return;
-    setCreating(true);
-    setError("");
-    try {
-      const res = await api.post<{ id: string }>("/campaign-ideas", {
-        suggestion_id: suggestion.id,
-        title: brief.title,
-        objective: brief.objective,
-        channels: brief.channels,
-        hook: brief.hook,
-        timing: brief.timing,
-        customer_segment: brief.customer_segment,
-      });
-      onBriefChange(brief);
-      onNext();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Không thể tạo. Vui lòng thử lại.";
-      setError(msg);
-    } finally {
-      setCreating(false);
-    }
-  }
+  if (!suggestion) return null;
 
-  // Loading state khi AI đang viết brief
+  const objectives = OBJECTIVE_OPTIONS[suggestion.category] || OBJECTIVE_OPTIONS["default"];
+
+  // Loading state - AI generating brief
   if (generating) {
     return (
       <div className="space-y-4 text-center py-12">
         <Loader2 size={40} className="animate-spin text-blue-500 mx-auto" />
-        <p className="text-gray-600 font-medium">AI đang viết brief cho bạn...</p>
+        <p className="text-gray-600 font-medium">AI đang chuẩn bị chiến dịch...</p>
         <p className="text-xs text-gray-400">Đợi 5-15 giây</p>
       </div>
     );
@@ -193,28 +247,26 @@ export default function StepPreview({
           </span>
         )}
         <span className="badge bg-gray-100 text-gray-600 text-xs">
-          Ngân sách: {BUDGET_LABELS[userPrefs.budget] || "—"}
-        </span>
-        <span className="badge bg-gray-100 text-gray-600 text-xs">
           Thời gian: {DURATION_LABELS[userPrefs.duration] || "—"}
         </span>
       </div>
 
-      {/* Form - pre-filled by AI */}
-      <div className="border border-gray-200 rounded-xl p-4 space-y-4 bg-gray-50">
-        <p className="text-sm font-medium text-gray-700">Chi tiết chiến dịch</p>
+      {/* Editable form */}
+      <div className="border border-gray-200 rounded-xl p-4 bg-gray-50 space-y-4">
+        <p className="text-sm font-medium text-gray-700">Tóm tắt chiến dịch</p>
 
-        {/* Tên chiến dịch */}
+        {/* Tên chiến dịch - có thể sửa */}
         <div>
           <label className="text-xs text-gray-500 block mb-1">Tên chiến dịch</label>
           <input
             className="input"
             value={brief.title}
             onChange={(e) => updateBrief("title", e.target.value)}
+            placeholder="VD: Giảm 30% Khóa Học Mùa Hè"
           />
         </div>
 
-        {/* Mục tiêu - picker */}
+        {/* Mục tiêu - dropdown có thể sửa */}
         <div>
           <label className="text-xs text-gray-500 block mb-1">Mục tiêu</label>
           <div className="relative">
@@ -229,7 +281,7 @@ export default function StepPreview({
               <ChevronDown size={14} className="text-gray-400 shrink-0" />
             </button>
             {showObjectivePicker && (
-              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
                 {objectives.map((opt) => (
                   <button
                     key={opt.label}
@@ -250,7 +302,7 @@ export default function StepPreview({
           </div>
         </div>
 
-        {/* Ưu đãi / Hook */}
+        {/* Ưu đãi chính - có thể sửa */}
         <div>
           <label className="text-xs text-gray-500 block mb-1">Ưu đãi chính</label>
           <input
@@ -261,22 +313,30 @@ export default function StepPreview({
           />
         </div>
 
-        {/* Kênh nội dung */}
+        {/* Kênh nội dung - tick chọn */}
         <div>
-          <label className="text-xs text-gray-500 block mb-1">
-            Kênh nội dung
-            <span className="text-xs text-gray-400 ml-1">(bỏ chọn nếu không cần)</span>
-          </label>
-          <div className="flex gap-3 mt-1">
+          <label className="text-xs text-gray-500 block mb-1">Kênh nội dung</label>
+          <div className="flex flex-wrap gap-3 mt-1">
             {CHANNEL_OPTIONS.map((ch) => (
-              <label key={ch.value} className="flex items-center gap-1.5 cursor-pointer">
+              <label
+                key={ch.value}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all ${
+                  brief.channels.includes(ch.value)
+                    ? "border-blue-500 bg-blue-50 text-blue-700"
+                    : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                }`}
+              >
                 <input
                   type="checkbox"
                   checked={brief.channels.includes(ch.value)}
                   onChange={() => toggleChannel(ch.value)}
-                  className="accent-blue-600"
+                  className="sr-only"
                 />
+                <span>{ch.icon}</span>
                 <span className="text-sm">{ch.label}</span>
+                {brief.channels.includes(ch.value) && (
+                  <Check size={14} className="text-blue-600" />
+                )}
               </label>
             ))}
           </div>
@@ -285,13 +345,23 @@ export default function StepPreview({
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
+      {/* Action button */}
       <button
-        onClick={handleCreate}
-        disabled={creating || brief.channels.length === 0}
+        onClick={handleCreateAndBuild}
+        disabled={creating || !genDone || brief.channels.length === 0}
         className="w-full btn-primary py-3 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
-        {creating ? "Đang tạo..." : "Tạo chiến dịch"}
-        {!creating && <Check size={16} />}
+        {creating ? (
+          <>
+            <Loader2 size={16} className="animate-spin" />
+            Đang khởi tạo...
+          </>
+        ) : (
+          <>
+            Bắt đầu tạo chiến dịch
+            <Check size={16} />
+          </>
+        )}
       </button>
     </div>
   );

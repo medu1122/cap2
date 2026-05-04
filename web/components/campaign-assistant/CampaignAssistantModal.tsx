@@ -5,8 +5,6 @@ import StepIntro from "./steps/StepIntro";
 import StepSuggestions from "./steps/StepSuggestions";
 import StepUserPrefs from "./steps/StepUserPrefs";
 import StepPreview from "./steps/StepPreview";
-import StepBuilding from "./steps/StepBuilding";
-import StepResult from "./steps/StepResult";
 
 export type SuggestionItem = {
   id: string;
@@ -22,7 +20,6 @@ export type SuggestionItem = {
 
 export type UserPrefs = {
   target_customer: "all" | "existing" | "new" | "";
-  budget: "low" | "medium" | "high" | "unknown" | "";
   duration: "1_week" | "2_4_weeks" | "1_month" | "";
 };
 
@@ -35,23 +32,7 @@ export type BriefForm = {
   customer_segment: string;
 };
 
-export type BlockStatus = "idle" | "loading" | "done" | "error";
-
-export type ContentBlocks = {
-  email: Record<string, unknown> | null;
-  post: Record<string, unknown> | null;
-  video: Record<string, unknown> | null;
-  imagePrompt: string | null;
-};
-
-export type BuildingStatus = {
-  email: BlockStatus;
-  post: BlockStatus;
-  video: BlockStatus;
-  image: BlockStatus;
-};
-
-const STEPS = ["intro", "suggestions", "userprefs", "preview", "building", "result"] as const;
+const STEPS = ["intro", "suggestions", "userprefs", "preview"] as const;
 type Step = (typeof STEPS)[number];
 
 const STEP_LABELS: Record<Step, string> = {
@@ -59,8 +40,6 @@ const STEP_LABELS: Record<Step, string> = {
   suggestions: "Gợi ý từ AI",
   userprefs: "Thu thập ý kiến",
   preview: "Xem trước",
-  building: "AI đang viết nội dung",
-  result: "Hoàn tất",
 };
 
 interface Props {
@@ -74,7 +53,6 @@ export default function CampaignAssistantModal({ onClose }: Props) {
   const [selectedSuggestion, setSelectedSuggestion] = useState<SuggestionItem | null>(null);
   const [userPrefs, setUserPrefs] = useState<UserPrefs>({
     target_customer: "",
-    budget: "",
     duration: "",
   });
   const [brief, setBrief] = useState<BriefForm>({
@@ -84,19 +62,6 @@ export default function CampaignAssistantModal({ onClose }: Props) {
     hook: "",
     timing: "",
     customer_segment: "",
-  });
-  const [ideaId, setIdeaId] = useState<string>("");
-  const [blocks, setBlocks] = useState<ContentBlocks>({
-    email: null,
-    post: null,
-    video: null,
-    imagePrompt: null,
-  });
-  const [buildingStatus, setBuildingStatus] = useState<BuildingStatus>({
-    email: "idle",
-    post: "idle",
-    video: "idle",
-    image: "idle",
   });
 
   const stepIndex = STEPS.indexOf(step);
@@ -122,8 +87,7 @@ export default function CampaignAssistantModal({ onClose }: Props) {
               <span className="text-blue-600 text-sm font-bold">AI</span>
             </div>
             <div>
-              <h2 className="font-semibold text-gray-900">AI hỗ trợ tạo chiến dịch</h2>
-              <p className="text-xs text-gray-500">Công cụ tạo chiến dịch nhanh</p>
+              <h2 className="font-semibold text-gray-900">Tạo chiến dịch với AI</h2>
             </div>
           </div>
           <button
@@ -181,50 +145,25 @@ export default function CampaignAssistantModal({ onClose }: Props) {
               userPrefs={userPrefs}
               brief={brief}
               onBriefChange={setBrief}
-              onIdeaIdChange={setIdeaId}
-              onNext={goNext}
-            />
-          )}
-          {step === "building" && (
-            <StepBuilding
-              ideaId={ideaId}
-              blocks={blocks}
-              onBlocksChange={setBlocks}
-              buildingStatus={buildingStatus}
-              onBuildingStatusChange={setBuildingStatus}
-              onComplete={goNext}
-            />
-          )}
-          {step === "result" && (
-            <StepResult
-              ideaId={ideaId}
-              brief={brief}
-              blocks={blocks}
-              buildingStatus={buildingStatus}
+              brandId={brandId}
               onClose={onClose}
             />
           )}
         </div>
 
         {/* Footer nav */}
-        {step !== "building" && step !== "result" && (
-          <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
-            <button
-              onClick={goBack}
-              disabled={stepIndex === 0}
-              className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronLeft size={16} />
-              Quay lại
-            </button>
+        <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+          <button
+            onClick={goBack}
+            disabled={stepIndex === 0}
+            className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            <ChevronLeft size={16} />
+            Quay lại
+          </button>
 
-            <span className="text-xs text-gray-400">
-              {stepIndex + 1} / {STEPS.length}
-            </span>
-
-            <span />
-          </div>
-        )}
+          <span />
+        </div>
       </div>
     </div>
   );

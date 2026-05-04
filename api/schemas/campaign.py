@@ -97,6 +97,13 @@ class ContentItemOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ContentItemCreate(BaseModel):
+    channel: str
+    content_json: dict
+    status: str = "draft"
+    scheduled_date: date | None = None
+
+
 class CampaignDetail(BaseModel):
     id: uuid.UUID
     brand_id: uuid.UUID | None = None

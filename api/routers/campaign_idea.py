@@ -370,6 +370,7 @@ async def create_campaign_idea(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    import logging; logging.info(f"[DEBUG] create_campaign_idea: {payload}")
     idea = CampaignIdea(
         user_id=current_user.id,
         title=payload.title,

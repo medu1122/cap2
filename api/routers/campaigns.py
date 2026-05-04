@@ -31,6 +31,7 @@ from schemas.campaign import (
     CampaignListItem,
     CampaignDetail,
     ContentItemOut,
+    ContentItemCreate,
     AgentLogOut,
     VALID_CHANNELS,
     CampaignExecuteRequest,
@@ -232,6 +233,36 @@ async def create_campaign(
     await db.commit()
     await db.refresh(campaign)
     return {"id": str(campaign.id), "campaign_name": campaign.campaign_name, "status": campaign.status, "created_at": campaign.created_at}
+
+
+@router.post("/{campaign_id}/content-items", status_code=201)
+async def create_campaign_content_item(
+    campaign_id: uuid.UUID,
+    payload: ContentItemCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Tạo content item mới cho campaign."""
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.user_id == current_user.id)
+    )
+    campaign = result.scalar_one_or_none()
+    if not campaign:
+        raise HTTPException(404, "Campaign not found")
+
+    item = ContentItem(
+        campaign_id=campaign_id,
+        channel=payload.channel,
+        content_json=payload.content_json,
+        status=payload.status,
+        scheduled_date=payload.scheduled_date,
+        version=1,
+        source="ai_generated",
+    )
+    db.add(item)
+    await db.commit()
+    await db.refresh(item)
+    return {"id": str(item.id), "channel": item.channel, "status": item.status}
 
 
 @router.get("/{campaign_id}", response_model=CampaignDetail)

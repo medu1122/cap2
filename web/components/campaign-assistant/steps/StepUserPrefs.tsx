@@ -15,13 +15,6 @@ const TARGET_OPTIONS = [
   { value: "all", label: "Tất cả", desc: "Cả cũ và mới" },
 ];
 
-const BUDGET_OPTIONS = [
-  { value: "low", label: "Thấp", desc: "< 5 triệu" },
-  { value: "medium", label: "Trung bình", desc: "5 - 20 triệu" },
-  { value: "high", label: "Cao", desc: "> 20 triệu" },
-  { value: "unknown", label: "Chưa xác định", desc: "Tùy tình hình" },
-];
-
 const DURATION_OPTIONS = [
   { value: "1_week", label: "1 tuần", desc: "Ngắn hạn, intensity cao" },
   { value: "2_4_weeks", label: "2-4 tuần", desc: "Vừa phải" },
@@ -84,7 +77,7 @@ export default function StepUserPrefs({
     onPrefsChange({ ...userPrefs, [key]: value });
   }
 
-  const allFilled = userPrefs.target_customer && userPrefs.budget && userPrefs.duration;
+  const allFilled = userPrefs.target_customer && userPrefs.duration;
 
   return (
     <div className="space-y-6">
@@ -116,13 +109,6 @@ export default function StepUserPrefs({
         />
 
         <RadioGroup
-          label="Ngân sách dự kiến là bao nhiêu?"
-          options={BUDGET_OPTIONS}
-          value={userPrefs.budget}
-          onChange={(v) => update("budget", v)}
-        />
-
-        <RadioGroup
           label="Bạn muốn chạy trong bao lâu?"
           options={DURATION_OPTIONS}
           value={userPrefs.duration}
@@ -141,7 +127,7 @@ export default function StepUserPrefs({
 
       {!allFilled && (
         <p className="text-xs text-center text-gray-400">
-          Vui lòng chọn đủ cả 3 mục để tiếp tục
+          Vui lòng chọn đủ các mục để tiếp tục
         </p>
       )}
     </div>

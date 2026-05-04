@@ -1,16 +1,40 @@
 "use client";
-import { useEffect, useState } from "react";
+
+import { useEffect, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Sparkles, Loader2, X } from "lucide-react";
+import { Sparkles, Loader2, X, ChevronDown, Search } from "lucide-react";
 import { api, API_BASE, getToken } from "@/lib/api-client";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
 
-const TONES = [
-  { value: "playful",      label: "Vui tươi",      hint: "Như trò chuyện với bạn bè" },
-  { value: "professional", label: "Nghiêm túc",    hint: "Lịch sự, đáng tin cậy" },
-  { value: "warm",         label: "Thân thiện",    hint: "Gần gũi, chân thành" },
-  { value: "bold",         label: "Bứt phá",       hint: "Mạnh mẽ, tạo cảm giác gấp" },
-  { value: "informative",  label: "Rõ ràng",       hint: "Đi thẳng vào thông tin" },
+const PRODUCT_CATEGORIES = [
+  // F&B
+  "Cà phê & Đồ uống", "Nhà hàng", "Ăn uống nhanh", "Trà sữa & Thức uống",
+  "Bánh ngọt & Dessert", "Ẩm thực Việt", "Ẩm thực Á", "Ẩm thực Âu",
+  // Giáo dục
+  "Khóa học tiếng Anh", "Trung tâm ngoại ngữ", "Khóa học online", "Gia sư",
+  "Du học", "Đào tạo doanh nghiệp", "Kỹ năng mềm", "Luyện thi",
+  // Sắc đẹp & Lifestyle
+  "Spa & Massage", "Làm đẹp", "Mỹ phẩm", "Chăm sóc da",
+  "Nail & Styling", "Hair salon", "Thời trang", "Trang sức",
+  // Sức khỏe
+  "Phòng khám", "Y tế", "Dược phẩm", "Thực phẩm chức năng",
+  "Yoga & Gym", "Thể thao", "Sức khỏe tinh thần",
+  // Công nghệ
+  "SaaS / Phần mềm", "App di động", "Web hosting", "AI & Automation",
+  "Game", "Công nghệ fin-tech", "EdTech",
+  // Bất động sản & Xây dựng
+  "Bất động sản", "Nội thất", "Xây dựng", "Kiến trúc",
+  // Dịch vụ
+  "Kế toán & Tài chính", "Luật", "Marketing & Agency", "Thiết kế đồ họa",
+  "In ấn & Quảng cáo", "Vận chuyển & Logistics", "Du lịch & Lữ hành",
+  "Khách sạn & Resort", "Sự kiện & Cưới hỏi", "Cho thuê",
+  // Bán lẻ
+  "Thực phẩm sạch", "Hữu cơ", "Mua bán online", "Kinh doanh quần áo",
+  "Sách & Văn phòng phẩm", "Đồ gia dụng", "Pet shop",
+  // Tài chính
+  "Bảo hiểm", "Tín dụng", "Đầu tư", "Ngân hàng",
+  // Khác
+  "Ô tô & Xe máy", "Nông nghiệp", "Môi trường", "Phi lợi nhuận",
 ];
 
 interface Brand {
@@ -47,6 +71,130 @@ const EMPTY: Brand = {
   address: "",
 };
 
+function CategoryPicker({
+  selected,
+  onChange,
+}: {
+  selected: string[];
+  onChange: (cats: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const filtered = PRODUCT_CATEGORIES.filter(
+    (c) => !selected.includes(c) && c.toLowerCase().includes(search.toLowerCase())
+  );
+
+  function addCategory(cat: string) {
+    if (cat.trim()) {
+      onChange([...selected, cat.trim()]);
+      setSearch("");
+    }
+  }
+
+  function removeCategory(cat: string) {
+    onChange(selected.filter((c) => c !== cat));
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      {/* Selected tags */}
+      {selected.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {selected.map((cat) => (
+            <span
+              key={cat}
+              className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium"
+            >
+              {cat}
+              <button
+                type="button"
+                onClick={() => removeCategory(cat)}
+                className="hover:text-blue-900"
+              >
+                <X size={10} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Trigger */}
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="input flex items-center justify-between text-left"
+      >
+        <span className="text-gray-400 text-sm">
+          {selected.length === 0 ? "Chọn hoặc nhập danh mục..." : `${selected.length} danh mục đã chọn`}
+        </span>
+        <ChevronDown size={14} className={`text-gray-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {/* Dropdown */}
+      {open && (
+        <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg">
+          {/* Search input */}
+          <div className="p-2 border-b border-gray-100">
+            <div className="relative">
+              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                autoFocus
+                className="input pl-7 py-1.5 text-sm"
+                placeholder="Tìm hoặc nhập danh mục..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && search.trim()) {
+                    addCategory(search.trim());
+                  }
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Suggestions */}
+          <div className="max-h-56 overflow-y-auto">
+            {filtered.length > 0 ? (
+              filtered.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => addCategory(cat)}
+                  className="w-full text-left px-4 py-2.5 text-sm hover:bg-blue-50 transition-colors"
+                >
+                  {cat}
+                </button>
+              ))
+            ) : search.trim() && !selected.includes(search.trim()) ? (
+              <button
+                type="button"
+                onClick={() => addCategory(search.trim())}
+                className="w-full text-left px-4 py-2.5 text-sm text-blue-600 hover:bg-blue-50 transition-colors"
+              >
+                + Thêm "{search.trim()}"
+              </button>
+            ) : (
+              <p className="px-4 py-3 text-xs text-gray-400 text-center">Không có kết quả</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function BrandVaultPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -55,8 +203,6 @@ export default function BrandVaultPage() {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [brandsLoading, setBrandsLoading] = useState(true);
   const [form, setForm] = useState<Brand>(EMPTY);
-  const [productsRaw, setProductsRaw]   = useState("");
-  const [forbiddenRaw, setForbiddenRaw] = useState("");
   const [loading, setLoading]   = useState(true);
   const [saving, setSaving]     = useState(false);
   const [saved, setSaved]       = useState(false);
@@ -66,14 +212,10 @@ export default function BrandVaultPage() {
 
   function hydrateForm(brand: Brand) {
     setForm(brand);
-    setProductsRaw((brand.key_products || []).join(", "));
-    setForbiddenRaw((brand.forbidden_words || []).join(", "));
   }
 
   function startNewBrand() {
     setForm(EMPTY);
-    setProductsRaw("");
-    setForbiddenRaw("");
     setError("");
     setSaved(false);
     setIsFormOpen(true);
@@ -213,8 +355,6 @@ export default function BrandVaultPage() {
     try {
       const payload = {
         ...form,
-        key_products:   productsRaw.split(",").map((s) => s.trim()).filter(Boolean),
-        forbidden_words: forbiddenRaw.split(",").map((s) => s.trim()).filter(Boolean),
       };
       const savedBrand = await saveBrandWithDebug(payload);
 
@@ -289,11 +429,11 @@ export default function BrandVaultPage() {
         <div className="flex items-center gap-2">
           <HelpDialogButton
             title="Hướng dẫn hồ sơ thương hiệu"
-            summary="Hồ sơ thương hiệu giúp AI viết đúng giọng văn, thông điệp và nhóm khách hàng của bạn."
+            summary="Hồ sơ thương hiệu giúp AI hiểu bạn kinh doanh gì và khách hàng mục tiêu là ai."
             steps={[
               "Tạo hồ sơ mới hoặc chọn hồ sơ hiện có trong danh sách.",
+              "Khai báo danh mục kinh doanh để AI viết đúng ngữ cảnh.",
               "Tuỳ chọn: email, SĐT, địa chỉ — backend cần migration mới nhất (xem docs/final database-overview).",
-              "Khai báo sản phẩm chính và từ cấm để AI tránh dùng.",
               "Bấm Lưu để áp dụng cho các chiến dịch tạo sau đó.",
             ]}
           />
@@ -313,7 +453,7 @@ export default function BrandVaultPage() {
               <thead>
                 <tr className="text-left text-gray-500 border-b border-gray-100">
                   <th className="py-2 pr-3 font-medium">Tên</th>
-                  <th className="py-2 pr-3 font-medium">Tone</th>
+                  <th className="py-2 pr-3 font-medium">Danh mục</th>
                   <th className="py-2 pr-3 font-medium">Khách hàng mục tiêu</th>
                   <th className="py-2 pr-3 font-medium">Cập nhật</th>
                   <th className="py-2 font-medium">Thao tác</th>
@@ -323,8 +463,11 @@ export default function BrandVaultPage() {
                 {brands.map((b) => (
                   <tr key={b.id} className="border-b border-gray-100 last:border-0">
                     <td className="py-2 pr-3 text-gray-800 font-medium">{b.brand_name}</td>
-                    <td className="py-2 pr-3 text-gray-600">{b.tone_of_voice}</td>
-                    <td className="py-2 pr-3 text-gray-600 truncate max-w-[260px]">{b.target_audience || "-"}</td>
+                    <td className="py-2 pr-3 text-gray-600 truncate max-w-[180px]">
+                      {b.key_products?.slice(0, 2).join(", ")}
+                      {b.key_products && b.key_products.length > 2 && ` +${b.key_products.length - 2}`}
+                    </td>
+                    <td className="py-2 pr-3 text-gray-600 truncate max-w-[200px]">{b.target_audience || "-"}</td>
                     <td className="py-2 pr-3 text-gray-500">{b.updated_at ? new Date(b.updated_at).toLocaleDateString("vi-VN") : "-"}</td>
                     <td className="py-2">
                       <button
@@ -448,47 +591,17 @@ export default function BrandVaultPage() {
           </div>
         </div>
 
-        {/* Phong cách viết */}
+        {/* Danh mục sản phẩm */}
         <div className="card space-y-4">
           <div>
-            <label className="label">Phong cách viết cho chiến dịch</label>
+            <label className="label">Danh mục kinh doanh</label>
             <p className="text-xs text-gray-400 mb-2">
-              Chọn giọng văn cho nội dung bài đăng, email, video của chiến dịch
+              Chọn từ danh sách hoặc nhập tuỳ ý. Có thể chọn nhiều danh mục.
             </p>
-            <select
-              className="input"
-              value={TONES.some((t) => t.value === form.tone_of_voice) ? form.tone_of_voice : "warm"}
-              onChange={(e) => update("tone_of_voice", e.target.value)}
-            >
-              {TONES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label} — {t.hint}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Giới hạn nội dung */}
-        <div className="card space-y-4">
-          <div>
-            <label className="label">Sản phẩm / chủ đề chính</label>
-            <input
-              className="input"
-              value={productsRaw}
-              onChange={(e) => setProductsRaw(e.target.value)}
-              placeholder="Cà phê sữa đá, Bạc xỉu, Trà đào"
+            <CategoryPicker
+              selected={form.key_products || []}
+              onChange={(cats) => setForm((f) => ({ ...f, key_products: cats }))}
             />
-          </div>
-          <div>
-            <label className="label">Từ cấm</label>
-            <input
-              className="input"
-              value={forbiddenRaw}
-              onChange={(e) => setForbiddenRaw(e.target.value)}
-              placeholder="rẻ, bình dân, giảm sốc"
-            />
-            <p className="text-xs text-gray-400 mt-1">AI sẽ tránh dùng những từ này</p>
           </div>
         </div>
 
