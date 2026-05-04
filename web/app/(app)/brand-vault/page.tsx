@@ -243,26 +243,13 @@ export default function BrandVaultPage() {
     loadBrands().finally(() => setLoading(false));
   }, []);
 
-  // Xử lý điều hướng khi có brandId hoặc không
+  // Chỉ chạy 1 lần khi mount: nếu không có brandId thì mở form tạo mới
   useEffect(() => {
-    if (brandId) {
-      // Có brandId trong URL → đang sửa brand cụ thể
-      const selected = brands.find((b) => b.id === brandId);
-      if (selected) {
-        hydrateForm(selected);
-        setIsFormOpen(true);
-        return;
-      }
-      // brandId trong URL nhưng không tìm thấy → vẫn mở form trống
-      setIsFormOpen(true);
-      return;
-    }
-    // Không có brandId → nếu chưa mở form thì mở form tạo mới
-    if (!isFormOpen && !brandsLoading) {
+    if (!brandId) {
       startNewBrand();
     }
-    setBrandsLoading(false);
-  }, [brandId, brands, isFormOpen, brandsLoading]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function update(key: keyof Brand, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
