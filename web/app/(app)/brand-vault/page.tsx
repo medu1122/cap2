@@ -243,14 +243,6 @@ export default function BrandVaultPage() {
     loadBrands().finally(() => setLoading(false));
   }, []);
 
-  // Chỉ chạy 1 lần khi mount: nếu không có brandId thì mở form tạo mới
-  useEffect(() => {
-    if (!brandId) {
-      startNewBrand();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   function update(key: keyof Brand, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
   }

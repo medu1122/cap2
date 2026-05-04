@@ -154,72 +154,7 @@ function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClos
   );
 }
 
-// ── AI Processing Overlay ───────────────────────────────────────────────────────
-
-function AIProcessingOverlay({ campaign }: { campaign: Campaign }) {
-  const logs = campaign.agent_logs;
-  const runningLog = logs.find((l) => l.status === "running");
-  let statusLabel = "Đang khởi động AI...";
-  if (runningLog) {
-    const ch = runningLog.channel ? ` ${CHANNEL_LABELS[runningLog.channel]}` : "";
-    if (runningLog.agent_name === "strategist") statusLabel = "Strategist đang phân tích...";
-    else if (runningLog.agent_name === "writer") statusLabel = `Writer đang soạn${ch}...`;
-    else if (runningLog.agent_name === "critic") statusLabel = `Critic đang kiểm tra${ch}...`;
-  }
-  const doneCount = logs.filter((l) => l.status === "success").length;
-  const phases = [
-    { key: "strategist", label: "Strategist" },
-    { key: "writer", label: "Writer" },
-    { key: "critic", label: "Critic" },
-  ];
-
-  const getPhaseStatus = (key: string) => {
-    if (logs.some((l) => l.agent_name === key && l.status === "running")) return "running";
-    if (logs.some((l) => l.agent_name === key && l.status === "success")) return "done";
-    return "pending";
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white border border-gray-200 w-full max-w-sm mx-4 p-5 space-y-4 rounded-xl">
-        <h2 className="text-center text-sm font-medium text-gray-800">{campaign.campaign_name}</h2>
-        <div className="flex items-center justify-center gap-1.5">
-          {phases.map((phase, idx) => {
-            const status = getPhaseStatus(phase.key);
-            const block = (
-              <div key={phase.key} className={cn(
-                "flex items-center justify-center w-20 py-2 px-2 rounded-lg border text-center",
-                status === "done" && "bg-[#377D73]/10 border-[#377D73]",
-                status === "running" && "bg-[#377D73]/5 border-[#377D73]/50 animate-pulse",
-                status === "pending" && "bg-gray-50 border-gray-200",
-              )}>
-                <span className={cn(
-                  "text-xs font-semibold",
-                  status === "done" && "text-[#377D73]",
-                  status === "running" && "text-[#377D73]",
-                  status === "pending" && "text-gray-400",
-                )}>{phase.label}</span>
-              </div>
-            );
-            const sep = idx < phases.length - 1 ? (
-              <div key={`s${idx}`} className={cn(
-                "text-xs",
-                getPhaseStatus(phases[idx].key) === "done" ? "text-[#377D73]/50" : "text-gray-200"
-              )}>→</div>
-            ) : null;
-            return sep ? [block, sep] : [block];
-          })}
-        </div>
-        <p className="text-center text-xs text-gray-500">{statusLabel}</p>
-        <div className="flex items-center justify-center gap-1">
-          {Array.from({ length: Math.max(5, doneCount) }).map((_, i) => (
-            <span key={i} className={cn("w-1.5 h-1.5 rounded-full", i < doneCount ? "bg-[#377D73]" : "bg-gray-200")} />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
+// ── AI Processing Banner ────────────────────────────────────────────────────────
 
 // ── Channel Icon ────────────────────────────────────────────────────────────────
 
@@ -623,9 +558,20 @@ export default function CampaignDetailPage() {
   useEffect(() => {
     const isProcessing = campaign?.status === "running" || campaign?.status === "pending_agent";
     if (!isProcessing) return;
+    // Fake 5s "AI đang nghĩ" trước khi hiện progress thật
+    const fakeDelayTimer = setTimeout(() => {
+      // Fake delay xong, bắt đầu poll thật
+    }, 5000);
     const interval = setInterval(load, 3000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      clearTimeout(fakeDelayTimer);
+    };
   }, [campaign?.status, load]);
+
+  // Fake AI progress state: hiện trong 5s đầu tiên khi bắt đầu xử lý
+  const isFakeLoading = (campaign?.status === "running" || campaign?.status === "pending_agent") && !campaign.agent_logs.some(l => l.status !== "pending");
+  const hasAnyAgentProgress = campaign?.agent_logs.some(l => l.status === "success" || l.status === "running") || false;
 
   if (!campaign) return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 via-white to-teal-50/30 p-6">
@@ -651,6 +597,20 @@ export default function CampaignDetailPage() {
   const sourceContext = (campaign.campaign_plan_json?.source_context || null) as SourceContext | null;
   const hasEmailChannel = campaign.channels.includes("email");
 
+  // Banner: fake 5s loading (khi chưa có agent log nào)
+  const showFakeBanner = isProcessing && isFakeLoading;
+  // Banner: real agent progress (khi có log rồi)
+  const showRealBanner = isProcessing && !isFakeLoading && !hasAnyAgentProgress;
+
+  const runningLog = campaign.agent_logs.find((l) => l.status === "running");
+  let bannerLabel = "AI đang chuẩn bị...";
+  if (runningLog) {
+    const ch = runningLog.channel ? ` ${CHANNEL_LABELS[runningLog.channel]}` : "";
+    if (runningLog.agent_name === "strategist") bannerLabel = "Strategist đang phân tích...";
+    else if (runningLog.agent_name === "writer") bannerLabel = `Writer đang soạn nội dung${ch}...`;
+    else if (runningLog.agent_name === "critic") bannerLabel = `Critic đang kiểm tra${ch}...`;
+  }
+
   async function runCampaignExecution() {
     if (!id || !listId) { setExecError("Chọn danh sách."); return; }
     setExecError("");
@@ -668,7 +628,13 @@ export default function CampaignDetailPage() {
 
   return (
     <>
-      {isProcessing && <AIProcessingOverlay campaign={campaign} />}
+      {(showFakeBanner || showRealBanner) && (
+        <div className="mb-4 flex items-center gap-3 bg-[#377D73]/5 border border-[#377D73]/20 rounded-xl px-4 py-3">
+          <Loader2 size={16} className="text-[#377D73] animate-spin shrink-0" />
+          <span className="text-sm font-medium text-[#377D73]">{bannerLabel}</span>
+          <span className="text-xs text-[#377D73]/60 ml-auto">{showFakeBanner ? "Đang khởi tạo..." : ""}</span>
+        </div>
+      )}
       {showDeleteConfirm && campaign && (
         <DeleteConfirmModal campaignName={campaign.campaign_name} onConfirm={handleDelete} onCancel={() => setShowDeleteConfirm(false)} deleting={deleting} />
       )}
@@ -684,7 +650,6 @@ export default function CampaignDetailPage() {
               <h1 className="text-xl font-bold text-gray-900 truncate">{campaign.campaign_name}</h1>
             </div>
             <span className={cn("badge shrink-0 text-[11px]", STATUS_COLORS[campaign.status])}>{STATUS_LABELS[campaign.status]}</span>
-            {isProcessing && <Loader2 size={14} className="text-[#377D73] animate-spin shrink-0" />}
             {!isProcessing && !showDeleteConfirm && (
               <button onClick={() => setShowDeleteConfirm(true)} className="flex items-center justify-center w-9 h-9 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all" title="Xóa chiến dịch">
                 <Trash2 size={16} />
@@ -809,8 +774,7 @@ export default function CampaignDetailPage() {
             {/* RIGHT COLUMN - Actions & Stats */}
             <div className="lg:col-span-2 space-y-5">
               {/* Triển khai */}
-              {!isProcessing && (
-                <div className="bg-gradient-to-br from-blue-50/50 via-white to-cyan-50/30 rounded-xl p-4 border border-blue-200/50 shadow-md">
+              <div className="bg-gradient-to-br from-blue-50/50 via-white to-cyan-50/30 rounded-xl p-4 border border-blue-200/50 shadow-md">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="flex items-center justify-center w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-xl shadow-lg shadow-blue-200">
                       <Send size={20} className="text-white" />
@@ -969,27 +933,22 @@ export default function CampaignDetailPage() {
                     {scheduleMsg && <p className="text-[10px] text-[#377D73] font-semibold text-right">{scheduleMsg}</p>}
                   </div>
                 </div>
-              )}
 
               {/* Ảnh */}
-              {!isProcessing && (
-                <div className="bg-gradient-to-br from-orange-50/50 via-white to-amber-50/30 rounded-xl p-4 border border-orange-200/50 shadow-md">
-                  <CampaignImageCard campaign={campaign} onUpdated={load} />
-                </div>
-              )}
+              <div className="bg-gradient-to-br from-orange-50/50 via-white to-amber-50/30 rounded-xl p-4 border border-orange-200/50 shadow-md">
+                <CampaignImageCard campaign={campaign} onUpdated={load} />
+              </div>
 
               {/* Hiệu quả */}
-              {!isProcessing && (
-                <div className="bg-gradient-to-br from-green-50/50 via-white to-emerald-50/30 rounded-xl p-4 border border-green-200/50 shadow-md">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="flex items-center justify-center w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl shadow-lg shadow-green-200">
-                      <TrendingUp size={20} className="text-white" />
-                    </div>
-                    <h2 className="text-base font-bold text-gray-900">Hiệu quả</h2>
+              <div className="bg-gradient-to-br from-green-50/50 via-white to-emerald-50/30 rounded-xl p-4 border border-green-200/50 shadow-md">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="flex items-center justify-center w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl shadow-lg shadow-green-200">
+                    <TrendingUp size={20} className="text-white" />
                   </div>
-                  <PerformanceSection campaignId={id as string} onAddRevenue={() => setShowRevenueModal(true)} />
+                  <h2 className="text-base font-bold text-gray-900">Hiệu quả</h2>
                 </div>
-              )}
+                <PerformanceSection campaignId={id as string} onAddRevenue={() => setShowRevenueModal(true)} />
+              </div>
             </div>
           </div>
         </div>

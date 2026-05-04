@@ -36,6 +36,7 @@ def build_email_html(
     open_url: str,
     click_url: str,
     ab_variant: str | None,
+    cta_text: str = "Xem chi tiết ưu đãi",
 ) -> tuple[str, str]:
     safe_body = html.escape(body_text or "")
     safe_body_html = safe_body.replace("\n", "<br>\n")
@@ -44,7 +45,7 @@ def build_email_html(
         ab_note = "<p><em>Phiên bản A</em></p>"
     elif ab_variant == "B":
         ab_note = "<p><em>Phiên bản B</em></p>"
-    cta = f'<p><a href="{html.escape(click_url)}">Xem chi tiết ưu đãi</a></p>'
+    cta = f'<p><a href="{html.escape(click_url)}">{html.escape(cta_text)}</a></p>'
     pixel = f'<img src="{html.escape(open_url)}" width="1" height="1" alt="" style="display:block;border:0" />'
     html_part = f"""<!DOCTYPE html>
 <html><body>
@@ -56,7 +57,7 @@ def build_email_html(
     plain = (body_text or "").strip()
     if plain:
         plain += "\n\n"
-    plain += f"Xem chi tiết: {click_url}\n"
+    plain += f"{cta_text}: {click_url}\n"
     return plain, html_part
 
 
@@ -151,12 +152,14 @@ async def run_email_delivery(
             cj = content.content_json or {}
             subject = str(cj.get("subject") or campaign.campaign_name or "Thông báo từ AIMAP")
             body = str(cj.get("body") or "")
+            cta_text = str(cj.get("cta_text") or "Xem chi tiết ưu đãi")
+            cta_url = str(cj.get("cta_url") or "").strip()
 
             cust_r = await db.execute(
                 select(Customer).where(Customer.customer_list_id == customer_list_id)
             )
             customers = list(cust_r.scalars().all())
-            redirect_base = (settings.TRACKING_DEFAULT_REDIRECT_URL or "http://localhost:3000").strip()
+            redirect_base = cta_url if cta_url else (settings.TRACKING_DEFAULT_REDIRECT_URL or "http://localhost:3000").strip()
 
             for cust in customers:
                 email_addr = (cust.email or "").strip()
@@ -186,7 +189,7 @@ async def run_email_delivery(
 
                 token = secrets.token_urlsafe(24)
                 open_u, click_u = tracking_urls(token)
-                text_part, html_part = build_email_html(body_use, open_u, click_u, ab_var)
+                text_part, html_part = build_email_html(body_use, open_u, click_u, ab_var, cta_text)
 
                 log = CampaignExecutionLog(
                     batch_id=batch_id,

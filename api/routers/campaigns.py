@@ -874,7 +874,7 @@ async def get_campaign_performance(
 
     # Calculate metrics
     total_sent = len(logs)
-    delivered = sum(1 for r in logs if r.status == "delivered")
+    delivered = sum(1 for r in logs if r.status in ("sent", "delivered"))
     bounced = sum(1 for r in logs if r.status == "bounced")
     opened = sum(1 for r in logs if r.opened_at is not None)
     clicked = sum(1 for r in logs if r.clicked_at is not None)
