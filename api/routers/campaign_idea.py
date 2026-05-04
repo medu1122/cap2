@@ -162,9 +162,44 @@ async def _call_ai_safe(messages: list[dict], timeout: int | None = None) -> str
 
 
 def _parse_json_flexible(raw: str) -> dict | list:
+    """Parse JSON flexibly - try extract from text if needed."""
     raw = raw.strip()
+
+    # Remove markdown code blocks
     raw = raw.replace("```json", "").replace("```", "").strip()
-    return json.loads(raw)
+
+    # Try direct parse first
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+
+    # Try to find JSON in text (find first { or [ and last } or ])
+    for start_char in ['{', '[']:
+        start_idx = raw.find(start_char)
+        if start_idx != -1:
+            # Find matching closing bracket
+            end_char = ']' if start_char == '[' else '}'
+            depth = 0
+            end_idx = -1
+            for i, ch in enumerate(raw[start_idx:], start=start_idx):
+                if ch == start_char:
+                    depth += 1
+                elif ch == end_char:
+                    depth -= 1
+                    if depth == 0:
+                        end_idx = i + 1
+                        break
+            if end_idx > start_idx:
+                try:
+                    return json.loads(raw[start_idx:end_idx])
+                except json.JSONDecodeError:
+                    pass
+
+    # Fallback: return empty structure based on context
+    if '{' in raw:
+        return {}
+    return []
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
