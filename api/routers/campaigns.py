@@ -510,6 +510,26 @@ async def delete_campaign(
     campaign = result.scalar_one_or_none()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
+
+    # Xóa các bản ghi liên quan trước (workflow_jobs và outreach_logs không có cascade)
+    from models.workflow_job import WorkflowJob
+    from models.outreach_log import OutreachLog
+
+    # Xóa workflow_jobs liên quan
+    wf_result = await db.execute(
+        select(WorkflowJob).where(WorkflowJob.campaign_id == campaign_id)
+    )
+    for wf in wf_result.scalars().all():
+        await db.delete(wf)
+
+    # Xóa outreach_logs liên quan
+    or_result = await db.execute(
+        select(OutreachLog).where(OutreachLog.campaign_id == campaign_id)
+    )
+    for or_log in or_result.scalars().all():
+        await db.delete(or_log)
+
+    # Xóa campaign (cascade sẽ xóa content_items, agent_run_logs, campaign_execution_logs)
     await db.delete(campaign)
     await db.commit()
 

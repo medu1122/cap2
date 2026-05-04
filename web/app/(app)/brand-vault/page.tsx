@@ -53,6 +53,7 @@ export default function BrandVaultPage() {
   const brandId = searchParams.get("brandId");
 
   const [brands, setBrands] = useState<Brand[]>([]);
+  const [brandsLoading, setBrandsLoading] = useState(true);
   const [form, setForm] = useState<Brand>(EMPTY);
   const [productsRaw, setProductsRaw]   = useState("");
   const [forbiddenRaw, setForbiddenRaw] = useState("");
@@ -95,27 +96,31 @@ export default function BrandVaultPage() {
     return list;
   }
 
+  // Load brands khi mount
   useEffect(() => {
-    loadBrands()
-      .then((list) => {
-        if (brandId) {
-          const selected = list.find((b) => b.id === brandId);
-          if (selected) {
-            hydrateForm(selected);
-            setIsFormOpen(true);
-            return;
-          }
-        }
-        if (list.length > 0) {
-          hydrateForm(list[0]);
-          router.replace(`/brand-vault?brandId=${list[0].id}`);
-        } else {
-          startNewBrand();
-        }
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [brandId]);
+    loadBrands().finally(() => setLoading(false));
+  }, []);
+
+  // Xử lý điều hướng khi có brandId hoặc không
+  useEffect(() => {
+    if (brandId) {
+      // Có brandId trong URL → đang sửa brand cụ thể
+      const selected = brands.find((b) => b.id === brandId);
+      if (selected) {
+        hydrateForm(selected);
+        setIsFormOpen(true);
+        return;
+      }
+      // brandId trong URL nhưng không tìm thấy → vẫn mở form trống
+      setIsFormOpen(true);
+      return;
+    }
+    // Không có brandId → nếu chưa mở form thì mở form tạo mới
+    if (!isFormOpen && !brandsLoading) {
+      startNewBrand();
+    }
+    setBrandsLoading(false);
+  }, [brandId, brands, isFormOpen, brandsLoading]);
 
   function update(key: keyof Brand, value: string) {
     setForm((f) => ({ ...f, [key]: value }));

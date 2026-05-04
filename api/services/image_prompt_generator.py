@@ -1,21 +1,15 @@
 """
 Service to generate high-quality image prompts for DALL-E 3.
 
-Optimized prompts for creating professional marketing posters WITHOUT text.
+Marketing-style prompts: Focus on selling, not just illustrating.
 """
 
 import os
 import json
-from typing import Optional
 from openai import AsyncOpenAI
 
-# ── Clients ──────────────────────────────────────────────────────────────────
-
 _openai = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
-
-# Model config
 PROMPT_MODEL = os.getenv("IMAGE_PROMPT_MODEL", "gpt-4o")
-PROMPT_TIMEOUT = int(os.getenv("IMAGE_PROMPT_TIMEOUT", "120"))
 
 
 # ── Data structures ───────────────────────────────────────────────────────────
@@ -83,22 +77,81 @@ class CampaignContext:
                 return social["copy"][:150]
         return self.objective
 
+    def get_content_copy(self) -> str:
+        """Get main copy text from content items for marketing context."""
+        for social in self.get_social_content():
+            if social.get("copy"):
+                return social["copy"]
+        for email in self.get_email_content():
+            if email.get("body"):
+                return email["body"][:300]
+        return ""
+
+    def get_target_audience_desc(self) -> str:
+        """Describe ideal customer visually."""
+        audience = self.target_audience or ""
+        if "trẻ" in audience.lower() or "em" in audience.lower():
+            return "children or young students"
+        elif "doanh nghiệp" in audience.lower() or "người đi làm" in audience.lower():
+            return "professional adults or working professionals"
+        return "families and adults"
+
     def get_brand_color_palette(self) -> str:
         if self.brand_colors:
             colors = [c for c in self.brand_colors if c]
             if colors:
                 return ", ".join(colors)
-        return "vibrant professional colors"
+        return "bold blue and vibrant accent colors"
 
-    def get_color_description(self) -> str:
-        """Get detailed color guidance for DALL-E."""
+    def get_commercial_colors(self) -> str:
+        """Get commercial advertising color palette."""
         if self.brand_colors:
             colors = [c for c in self.brand_colors if c]
             if colors:
-                if len(colors) == 1:
-                    return f"Primary color: {colors[0]}. Use complementary and analogous colors."
-                return f"Color palette: {', '.join(colors[:4])}"
-        return "Bold, saturated professional colors suitable for advertising"
+                return f"dominant {colors[0]}, with {colors[1] if len(colors) > 1 else 'contrast accent'} highlights"
+        return "deep professional blue with bright yellow or orange accents for energy"
+
+
+# ── Marketing Concept Extraction ──────────────────────────────────────────────
+
+def _extract_marketing_concept(context: CampaignContext) -> dict:
+    """Extract marketing DNA from campaign for creative direction."""
+    concept = {
+        "hero_action": "",
+        "emotion": "",
+        "visual_metaphor": "",
+        "transformation": "",
+        "aspiration": ""
+    }
+
+    obj_lower = context.objective.lower()
+    product = context.product_or_service.lower()
+
+    # Hero action based on objective
+    if "doanh thu" in obj_lower or "bán" in obj_lower:
+        concept["hero_action"] = "happy customer experiencing the product with satisfaction"
+        concept["emotion"] = "excitement, satisfaction, desire to purchase"
+    elif "nhận diện" in obj_lower or "thương hiệu" in obj_lower:
+        concept["hero_action"] = "brand logo or product displayed prominently with prestige"
+        concept["emotion"] = "trust, prestige, recognition"
+    elif "thu hút" in obj_lower or "tuyển" in obj_lower:
+        concept["hero_action"] = "excited new customers joining with enthusiasm"
+        concept["emotion"] = "excitement, welcome, opportunity"
+    else:
+        concept["hero_action"] = "confident person benefiting from the service"
+        concept["emotion"] = "confidence, success, achievement"
+
+    # Visual metaphor
+    if "tiếng anh" in product or "học" in product:
+        concept["visual_metaphor"] = "fluent communication, global connection, bright future"
+        concept["transformation"] = "growth from beginner to confident speaker"
+        concept["aspiration"] = "speaking confidently, doors opening, international opportunities"
+    else:
+        concept["visual_metaphor"] = "quality, reliability, premium value"
+        concept["transformation"] = "before and after improvement"
+        concept["aspiration"] = "better version of themselves"
+
+    return concept
 
 
 # ── Prompt Generation ─────────────────────────────────────────────────────────
@@ -108,158 +161,152 @@ async def generate_image_prompt(
     user_override: str | None = None,
 ) -> str:
     """
-    Generate optimized prompt for DALL-E 3 to create professional marketing poster.
+    Generate marketing-style prompt: SELL not describe.
 
-    CRITICAL: No text, no Vietnamese, no readable content - only visuals!
+    Focus: Hero + Emotion + Commercial Design + Negative Space for text
     """
     if user_override and len(user_override.strip()) > 20:
-        return _build_poster_prompt(
+        return _build_marketing_prompt(
             subject=user_override,
             context=context,
             is_custom=True
         )
 
     if context.has_meaningful_content():
-        return await _generate_from_campaign_content(context)
+        return await _generate_from_content(context)
 
-    return _build_poster_prompt(
+    return _build_marketing_prompt(
         subject=context.product_or_service,
         context=context,
         is_custom=False
     )
 
 
-async def _generate_from_campaign_content(context: CampaignContext) -> str:
-    """Generate prompt from campaign content using GPT-4o for best results."""
+async def _generate_from_content(context: CampaignContext) -> str:
+    """Generate marketing prompt from campaign content."""
 
     key_message = context.get_key_message()
     product = context.product_or_service
-    brand_name = context.brand_name or ""
+    copy = context.get_content_copy()
+    concept = _extract_marketing_concept(context)
 
-    prompt_request = f"""Create a detailed DALL-E 3 prompt for a professional marketing poster.
+    prompt_request = f"""Create a HIGH-IMPACT marketing visual prompt for an advertising campaign.
 
-CRITICAL RULES:
-- NO text, words, letters, numbers, or any readable content
-- NO Vietnamese characters or any language text
-- ONLY pure visual elements: shapes, colors, people, objects, scenes
-- NO speech bubbles, quote marks, or any symbol representing text
-
-CAMPAIGN:
-- Name: {context.campaign_name}
+CAMPAIGN BRIEF:
+- Product: {product}
 - Objective: {context.objective}
-- Product/Service: {product}
 - Target: {context.target_audience or 'General audience'}
-- Key message theme: {key_message}
-- Brand: {brand_name}
-- Colors: {context.get_color_description()}
+- Key message: {key_message}
+- Brand: {context.brand_name or 'Professional brand'}
+- Colors: {context.get_commercial_colors()}
 
-EXISTING CONTENT:
-{_extract_content_summary(context)}
+MARKETING COPY REFERENCE:
+{copy[:200] if copy else 'No specific copy available'}
 
-Write a single, highly detailed DALL-E 3 prompt (200-400 words) that describes ONLY visual elements:
-1. What to show (people, objects, scene, composition)
-2. Exact style (modern, professional photography or digital art)
-3. Colors and lighting details
-4. Mood and atmosphere
-5. Layout and composition
+CRITICAL RULES - Follow these EXACTLY:
+1. NO text, words, letters, numbers in the image
+2. NO Vietnamese characters
+3. Focus on ONE hero subject only (1-3 people max)
+4. Create strong negative space for headline text placement
+5. The image must SELL, not just illustrate
+6. Show transformation or aspiration, not just a scene
 
-OUTPUT: Only the prompt text describing visuals, nothing else."""
+OUTPUT FORMAT - Write ONLY the prompt, nothing else:
+Start with: "A high-impact advertising visual..."
+Describe: hero subject, composition, emotion, colors, lighting, commercial design elements
+End with: emphasis on advertising photography style, not illustration"""
 
     try:
         response = await _openai.chat.completions.create(
             model=PROMPT_MODEL,
             messages=[
-                {"role": "system", "content": "You are an expert advertising art director. Create visual-only prompts with NO text."},
+                {"role": "system", "content": "You are a senior art director at a top advertising agency. Create marketing briefs that sell, not descriptions that illustrate."},
                 {"role": "user", "content": prompt_request}
             ],
-            temperature=0.7,
-            max_tokens=1000,
+            temperature=0.8,
+            max_tokens=800,
         )
         return response.choices[0].message.content.strip()
     except Exception:
-        return _build_poster_prompt(product, context, False)
+        return _build_marketing_prompt(product, context, False)
 
 
-def _build_poster_prompt(
+def _build_marketing_prompt(
     subject: str,
     context: CampaignContext,
     is_custom: bool = False
 ) -> str:
-    """Build optimized poster prompt directly - NO TEXT RULE."""
+    """Build marketing-style prompt - SELLING not describing."""
 
-    key_message = context.get_key_message() or context.objective
-    brand_name = context.brand_name or ""
-    colors = context.get_brand_color_palette()
-    style = context.brand_style or "modern professional"
+    concept = _extract_marketing_concept(context)
+    target = context.get_target_audience_desc()
+    colors = context.get_commercial_colors()
+    key_message = context.get_key_message()
 
-    return f"""A stunning professional marketing poster advertisement - VISUALS ONLY, NO TEXT.
+    # Build prompt following marketing DNA
+    prompt = f"""A high-impact advertising visual for: {subject}
 
-IMPORTANT: This image must contain ZERO text, letters, words, numbers, or any readable content.
-Do NOT include any text elements, speech bubbles, or symbols that could represent text.
-Only visual elements: shapes, colors, people, objects, backgrounds, compositions.
+HERO SUBJECT (1-3 people maximum):
+A single {target} as the hero, shown in a moment of success or aspiration.
+The subject should have confident body language, direct eye contact with camera.
+This is the focal point - everything else supports this.
 
-VISUAL ELEMENTS:
-- Central focal point: An elegant visual representation of {subject}
-- Show happy professionals or families interacting naturally
-- Display the product or service in an aspirational, professional context
-- Use symbolic elements that suggest {key_message[:80] if key_message else 'excellence'}
+COMMERCIAL COMPOSITION:
+- 60% of frame: hero subject with strong presence
+- 40% of frame: negative space OR clean background for headline text placement
+- Strong visual hierarchy: hero dominates immediately
+- Clean, uncluttered design - no competing elements
+- Layout ready for text overlay: headline space on one side
 
-COMPOSITION:
-- Dynamic, asymmetric layout with strong visual hierarchy
-- Large central hero area
-- Decorative geometric shapes, lines, and patterns
-- Gradient backgrounds and color blocks
-- Modern flat design mixed with depth effects
+EMOTION & MESSAGE:
+- Primary emotion: {concept['emotion']}
+- Visual concept: {concept['visual_metaphor']}
+- Transformation shown: {concept['transformation']}
+- Aspiration: {concept['aspiration']}
 
-COLOR PALETTE:
-- Primary colors: {colors}
-- Bold, saturated advertising colors
-- High contrast between elements
-- Gradient overlays for depth
+COLOR PALETTE (commercial advertising):
+- {colors}
+- High contrast between subject and background
+- Bold, saturated colors that pop
+- Professional brand-driven palette
 
-STYLE: {style}
-- Professional advertising photography OR high-quality digital illustration
-- Dramatic studio lighting with rim lights and catchlights
-- Magazine-quality aesthetic
-- Clean, uncluttered composition
+LIGHTING:
+- Dramatic studio lighting or golden hour natural light
+- High contrast with rim lighting on subject
+- Creates depth and draws attention to hero
+- Professional advertising quality
 
-MOOD:
-- Professional, trustworthy, energetic
-- Aspirational and inspiring
-- Suitable for Vietnamese market
-- Appeals to adults and families
+STYLE:
+- Commercial advertising photography (NOT illustration, NOT stock photo style)
+- Bold, direct, confident
+- Magazine ad quality
+- Minimalist commercial design
 
 TECHNICAL:
 - Square format 1024x1024
-- High resolution, print-ready
 - NO text, letters, words, numbers
 - NO Vietnamese characters
-- NO readable content of any kind
-- Professional advertising quality
+- NO generic stock photo aesthetics
+- Only visual elements that communicate value
 
-Pure visual marketing poster, no text, only shapes colors and images."""
+The image must make viewers want to learn more - it SELLS, it doesn't just show."""
+
+    return prompt
 
 
 def _extract_content_summary(context: CampaignContext) -> str:
-    """Extract key content for prompt generation."""
+    """Extract key content for marketing context."""
     parts = []
 
-    emails = context.get_email_content()
-    if emails:
-        parts.append("Email campaigns:")
-        for email in emails[:2]:
-            if email.get("subject"):
-                parts.append(f"  - Theme: {email['subject']}")
+    for social in context.get_social_content():
+        if social.get("copy"):
+            parts.append(f"Social copy: {social['copy'][:150]}...")
 
-    social = context.get_social_content()
-    if social:
-        parts.append("Social media posts:")
-        for post in social[:2]:
-            if post.get("copy"):
-                copy = post["copy"][:150]
-                parts.append(f"  - Theme: {copy}...")
+    for email in context.get_email_content():
+        if email.get("subject"):
+            parts.append(f"Email theme: {email['subject']}")
 
-    return "\n".join(parts) if parts else "No detailed content available"
+    return "\n".join(parts) if parts else "Create compelling marketing visual"
 
 
 # ── Helper to build context from database models ───────────────────────────────

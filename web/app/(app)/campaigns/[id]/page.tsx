@@ -341,7 +341,10 @@ function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpda
               onChange={(e) => setCustomPrompt(e.target.value)}
             />
             {effectivePrompt && effectivePrompt !== customPrompt && (
-              <p className="text-[9px] text-gray-400 italic">Đang dùng: {effectivePrompt.slice(0, 100)}...</p>
+              <div className="mt-2 p-2 bg-gray-50 rounded border border-gray-100">
+                <p className="text-[9px] text-gray-500 mb-1">Prompt đang dùng:</p>
+                <p className="text-[10px] text-gray-600 whitespace-pre-wrap leading-relaxed">{effectivePrompt}</p>
+              </div>
             )}
           </div>
         )}
