@@ -1,5 +1,6 @@
 "use client";
-import { ChevronRight } from "lucide-react";
+import { useState } from "react";
+import { ChevronRight, CalendarDays } from "lucide-react";
 import type { SuggestionItem, UserPrefs } from "../CampaignAssistantModal";
 
 interface Props {
@@ -15,11 +16,24 @@ const TARGET_OPTIONS = [
   { value: "all", label: "Tất cả", desc: "Cả cũ và mới" },
 ];
 
-const DURATION_OPTIONS = [
-  { value: "1_week", label: "1 tuần", desc: "Ngắn hạn, intensity cao" },
-  { value: "2_4_weeks", label: "2-4 tuần", desc: "Vừa phải" },
-  { value: "1_month", label: "Cả tháng", desc: "Dài hạn, nhẹ nhàng" },
-];
+// Helper: get today's date in YYYY-MM-DD format (local timezone)
+function todayStr(): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+// Helper: add N days to a date string
+function addDaysStr(dateStr: string, days: number): string {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 function RadioGroup({
   label,
@@ -73,11 +87,23 @@ export default function StepUserPrefs({
   suggestion,
   onNext,
 }: Props) {
+  const [showQuickDates, setShowQuickDates] = useState(false);
+
   function update(key: keyof UserPrefs, value: string) {
     onPrefsChange({ ...userPrefs, [key]: value });
   }
 
-  const allFilled = userPrefs.target_customer && userPrefs.duration;
+  // Quick date presets
+  function applyPreset(days: number, label: string) {
+    const start = todayStr();
+    const end = addDaysStr(start, days);
+    onPrefsChange({ ...userPrefs, start_date: start, end_date: end });
+    setShowQuickDates(false);
+  }
+
+  const allFilled = userPrefs.target_customer && userPrefs.start_date && userPrefs.end_date;
+  const isDateValid = !userPrefs.start_date || !userPrefs.end_date ||
+    new Date(userPrefs.start_date) <= new Date(userPrefs.end_date);
 
   return (
     <div className="space-y-6">
@@ -108,17 +134,131 @@ export default function StepUserPrefs({
           onChange={(v) => update("target_customer", v)}
         />
 
-        <RadioGroup
-          label="Bạn muốn chạy trong bao lâu?"
-          options={DURATION_OPTIONS}
-          value={userPrefs.duration}
-          onChange={(v) => update("duration", v)}
-        />
+        {/* Date range picker - replaces duration radio */}
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-gray-700">Thời gian chạy chiến dịch</p>
+
+          {/* Quick presets */}
+          <div className="flex flex-wrap gap-2 mb-2">
+            <button
+              type="button"
+              onClick={() => setShowQuickDates(!showQuickDates)}
+              className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+            >
+              <CalendarDays size={12} />
+              Chọn nhanh
+            </button>
+            {!showQuickDates && (
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => applyPreset(7, "1 tuần")}
+                  className="text-xs px-2 py-1 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"
+                >
+                  1 tuần
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset(14, "2 tuần")}
+                  className="text-xs px-2 py-1 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"
+                >
+                  2 tuần
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyPreset(30, "1 tháng")}
+                  className="text-xs px-2 py-1 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"
+                >
+                  1 tháng
+                </button>
+              </div>
+            )}
+          </div>
+
+          {showQuickDates && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              <button
+                type="button"
+                onClick={() => applyPreset(7, "1 tuần")}
+                className="text-xs px-2 py-1 rounded-md bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-colors"
+              >
+                1 tuần
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPreset(14, "2 tuần")}
+                className="text-xs px-2 py-1 rounded-md bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-colors"
+              >
+                2 tuần
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPreset(21, "3 tuần")}
+                className="text-xs px-2 py-1 rounded-md bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-colors"
+              >
+                3 tuần
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPreset(30, "1 tháng")}
+                className="text-xs px-2 py-1 rounded-md bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-colors"
+              >
+                1 tháng
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPreset(60, "2 tháng")}
+                className="text-xs px-2 py-1 rounded-md bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-colors"
+              >
+                2 tháng
+              </button>
+            </div>
+          )}
+
+          {/* Date inputs */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Ngày bắt đầu</label>
+              <input
+                type="date"
+                className="input text-sm"
+                value={userPrefs.start_date}
+                min={todayStr()}
+                onChange={(e) => update("start_date", e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Ngày kết thúc</label>
+              <input
+                type="date"
+                className="input text-sm"
+                value={userPrefs.end_date}
+                min={userPrefs.start_date || todayStr()}
+                onChange={(e) => update("end_date", e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Validation message */}
+          {!isDateValid && (
+            <p className="text-xs text-red-500">Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu</p>
+          )}
+
+          {/* Summary */}
+          {userPrefs.start_date && userPrefs.end_date && isDateValid && (
+            <p className="text-xs text-gray-500">
+              Chiến dịch chạy trong{' '}
+              <span className="font-medium text-gray-700">
+                {Math.round((new Date(userPrefs.end_date).getTime() - new Date(userPrefs.start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1} ngày
+              </span>
+            </p>
+          )}
+        </div>
       </div>
 
       <button
         onClick={onNext}
-        disabled={!allFilled}
+        disabled={!allFilled || !isDateValid}
         className="w-full btn-primary py-3 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         Xác nhận và tiếp tục

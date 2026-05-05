@@ -22,6 +22,5 @@ class User(Base):
     brands: Mapped[list["Brand"]] = relationship("Brand", back_populates="user")
     campaigns: Mapped[list["Campaign"]] = relationship("Campaign", back_populates="user")
     campaign_ideas: Mapped[list["CampaignIdea"]] = relationship("CampaignIdea", back_populates="user")
-    outreach_logs: Mapped[list["OutreachLog"]] = relationship("OutreachLog", back_populates="user")
     insight_data_sources: Mapped[list["InsightDataSource"]] = relationship("InsightDataSource", back_populates="user")
     insight_chats: Mapped[list["InsightChat"]] = relationship("InsightChat", back_populates="user")

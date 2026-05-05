@@ -19,5 +19,3 @@ class CustomerList(Base):
     invalid_records: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-
-    outreach_logs: Mapped[list["OutreachLog"]] = relationship("OutreachLog", back_populates="customer_list")

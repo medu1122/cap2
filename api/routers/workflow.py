@@ -27,9 +27,7 @@ from models.customer_list import CustomerList
 from models.file_upload import FileUpload
 from models.user import User
 from models.workflow_job import WorkflowJob
-from models.workflow_schedule import WorkflowSchedule
 from models.customer_analysis_snapshot import CustomerAnalysisSnapshot
-from models.outreach_log import OutreachLog
 from services.agent_dispatcher import dispatch_campaign
 from services.customer_analysis_service import analyze_customer_rows
 
@@ -1468,21 +1466,9 @@ async def customer_list_quick_outreach(
                 )
                 db.add(log_entry)
 
-    # Save outreach log
-    if campaign or sent_count > 0 or failed_count > 0:
-        from models.outreach_log import OutreachLog
-        outreach_log = OutreachLog(
-            user_id=current_user.id,
-            customer_list_id=customer_list_id,
-            campaign_id=payload.campaign_id,
-            mode=payload.mode,
-            subject=payload.subject,
-            message=payload.message,
-            recipient_count=len(payload.recipients),
-            sent_count=sent_count,
-            failed_count=failed_count,
-        )
-        db.add(outreach_log)
+    # NOTE: outreach_log removed - table was deleted during cleanup
+    # Previously logged to: outreach_logs table
+    pass  # outreach_log feature disabled
 
     await db.commit()
 

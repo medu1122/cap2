@@ -15,7 +15,8 @@ class CampaignCreate(BaseModel):
     product_or_service: str
     target_audience: str | None = None
     offer_or_hook: str | None = None
-    deadline: date
+    start_date: date | None = None  # Ngày bắt đầu chiến dịch
+    deadline: date  # Ngày kết thúc chiến dịch
     channels: list[str]
     additional_notes: str | None = None
     source_insight_run_id: uuid.UUID | None = None
@@ -112,6 +113,7 @@ class CampaignDetail(BaseModel):
     product_or_service: str
     target_audience: str | None
     offer_or_hook: str | None
+    start_date: date | None = None
     deadline: date
     channels: list[str]
     additional_notes: str | None

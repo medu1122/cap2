@@ -17,6 +17,7 @@ class Campaign(Base):
     product_or_service: Mapped[str] = mapped_column(Text, nullable=False)
     target_audience: Mapped[str | None] = mapped_column(Text)
     offer_or_hook: Mapped[str | None] = mapped_column(Text)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)  # Ngày bắt đầu
     deadline: Mapped[date] = mapped_column(Date, nullable=False)
     channels: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
     additional_notes: Mapped[str | None] = mapped_column(Text)
@@ -35,7 +36,6 @@ class Campaign(Base):
     execution_logs: Mapped[list["CampaignExecutionLog"]] = relationship(
         "CampaignExecutionLog", back_populates="campaign", cascade="all, delete-orphan"
     )
-    outreach_logs: Mapped[list["OutreachLog"]] = relationship("OutreachLog", back_populates="campaign")
     tracking_links: Mapped[list["CampaignTrackingLink"]] = relationship(
         "CampaignTrackingLink", back_populates="campaign", cascade="all, delete-orphan"
     )

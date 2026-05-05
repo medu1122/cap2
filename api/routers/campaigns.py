@@ -224,6 +224,9 @@ async def create_campaign(
     if source_context:
         campaign_plan_json["source_context"] = source_context
 
+    # Set initial status to pending_approval (chưa duyệt)
+    payload_data["status"] = "pending_approval"
+
     campaign = Campaign(
         user_id=current_user.id,
         **payload_data,
@@ -294,6 +297,7 @@ async def get_campaign(
         "product_or_service": campaign.product_or_service,
         "target_audience": campaign.target_audience,
         "offer_or_hook": campaign.offer_or_hook,
+        "start_date": campaign.start_date,
         "deadline": campaign.deadline,
         "channels": campaign.channels,
         "additional_notes": campaign.additional_notes,
@@ -542,9 +546,8 @@ async def delete_campaign(
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
-    # Xóa các bản ghi liên quan trước (workflow_jobs và outreach_logs không có cascade)
+    # Xóa các bản ghi liên quan trước
     from models.workflow_job import WorkflowJob
-    from models.outreach_log import OutreachLog
 
     # Xóa workflow_jobs liên quan
     wf_result = await db.execute(
@@ -552,13 +555,6 @@ async def delete_campaign(
     )
     for wf in wf_result.scalars().all():
         await db.delete(wf)
-
-    # Xóa outreach_logs liên quan
-    or_result = await db.execute(
-        select(OutreachLog).where(OutreachLog.campaign_id == campaign_id)
-    )
-    for or_log in or_result.scalars().all():
-        await db.delete(or_log)
 
     # Xóa campaign (cascade sẽ xóa content_items, agent_run_logs, campaign_execution_logs)
     await db.delete(campaign)

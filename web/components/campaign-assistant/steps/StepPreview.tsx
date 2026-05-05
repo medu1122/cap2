@@ -14,12 +14,6 @@ interface Props {
   onClose: () => void;
 }
 
-const DURATION_LABELS: Record<string, string> = {
-  "1_week": "1 tuần",
-  "2_4_weeks": "2-4 tuần",
-  "1_month": "Cả tháng",
-};
-
 const CHANNEL_OPTIONS = [
   { value: "email", label: "Email", icon: "📧" },
   { value: "facebook_post", label: "Facebook", icon: "📝" },
@@ -93,7 +87,8 @@ export default function StepPreview({
         suggestion_hook: suggestion.hook,
         target_customer: userPrefs.target_customer,
         budget: "unknown",
-        duration: userPrefs.duration,
+        start_date: userPrefs.start_date,
+        end_date: userPrefs.end_date,
       });
       console.log("[StepPreview] Brief generated:", res);
       onBriefChange({
@@ -117,17 +112,11 @@ export default function StepPreview({
     setCreating(true);
     setError("");
     try {
-      console.log("[StepPreview] Creating CampaignIdea + Campaign + Building content...");
+      console.log("[StepPreview] Creating CampaignIdea + Campaign + Building content...", { userPrefs });
 
-      // Calculate deadline based on duration
-      const durationDays: Record<string, number> = {
-        "1_week": 7,
-        "2_4_weeks": 14,
-        "1_month": 30,
-      };
-      const days = durationDays[userPrefs.duration] || 14;
-      const deadline = new Date();
-      deadline.setDate(deadline.getDate() + days);
+      // Use start_date and end_date from userPrefs
+      const startDate = userPrefs.start_date || null;
+      const endDate = userPrefs.end_date || null;
 
       // 1. Create CampaignIdea record
       const ideaRes = await api.post<{ id: string }>("/campaign-ideas", {
@@ -141,14 +130,15 @@ export default function StepPreview({
       });
       console.log("[StepPreview] CampaignIdea created:", ideaRes.id);
 
-      // 2. Create Campaign in DB
+      // 2. Create Campaign in DB with actual dates
       const campaignRes = await api.post<{ id: string }>("/campaigns", {
         brand_id: brandId,
         campaign_name: brief.title,
         objective: brief.objective,
         channels: brief.channels,
         product_or_service: brief.hook,
-        deadline: deadline.toISOString().split("T")[0],
+        start_date: startDate,
+        deadline: endDate,
       });
       const campaignId = campaignRes.id;
       console.log("[StepPreview] Campaign created:", campaignId);
@@ -186,6 +176,7 @@ export default function StepPreview({
 
       // 4. Close modal + redirect to campaign page
       onClose();
+      // Wait for modal to close, then redirect and force reload
       setTimeout(() => {
         router.push(`/campaigns/${campaignId}`);
       }, 300);
@@ -247,7 +238,9 @@ export default function StepPreview({
           </span>
         )}
         <span className="badge bg-gray-100 text-gray-600 text-xs">
-          Thời gian: {DURATION_LABELS[userPrefs.duration] || "—"}
+          {userPrefs.start_date && userPrefs.end_date
+            ? `${new Date(userPrefs.start_date).toLocaleDateString("vi-VN")} - ${new Date(userPrefs.end_date).toLocaleDateString("vi-VN")}`
+            : "—"}
         </span>
       </div>
 

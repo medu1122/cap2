@@ -20,7 +20,6 @@ class CampaignRevenue(Base):
     
     # Source
     source: Mapped[str] = mapped_column(String(20), default="manual")
-    file_upload_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("file_uploads.id", ondelete="SET NULL"))
     
     # Metadata
     notes: Mapped[str | None] = mapped_column(Text)
@@ -32,7 +31,6 @@ class CampaignRevenue(Base):
     # Relationships
     campaign: Mapped["Campaign"] = relationship("Campaign", back_populates="revenues")
     user: Mapped["User"] = relationship("User")
-    file_upload: Mapped["FileUpload | None"] = relationship("FileUpload")
 
 
 # Add relationship to Campaign model

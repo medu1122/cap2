@@ -20,7 +20,8 @@ export type SuggestionItem = {
 
 export type UserPrefs = {
   target_customer: "all" | "existing" | "new" | "";
-  duration: "1_week" | "2_4_weeks" | "1_month" | "";
+  start_date: string; // YYYY-MM-DD
+  end_date: string;    // YYYY-MM-DD
 };
 
 export type BriefForm = {
@@ -53,7 +54,8 @@ export default function CampaignAssistantModal({ onClose }: Props) {
   const [selectedSuggestion, setSelectedSuggestion] = useState<SuggestionItem | null>(null);
   const [userPrefs, setUserPrefs] = useState<UserPrefs>({
     target_customer: "",
-    duration: "",
+    start_date: "",
+    end_date: "",
   });
   const [brief, setBrief] = useState<BriefForm>({
     title: "",
