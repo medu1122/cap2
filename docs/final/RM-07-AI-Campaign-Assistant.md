@@ -3,12 +3,42 @@
 > **Ngày tạo:** 29/04/2026
 > **Người tạo:** AI Assistant
 > **Trạng thái:** Đã triển khai
+> **Cập nhật:** 05/05/2026 - Bổ sung Custom Tracking Links
 
 ---
 
 ## Tên chức năng
 
 **AI Campaign Assistant** — Trợ lý AI tạo chiến dịch theo từng bước chọn lựa
+
+---
+
+## Tính năng bổ sung: Custom Tracking Links
+
+Ngoài AI tạo nội dung, user có thể nhập **custom tracking links** để theo dõi clicks.
+
+### Cách hoạt động
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ 1. Vào Chiến dịch → Tab "Links theo dõi"                    │
+│    → [+ Thêm link]                                            │
+│    → Tên: "Đặt phòng ngay"                                   │
+│    → URL: "https://khachsandan.vn/booking"                    │
+├─────────────────────────────────────────────────────────────────┤
+│ 2. Hệ thống tạo short code: /r/xYz123abc                    │
+├─────────────────────────────────────────────────────────────────┤
+│ 3. Gửi email → CTA: [Đặt phòng ngay] → /r/xYz123abc       │
+├─────────────────────────────────────────────────────────────────┤
+│ 4. User click → Redirect + đếm click (+1)                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Ưu tiên khi gửi email
+
+1. Nếu có tracking links → Dùng link đầu tiên
+2. Nếu không → Dùng cta_url từ AI content
+3. Nếu không → Dùng default redirect URL
 
 ---
 
@@ -119,3 +149,52 @@ Người dùng          Hệ thống              AI
 | Step 3: Xem trước | Xem và sửa nhanh |
 | Step 4: Đang viết | AI viết từng phần, hiện tiến độ |
 | Step 5: Kết quả | Xem toàn bộ, copy, tạo chiến dịch |
+| **Tab Links theo dõi** | Nhập custom links với tên + URL |
+
+---
+
+## Files đã tạo/sửa
+
+### Backend
+
+| File | Chức năng |
+|------|-----------|
+| `models/campaign_tracking_link.py` | Model ORM |
+| `routers/tracking_links.py` | CRUD endpoints |
+| `routers/redirect.py` | Public redirect endpoint |
+| `services/campaign_delivery_service.py` | Tích hợp tracking links |
+
+### Frontend
+
+| File | Chức năng |
+|------|-----------|
+| `components/campaign/TrackingLinksManager.tsx` | UI quản lý tracking links |
+| `app/(app)/campaigns/[id]/page.tsx` | Tích hợp vào campaign detail |
+
+---
+
+## Database
+
+**Bảng:** `campaign_tracking_links`
+
+```sql
+CREATE TABLE IF NOT EXISTS campaign_tracking_links (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    destination_url TEXT NOT NULL,
+    short_code VARCHAR(64) NOT NULL UNIQUE,
+    click_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+**API Endpoints:**
+
+| Method | Endpoint | Mô tả |
+|--------|----------|--------|
+| GET | `/campaigns/{id}/tracking-links` | Lấy danh sách links |
+| POST | `/campaigns/{id}/tracking-links` | Tạo link mới |
+| PUT | `/campaigns/{id}/tracking-links/{link_id}` | Cập nhật link |
+| DELETE | `/campaigns/{id}/tracking-links/{link_id}` | Xóa link |
+| GET | `/r/{short_code}` | Redirect + đếm click |

@@ -16,19 +16,96 @@
 | Gửi email/SMS | ✅ Hoàn thành | qua campaign_execution_logs |
 | AI Tools Menu | ✅ Hoàn thành | Dropdown với 2 chức năng |
 | Tracking mở/click | ✅ Đã có dữ liệu | opened_at, clicked_at trong logs |
+| Nhập doanh thu (Revenue) | ✅ Hoàn thành | Bảng campaign_revenue |
+| Performance KPIs | ✅ Hoàn thành | View v_campaign_performance |
+| **Custom Tracking Links** | ✅ Hoàn thành | User nhập nhiều links với tên + URL |
 
 ### 1.2 Những gì CẦN THÊM
 
 | Tính năng | Mức ưu tiên | Ghi chú |
 |------------|-------------|---------|
-| **Nhập doanh thu** | 🔴 Cao | Để tính ROI |
-| **AI Tools: Gợi ý chiến dịch** | 🔴 Cao | Modal AI tạo ý tưởng |
-| **AI Tools: Phân tích chiến dịch** | 🔴 Cao | Xem KPI + ROI |
-| **Bảng tổng hợp Performance** | 🟡 Trung bình | View tổng hợp metrics |
+| ~~Nhập doanh thu~~ | ✅ Đã xong | Bảng campaign_revenue |
+| ~~AI Tools: Gợi ý chiến dịch~~ | ✅ Đã xong | AI Campaign Assistant |
+| ~~AI Tools: Phân tích chiến dịch~~ | ✅ Đã xong | PerformanceSection |
+| ~~Custom Tracking Links~~ | ✅ Đã xong | User nhập nhiều links |
+| Bảng tổng hợp Performance | 🟡 Trung bình | View tổng hợp metrics |
 
 ---
 
-## 2. AI TOOLS MENU
+## 2. CUSTOM TRACKING LINKS
+
+### 2.1 Tại sao cần Custom Tracking Links?
+
+Hiện tại, email chỉ có **1 link cố định** từ AI tạo ra. User **không thể** thêm links khác của họ vào chiến dịch.
+
+```
+VẤN ĐỀ:
+┌─────────────────────────────────────────────────────────────┐
+│ User có website: khachsandan.vn                           │
+│ Họ muốn:                                                  │
+│   → "Đặt phòng ngay" → khachsandan.vn/booking           │
+│   → "Xem ưu đãi" → khachsandan.vn/deals                 │
+│   → "Liên hệ" → khachsandan.vn/contact                  │
+│                                                             │
+│ NHƯNG hệ thống chỉ cho phép 1 link trong nội dung email  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 2.2 Giải pháp: Custom Tracking Links
+
+User nhập **nhiều links** với **tên + URL**. Hệ thống tự tạo short code để đếm clicks.
+
+### 2.3 Cách hoạt động
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ 1. USER NHẬP LINK                                                │
+│    Trong chiến dịch → "Links theo dõi" → [+ Thêm link]         │
+│    → Tên: "Đặt phòng ngay"                                      │
+│    → URL: "https://khachsandan.vn/booking"                        │
+├─────────────────────────────────────────────────────────────────────┤
+│ 2. HỆ THỐNG TẠO SHORT CODE                                      │
+│    Tự động tạo: /r/xYz123abc                                    │
+│    → Lưu: short_code → destination_url                           │
+├─────────────────────────────────────────────────────────────────────┤
+│ 3. GỬI EMAIL                                                     │
+│    CTA button: [Đặt phòng ngay] → /r/xYz123abc                   │
+├─────────────────────────────────────────────────────────────────────┤
+│ 4. USER CLICK EMAIL                                               │
+│    → /r/xYz123abc → đếm click → redirect → khachsandan.vn/booking │
+│    → Click count: +1                                              │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 2.4 UI trong Campaign Detail
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 📎 Links theo dõi (3)                      [+ Thêm link]  │
+├─────────────────────────────────────────────────────────────┤
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ Đặt phòng ngay │ khachsandan.vn/booking │ 👁 142   │ │
+│ │ Xem ưu đãi     │ khachsandan.vn/deals    │ 👁 58    │ │
+│ │ Liên hệ        │ khachsandan.vn/contact  │ 👁 23    │ │
+│ └─────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 2.5 Ưu tiên khi gửi email
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ THỨ TỰ ƯU TIÊN KHI GỬI EMAIL:                                │
+├─────────────────────────────────────────────────────────────────┤
+│ 1. Nếu có tracking links → Dùng link đầu tiên (theo thời gian)│
+│ 2. Nếu không có tracking links → Dùng cta_url từ AI content    │
+│ 3. Nếu không có cta_url → Dùng default redirect URL           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 3. AI TOOLS MENU
 
 ### 2.1 Vị trí
 
@@ -263,9 +340,19 @@ GROUP BY c.id, c.campaign_name, c.status, c.cost;
 | File | Chức năng |
 |------|-----------|
 | `AIToolsMenu.tsx` | ✅ Đã tạo |
-| `RevenueUploadModal.tsx` | Modal nhập doanh thu |
-| `PerformanceSection.tsx` | Hiển thị KPIs |
+| `RevenueUploadModal.tsx` | ✅ Modal nhập doanh thu |
+| `PerformanceSection.tsx` | ✅ Hiển thị KPIs |
+| `TrackingLinksManager.tsx` | ✅ Quản lý custom tracking links |
 | `CampaignAnalyticsPage.tsx` | Trang phân tích chiến dịch |
+
+### 5.4 Backend Files - Tracking Links
+
+| File | Chức năng |
+|------|-----------|
+| `models/campaign_tracking_link.py` | ✅ Model ORM |
+| `routers/tracking_links.py` | ✅ CRUD endpoints |
+| `routers/redirect.py` | ✅ Public redirect endpoint |
+| `services/campaign_delivery_service.py` | ✅ Tích hợp tracking links vào email |
 
 ---
 
@@ -356,19 +443,42 @@ LEFT JOIN campaign_revenue cr ON cr.campaign_id = c.id
 GROUP BY c.id, c.campaign_name, c.status, c.cost;
 ```
 
+### 7.2 SQL: campaign_tracking_links
+
+```sql
+-- =====================================================
+-- BẢNG MỚI: campaign_tracking_links
+-- =====================================================
+CREATE TABLE IF NOT EXISTS campaign_tracking_links (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    destination_url TEXT NOT NULL,
+    short_code VARCHAR(64) NOT NULL UNIQUE,
+    click_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS ix_tracking_links_short_code ON campaign_tracking_links(short_code);
+CREATE INDEX IF NOT EXISTS ix_tracking_links_campaign_id ON campaign_tracking_links(campaign_id);
+
+COMMENT ON TABLE campaign_tracking_links IS 'Luu tru custom tracking links cho chien dich - cho phep user nhap nhieu links voi ten + URL de theo doi clicks';
+```
+
 ---
 
 ## 8. TRIỂN KHAI
 
-### 8.1 Thứ tự ưu tiên
+### 8.1 Trạng thái hiện tại
 
-| Bước | Nội dung | Thời gian ước tính |
-|------|----------|-------------------|
-| 1 | Chạy SQL tạo bảng mới | 10 phút |
-| 2 | Tạo API endpoints | 2-3 giờ |
-| 3 | Component RevenueUploadModal | 2 giờ |
-| 4 | Component PerformanceSection | 2 giờ |
-| 5 | Integration vào trang campaigns | 1 giờ |
+| Bước | Nội dung | Trạng thái |
+|------|----------|------------|
+| 1 | Chạy SQL campaign_tracking_links | ✅ Hoàn thành |
+| 2 | Tạo API endpoints | ✅ Hoàn thành |
+| 3 | Component TrackingLinksManager | ✅ Hoàn thành |
+| 4 | Tích hợp vào campaign delivery | ✅ Hoàn thành |
+| 5 | Tích hợp vào campaign detail page | ✅ Hoàn thành |
 
 ### 8.2 Người phụ trách
 
