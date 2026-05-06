@@ -500,7 +500,7 @@ async def build_email_content(
     brand_ctx = await _get_brand_context(db, idea)
 
     prompt = f"""Bạn là chuyên gia email marketing cho doanh nghiệp nhỏ Việt Nam.
-Viết nội dung email cá nhân hóa cho chiến dịch sau:
+Viết nội dung email cá nhân hóa, chuyên nghiệp cho chiến dịch sau:
 
 Thương hiệu:
 {brand_ctx}
@@ -508,18 +508,31 @@ Thương hiệu:
 Chiến dịch:
 - Tên: {idea.title}
 - Mục tiêu: {idea.objective or ''}
-- Ưu đãi: {idea.objective or ''}
+- Hook/Ưu đãi: {idea.hook or ''}
 
-Trả về JSON hợp lệ:
+YÊU CẦU NGHIÊM NGẶT:
+1. Subject line: DƯỚI 50 ký tự, gây tò mò hoặc FOMO, KHÔNG spam-like
+2. Body email: 150-250 từ, có cấu trúc:
+   - Personal greeting (chào bằng tên nếu có)
+   - Mở đầu gây chú ý (hook)
+   - Body 2-3 đoạn ngắn, mỗi đoạn 1-3 câu
+   - Điểm nhấn ưu đãi
+   - CTA rõ ràng
+   - Signature/closing
+3. Giọng văn: Thân thiện, chuyên nghiệp, phù hợp brand tone
+4. KHÔNG viết all caps, KHÔNG quá nhiều exclamation marks
+5. CTA phải hấp dẫn, kèm urgency
+
+Trả về JSON hợp lệ (KHÔNG thêm text khác ngoài JSON):
 {{
-  "subject": "Tiêu đề email (dưới 60 ký tự, gây tò mò)",
-  "preheader": "Dòng preview (dưới 100 ký tự)",
-  "body": "Nội dung email HTML-friendly, có personal greeting, body paragraphs, closing. Giọng văn phù hợp với tone của thương hiệu. Độ dài vừa phải (150-300 từ).",
-  "cta_text": "Nút kêu gọi hành động (5-10 từ)",
+  "subject": "Tiêu đề email dưới 50 ký tự, gây tò mò",
+  "preheader": "Dòng preview 80-100 ký tự, hấp dẫn",
+  "body": "Nội dung email đầy đủ với greeting, body paragraphs, closing. Độ dài 150-250 từ. Dùng \\n\\n để phân cách đoạn.",
+  "cta_text": "Nút kêu gọi hành động (5-10 từ, gây FOMO)",
   "cta_url": "#"
 }}
 
-Chỉ trả về JSON, không thêm text khác."""
+CHỈ trả về JSON, không thêm text khác."""
 
     messages = [{"role": "user", "content": prompt}]
     raw = await _call_ai_safe(messages, timeout=240)
@@ -551,7 +564,7 @@ async def build_post_content(
     brand_ctx = await _get_brand_context(db, idea)
 
     prompt = f"""Bạn là chuyên gia content marketing cho doanh nghiệp nhỏ Việt Nam.
-Viết nội dung bài đăng Facebook cho chiến dịch sau:
+Viết nội dung bài đăng Facebook hấp dẫn, viral-friendly cho chiến dịch sau:
 
 Thương hiệu:
 {brand_ctx}
@@ -559,16 +572,24 @@ Thương hiệu:
 Chiến dịch:
 - Tên: {idea.title}
 - Mục tiêu: {idea.objective or ''}
+- Hook/Ưu đãi: {idea.hook or ''}
 
-Trả về JSON hợp lệ:
+YÊU CẦU NGHIÊM NGẶT:
+1. Hook (dòng 1): GÂY CHÚ Ý NGAY từ giây đầu - dùng shock nhẹ, câu hỏi, hoặc số liệu
+2. Body: 3-5 đoạn ngắn, mỗi đoạn 1-2 câu, có xuống dòng. Tạo engagement.
+3. Giọng văn: Tự nhiên như đang chat với bạn bè, KHÔNG formal quá
+4. Hashtags: 3-5 tags phù hợp, có cả brand tag và topic tag
+5. KHÔNG copy-paste template, phải ĐỘC ĐÁO và SÁNG TẠO
+6. Độ dài: 100-200 từ
+
+Trả về JSON hợp lệ (KHÔNG thêm text khác ngoài JSON):
 {{
-  "hook": "Dòng đầu gây chú ý ngay (1-2 câu, gây tò mò hoặc shock nhẹ)",
-  "body": "Nội dung bài đăng (3-5 đoạn ngắn, mỗi đoạn 1-2 câu, có xuống dòng). Giọng văn phù hợp brand tone.",
+  "copy": "Nội dung bài đăng đầy đủ. Dùng \\n\\n để xuống dòng giữa các đoạn. Dòng 1 phải gây CHÚ Ý NGAY.",
   "hashtags": ["#hashtag1", "#hashtag2", "#hashtag3", "#hashtag4", "#hashtag5"],
-  "image_style": "Mô tả phong cách ảnh đi kèm (1-2 câu)"
+  "image_style": "Mô tả phong cách ảnh đi kèm (1-2 câu, rõ ràng)"
 }}
 
-Chỉ trả về JSON, không thêm text khác."""
+CHỈ trả về JSON, không thêm text khác."""
 
     messages = [{"role": "user", "content": prompt}]
     raw = await _call_ai_safe(messages, timeout=240)
@@ -601,8 +622,8 @@ async def build_video_script(
 
     brand_ctx = await _get_brand_context(db, idea)
 
-    prompt = f"""Bạn là chuyên gia sản xuất video ngắn cho TikTok/短视频.
-Viết kịch bản video TikTok cho chiến dịch sau:
+    prompt = f"""Bạn là chuyên gia sản xuất video ngắn cho TikTok/短视频 Việt Nam.
+Viết kịch bản video TikTok viral cho chiến dịch sau:
 
 Thương hiệu:
 {brand_ctx}
@@ -610,34 +631,27 @@ Thương hiệu:
 Chiến dịch:
 - Tên: {idea.title}
 - Mục tiêu: {idea.objective or ''}
+- Hook/Ưu đãi: {idea.hook or ''}
 
-Trả về JSON hợp lệ:
+YÊU CẦU NGHIÊM NGẶT:
+1. Hook (3-5 giây đầu): PHẢI gây chú ý ngay - dùng shock, câu hỏi, số liệu bất ngờ
+2. Body video: Mỗi scene 5-10 giây, có hành động rõ ràng
+3. Text overlay: Ngắn gọn, dễ đọc trên mobile
+4. CTA cuối video: Rõ ràng, kèm urgency
+5. Thời lượng: 30-60 giây (hoặc 15 giây nếu là hook ads)
+6. Giọng văn/format: Tự nhiên như người thật nói, KHÔNG đọc script
+
+Trả về JSON hợp lệ (KHÔNG thêm text khác ngoài JSON):
 {{
-  "duration": "30s",
-  "hook_seconds": "3-5 giây đầu tiên: mô tả cách gây chú ý ngay từ giây đầu",
-  "scenes": [
-    {{
-      "seconds": "0-5s",
-      "description": "Mô tả hành động / cảnh quay",
-      "text_overlay": "Text hiển thị trên màn hình (nếu có)",
-      "audio_suggestion": "Gợi ý âm thanh/nhạc nền"
-    }},
-    {{
-      "seconds": "5-15s",
-      "description": "Mô tả hành động / cảnh quay",
-      "text_overlay": "Text hiển thị",
-      "audio_suggestion": ""
-    }},
-    {{
-      "seconds": "15-30s",
-      "description": "CTA cuối video",
-      "text_overlay": "Text kêu gọi hành động",
-      "audio_suggestion": ""
-    }}
-  ]
+  "duration": "30-60 giây",
+  "hook": "Dòng/câu mở đầu video - gây CHÚ Ý NGAY trong 3-5 giây đầu tiên",
+  "hook_text_overlay": "Text hiển thị trên màn hình trong hook (ngắn gọn, dễ đọc)",
+  "body": "Tóm tắt nội dung chính video bằng 1-2 đoạn văn ngắn. Mô tả những gì xảy ra trong video.",
+  "cta": "Lời kêu gọi hành động cuối video (1-2 câu)",
+  "cta_text_overlay": "Text overlay cho CTA (ngắn, rõ ràng)"
 }}
 
-Chỉ trả về JSON, không thêm text khác."""
+CHỈ trả về JSON, không thêm text khác."""
 
     messages = [{"role": "user", "content": prompt}]
     raw = await _call_ai_safe(messages, timeout=240)

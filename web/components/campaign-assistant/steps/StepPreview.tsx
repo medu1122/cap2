@@ -162,11 +162,11 @@ export default function StepPreview({
             : channel === "facebook_post" ? contentRes.post_content
             : contentRes.video_script;
 
-          // Save to campaign
+          // Save to campaign with pending_approval status so user can edit/regenerate
           await api.post(`/campaigns/${campaignId}/content-items`, {
             channel,
             content_json: contentData,
-            status: "draft",
+            status: "pending_approval",
           });
           console.log(`[StepPreview] ${channel} saved to campaign`);
         } catch (buildErr) {
