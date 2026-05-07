@@ -118,7 +118,7 @@ export default function StepPreview({
       const startDate = userPrefs.start_date || null;
       const endDate = userPrefs.end_date || null;
 
-      // 1. Create CampaignIdea record
+      // 1. Create CampaignIdea record WITH brand_id for proper context
       const ideaRes = await api.post<{ id: string }>("/campaign-ideas", {
         suggestion_id: suggestion.id,
         title: brief.title,
@@ -127,6 +127,7 @@ export default function StepPreview({
         hook: brief.hook,
         timing: brief.timing,
         customer_segment: brief.customer_segment,
+        brand_id: brandId, // Pass brand_id for proper brand context in content generation
       });
       console.log("[StepPreview] CampaignIdea created:", ideaRes.id);
 
@@ -143,36 +144,10 @@ export default function StepPreview({
       const campaignId = campaignRes.id;
       console.log("[StepPreview] Campaign created:", campaignId);
 
-      // 3. Build content for each selected channel
-      for (const channel of brief.channels) {
-        const apiPath = channel === "email" ? "/build/email"
-          : channel === "facebook_post" ? "/build/post"
-          : channel === "video_script" ? "/build/video"
-          : null;
-
-        if (!apiPath) continue;
-
-        try {
-          const contentRes = await api.post<Record<string, unknown>>(
-            `/campaign-ideas/${ideaRes.id}${apiPath}`
-          );
-
-          // Get content based on channel
-          const contentData = channel === "email" ? contentRes.email_content
-            : channel === "facebook_post" ? contentRes.post_content
-            : contentRes.video_script;
-
-          // Save to campaign with pending_approval status so user can edit/regenerate
-          await api.post(`/campaigns/${campaignId}/content-items`, {
-            channel,
-            content_json: contentData,
-            status: "pending_approval",
-          });
-          console.log(`[StepPreview] ${channel} saved to campaign`);
-        } catch (buildErr) {
-          console.error(`[StepPreview] Failed to build ${channel}:`, buildErr);
-        }
-      }
+      // 3. Run the agent dispatcher to generate content (same as manual flow)
+      // This ensures content_items are created properly with brand context
+      await api.post(`/campaigns/${campaignId}/run`);
+      console.log("[StepPreview] Campaign agent started");
 
       // 4. Close modal + redirect to campaign page
       onClose();

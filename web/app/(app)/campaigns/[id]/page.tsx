@@ -727,17 +727,42 @@ export default function CampaignDetailPage() {
             {/* LEFT COLUMN - Content focused */}
             <div className="lg:col-span-3 space-y-5">
               {/* Lịch cụ thể */}
-              {campaign.content_items.length > 0 && (
-                <div className="bg-gradient-to-br from-[#377D73]/5 via-white to-[#377D73]/5 rounded-xl p-4 border border-[#377D73]/20 shadow-md shadow-[#377D73]/10">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="flex items-center justify-center w-10 h-10 bg-[#377D73] rounded-xl shadow-lg shadow-[#377D73]/30">
-                      <CalendarDays size={20} className="text-white" />
-                    </div>
-                    <div className="flex-1">
-                      <h2 className="text-base font-bold text-gray-900">Lịch cụ thể</h2>
-                    </div>
-                    <span className="text-[10px] text-[#377D73]">→ <a href="/calendar" className="hover:underline font-medium">Lịch marketing</a></span>
+              <div className="bg-gradient-to-br from-[#377D73]/5 via-white to-[#377D73]/5 rounded-xl p-4 border border-[#377D73]/20 shadow-md shadow-[#377D73]/10">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="flex items-center justify-center w-10 h-10 bg-[#377D73] rounded-xl shadow-lg shadow-[#377D73]/30">
+                    <CalendarDays size={20} className="text-white" />
                   </div>
+                  <div className="flex-1">
+                    <h2 className="text-base font-bold text-gray-900">Lịch cụ thể</h2>
+                  </div>
+                  <span className="text-[10px] text-[#377D73]">→ <a href="/calendar" className="hover:underline font-medium">Lịch marketing</a></span>
+                </div>
+                
+                {/* Loading state - khi chưa có content_items */}
+                {campaign.content_items.length === 0 && isProcessing && (
+                  <div className="space-y-2">
+                    {[1, 2].map((i) => (
+                      <div key={i} className="flex items-center gap-3 h-16 bg-white/60 rounded-lg border border-gray-100 animate-pulse">
+                        <div className="w-14 shrink-0 bg-gray-200 rounded-lg m-3" />
+                        <div className="flex-1 space-y-2">
+                          <div className="h-3 bg-gray-200 rounded w-1/3" />
+                          <div className="h-2 bg-gray-100 rounded w-2/3" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Empty state - khi không có content_items và không đang xử lý */}
+                {campaign.content_items.length === 0 && !isProcessing && (
+                  <div className="text-center py-6 text-gray-400">
+                    <Calendar size={24} className="mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">Chưa có lịch cụ thể</p>
+                  </div>
+                )}
+
+                {/* Content - khi đã có content_items */}
+                {campaign.content_items.length > 0 && (
                   <div className="space-y-2">
                     {campaign.content_items.slice().sort((a, b) => {
                       if (!a.scheduled_date) return 1;
@@ -759,32 +784,58 @@ export default function CampaignDetailPage() {
                         {!item.scheduled_date && <span className="text-[9px] text-amber-600 shrink-0 font-semibold bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">chưa lịch</span>}
                       </div>
                     ))}
+                    {campaign.content_items.some((c) => !c.scheduled_date) && (
+                      <p className="text-[10px] text-[#377D73] mt-2 font-medium">Duyệt nội dung để tự đề xuất lịch.</p>
+                    )}
                   </div>
-                  {campaign.content_items.some((c) => !c.scheduled_date) && (
-                    <p className="text-[10px] text-[#377D73] mt-2 font-medium">Duyệt nội dung để tự đề xuất lịch.</p>
-                  )}
-                </div>
-              )}
+                )}
+              </div>
 
               {/* Nội dung */}
-              {campaign.content_items.length > 0 && (
-                <div className="bg-gradient-to-br from-violet-50/50 via-white to-purple-50/30 rounded-xl p-4 border border-violet-200/50 shadow-md">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="flex items-center justify-center w-10 h-10 bg-gradient-to-br from-violet-500 to-purple-600 rounded-xl shadow-lg shadow-violet-200">
-                      <FileText size={20} className="text-white" />
-                    </div>
-                    <div className="flex-1">
-                      <h2 className="text-base font-bold text-gray-900">Nội dung</h2>
-                    </div>
-                    <span className="badge bg-gradient-to-r from-violet-500 to-purple-500 text-white text-[11px] shadow-sm">{campaign.content_items.length}</span>
+              <div className="bg-gradient-to-br from-violet-50/50 via-white to-purple-50/30 rounded-xl p-4 border border-violet-200/50 shadow-md">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="flex items-center justify-center w-10 h-10 bg-gradient-to-br from-violet-500 to-purple-600 rounded-xl shadow-lg shadow-violet-200">
+                    <FileText size={20} className="text-white" />
                   </div>
+                  <div className="flex-1">
+                    <h2 className="text-base font-bold text-gray-900">Nội dung</h2>
+                  </div>
+                  <span className="badge bg-gradient-to-r from-violet-500 to-purple-500 text-white text-[11px] shadow-sm">
+                    {campaign.content_items.length > 0 ? campaign.content_items.length : (isProcessing ? "..." : "0")}
+                  </span>
+                </div>
+                
+                {/* Loading state - khi chưa có content_items */}
+                {campaign.content_items.length === 0 && isProcessing && (
+                  <div className="space-y-2">
+                    {[1, 2].map((i) => (
+                      <div key={i} className="h-20 bg-white/60 rounded-lg border border-gray-100 animate-pulse">
+                        <div className="p-4 space-y-2">
+                          <div className="h-4 bg-gray-200 rounded w-1/2" />
+                          <div className="h-3 bg-gray-100 rounded w-3/4" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Empty state - khi không có content_items và không đang xử lý */}
+                {campaign.content_items.length === 0 && !isProcessing && (
+                  <div className="text-center py-6 text-gray-400">
+                    <FileText size={24} className="mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">Chưa có nội dung nào</p>
+                  </div>
+                )}
+
+                {/* Content - khi đã có content_items */}
+                {campaign.content_items.length > 0 && (
                   <div className="space-y-2">
                     {campaign.content_items.map((item) => (
                       <ContentCard key={item.id} item={item} onAction={load} />
                     ))}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
             {/* RIGHT COLUMN - Actions & Stats */}

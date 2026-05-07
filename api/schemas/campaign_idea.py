@@ -41,6 +41,11 @@ class CampaignIdeaSuggestRequest(BaseModel):
     brand_id: uuid.UUID | None = None
 
 
+class CampaignIdeaSuggestMoreRequest(BaseModel):
+    brand_id: uuid.UUID | None = None
+    existing_titles: list[str] = []
+
+
 class CampaignIdeaSuggestionItem(BaseModel):
     id: str
     title: str
@@ -65,6 +70,7 @@ class CampaignIdeaCreateFromSuggestion(BaseModel):
     hook: str | None = None
     timing: str | None = None
     customer_segment: str | None = None
+    brand_id: uuid.UUID | None = None
 
 
 class CampaignIdeaGenerateBriefRequest(BaseModel):

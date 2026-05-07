@@ -1,6 +1,6 @@
 "use client";
-import { useState } from "react";
-import { Lightbulb, Loader2, RefreshCw, ChevronRight, Clock, Users, Zap } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Lightbulb, RefreshCw, ChevronRight, Clock, Users, Plus } from "lucide-react";
 import { api } from "@/lib/api-client";
 import type { SuggestionItem } from "../CampaignAssistantModal";
 
@@ -36,8 +36,27 @@ export default function StepSuggestions({
   onNext,
 }: Props) {
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [customIdea, setCustomIdea] = useState("");
+  const [loadingSeconds, setLoadingSeconds] = useState(0);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Timer for loading state
+  useEffect(() => {
+    if (loading || loadingMore) {
+      setLoadingSeconds(0);
+      intervalRef.current = setInterval(() => {
+        setLoadingSeconds(s => s + 1);
+      }, 1000);
+    } else {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      setLoadingSeconds(0);
+    }
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [loading, loadingMore]);
 
   async function loadSuggestions() {
     setLoading(true);
@@ -51,6 +70,26 @@ export default function StepSuggestions({
       setError("Không thể gợi ý. Vui lòng thử lại.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadMoreSuggestions() {
+    setLoadingMore(true);
+    setError("");
+    try {
+      const existingTitles = suggestions.map(s => s.title);
+      const res = await api.post<{ suggestions: SuggestionItem[] }>("/campaign-ideas/suggest-more", {
+        brand_id: brandId,
+        existing_titles: existingTitles,
+      });
+      // Merge new suggestions with existing ones, avoiding duplicates
+      const existingIds = new Set(suggestions.map(s => s.id));
+      const newSuggestions = res.suggestions.filter(s => !existingIds.has(s.id));
+      onSuggestionsChange([...suggestions, ...newSuggestions]);
+    } catch {
+      setError("Không thể tải thêm. Vui lòng thử lại.");
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -97,12 +136,13 @@ export default function StepSuggestions({
     );
   }
 
-  if (loading) {
+  if (loading || loadingMore) {
     return (
       <div className="space-y-4 text-center py-8">
-        <Loader2 size={40} className="animate-spin text-blue-500 mx-auto" />
-        <p className="text-gray-600">AI đang phân tích và gợi ý...</p>
-        <p className="text-xs text-gray-400">Có thể mất 10-30 giây</p>
+        <div className="text-5xl font-bold text-blue-500 tabular-nums">
+          {loadingSeconds}s
+        </div>
+        <p className="text-gray-600">{loadingMore ? "Đang tải thêm ý tưởng..." : "AI đang phân tích và gợi ý..."}</p>
       </div>
     );
   }
@@ -208,6 +248,15 @@ export default function StepSuggestions({
           </button>
         </div>
       </div>
+
+      {/* Xem thêm button */}
+      <button
+        onClick={loadMoreSuggestions}
+        className="w-full py-2 text-sm text-blue-600 hover:text-blue-800 flex items-center justify-center gap-2 transition-colors"
+      >
+        <Plus size={14} />
+        Xem thêm ý tưởng
+      </button>
 
       <button
         onClick={onNext}
