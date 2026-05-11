@@ -434,6 +434,9 @@ class IntentClassifier:
         
         best_intent = max(scores, key=scores.get)
         best_score = scores[best_intent]
+        if best_intent == IntentType.GREETING and self._extract_intent_entities(user_input, IntentType.KPI_QUERY):
+            best_intent = IntentType.KPI_QUERY
+            best_score = max(best_score, 0.75)
         
         # 5. Check if requires data
         requires_data = best_intent not in self.NO_DATA_INTENTS
@@ -528,7 +531,7 @@ class IntentClassifier:
         
         return entities
     
-    def _extract_parameters(self, text: str, intent: IntentType) -> dict[str, Any]:
+    def _extract_parameters(self, text: str, intent: IntentType | None = None) -> dict[str, Any]:
         """Extract parameters từ input"""
         params: dict[str, Any] = {}
         normalized = text.lower()

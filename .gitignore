@@ -9,3 +9,5 @@ web/.env.local
 
 # OpenMemory - IDE/Assistant specific rules
 .cursor/rules/openmemory.mdc
+*.tsbuildinfo
+*.xlsx
