@@ -631,26 +631,38 @@ function ChatPanel({
               ))}
             </div>
           </div>
-        ) : (
-          chatSession.messages.map((msg) => (
-            <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div
-                className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-                  msg.role === "user"
-                    ? "bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-br-md"
-                    : "bg-gray-100 text-gray-800 rounded-bl-md"
-                }`}
-              >
-                <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                <p className={`text-xs mt-1 ${
-                  msg.role === "user" ? "text-blue-100" : "text-gray-400"
-                }`}>
-                  {new Date(msg.created_at).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
-                </p>
-              </div>
-            </div>
-          ))
-        )}
+        ) : chatSession.messages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={`w-full flex ${
+                    msg.role === "user" ? "justify-end" : "justify-start"
+                  }`}
+                >
+                  <div
+                    className={`max-w-[75%] rounded-2xl px-4 py-3 ${
+                      msg.role === "user"
+                        ? "bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-br-md ml-auto"
+                        : "bg-gray-100 text-gray-800 rounded-bl-md"
+                    }`}
+                  >
+                    <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+
+                    <p
+                      className={`text-xs mt-1 ${
+                        msg.role === "user"
+                          ? "text-blue-100 text-right"
+                          : "text-gray-400"
+                      }`}
+                    >
+                      {new Date(msg.created_at).toLocaleTimeString("vi-VN", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </p>
+                  </div>
+                </div>
+              ))}
+          
         <div ref={messagesEndRef} />
       </div>
 
@@ -917,12 +929,15 @@ export default function InsightsPage() {
         sourceId = created.id;
         setActiveSourceId(sourceId);
         await loadDataSources();
+      } else {
+        await api.put(`/insights/data-sources/${sourceId}`, {
+          name: tableName,
+          table_data: {
+            columns: columns.map((c) => ({ name: c.name, data_type: c.dataType })),
+            rows,
+          },
+        });
       }
-
-      // Create chat session
-      const chat = await api.post<{ id: string }>("/insights/chats", null, {
-        params: { data_source_id: sourceId },
-      });
 
       // Run analysis
       const raw = await postNdjsonStream("/insights/a2a/deep-analysis-stream", {
@@ -932,10 +947,15 @@ export default function InsightsPage() {
         report_rows: rows,
       }, { signal: controller.signal, onEvent: applyStreamEvent });
 
-      setAnalysisResult(raw as DeepAnalysisResult);
+      const result = raw as DeepAnalysisResult;
+      setAnalysisResult(result);
       setStreamProgress((p) => ({ ...p, success: true }));
 
-      // Load chat session
+      // Create a chat session linked to this analysis result.
+      const chat = await api.post<{ id: string }>("/insights/chats", null, {
+        params: { data_source_id: sourceId, insight_run_id: result.run_id },
+      });
+
       await loadChatSession(chat.id);
 
       // Refresh data sources

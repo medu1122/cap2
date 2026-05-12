@@ -85,6 +85,15 @@ _DEEPSEEK_JSON_ONLY_SYSTEM = (
 )
 
 
+def _analysis_llm_timeout(default: int = 15) -> int:
+    """Keep the Insights UI responsive when external/local LLMs are slow."""
+    try:
+        configured = int(settings.QWEN_TIMEOUT)
+    except (TypeError, ValueError):
+        configured = default
+    return int(_clamp(configured, 5, 60))
+
+
 def _normalize_text(value: str) -> str:
     # Chuan hoa text tieng Viet de map cot on dinh hon.
     normalized = unicodedata.normalize("NFD", value)
@@ -592,6 +601,69 @@ def _build_situations_and_actions(
     return situations, suggested_actions
 
 
+def _build_deterministic_insights(
+    *,
+    situations: list[dict[str, Any]],
+    exploratory_metrics: dict[str, Any],
+    kpi_availability: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Fallback insights when LLM providers are unavailable or too slow."""
+    insights: list[dict[str, Any]] = []
+
+    severity_map = {"cao": "Cao", "vua": "Vừa", "thap": "Thấp"}
+    for situation in situations[:3]:
+        title = str(situation.get("title") or "Nhận định dữ liệu")
+        reason = str(situation.get("reason") or "Cần theo dõi thêm dữ liệu.")
+        severity = severity_map.get(str(situation.get("severity") or "").lower(), "Vừa")
+        evidence = situation.get("evidence") if isinstance(situation.get("evidence"), dict) else {}
+        insights.append(
+            {
+                "title": title,
+                "severity": severity,
+                "evidence": evidence,
+                "recommendation": reason,
+            }
+        )
+
+    numeric_columns = exploratory_metrics.get("numeric_columns") if isinstance(exploratory_metrics, dict) else []
+    if isinstance(numeric_columns, list) and numeric_columns:
+        top_numeric = sorted(
+            [item for item in numeric_columns if isinstance(item, dict)],
+            key=lambda item: float(item.get("sum") or 0),
+            reverse=True,
+        )[:2]
+        for item in top_numeric:
+            column = item.get("column") or "cột số"
+            insights.append(
+                {
+                    "title": f"Tổng quan cột {column}",
+                    "severity": "Thấp",
+                    "evidence": {
+                        "sum": float(item.get("sum") or 0),
+                        "mean": float(item.get("mean") or 0),
+                        "min": float(item.get("min") or 0),
+                        "max": float(item.get("max") or 0),
+                    },
+                    "recommendation": (
+                        f"Cột {column} có tổng {item.get('sum')}, trung bình {item.get('mean')}, "
+                        f"dao động từ {item.get('min')} đến {item.get('max')}. Nên dùng cột này để theo dõi biến động chính."
+                    ),
+                }
+            )
+
+    if not insights and not _any_core_kpi_computable(kpi_availability):
+        insights.append(
+            {
+                "title": "Chưa đủ dữ liệu để kết luận KPI marketing",
+                "severity": "Thấp",
+                "evidence": {},
+                "recommendation": "Bổ sung các cột doanh thu, chi phí quảng cáo, đơn hàng hoặc lead để hệ thống tính KPI chính xác hơn.",
+            }
+        )
+
+    return insights[:4]
+
+
 def _normalize_insight_item(item: dict[str, Any]) -> dict[str, Any]:
     ev = item.get("evidence") if isinstance(item.get("evidence"), dict) else {}
     evidence: dict[str, float] = {}
@@ -704,8 +776,8 @@ async def _run_deep_analysis_gen(
                 {"role": "system", "content": _DEEPSEEK_JSON_ONLY_SYSTEM},
                 {"role": "user", "content": classify_prompt},
             ],
-            timeout_seconds=60,
-            max_attempts=2,
+            timeout_seconds=_analysis_llm_timeout(),
+            max_attempts=1,
         )
         classify_json = _extract_json_block(classify_text) or {}
         report_type = str(classify_json.get("report_type") or "generic_report")
@@ -775,8 +847,8 @@ async def _run_deep_analysis_gen(
                 {"role": "system", "content": _DEEPSEEK_JSON_ONLY_SYSTEM},
                 {"role": "user", "content": mapping_prompt},
             ],
-            timeout_seconds=60,
-            max_attempts=2,
+            timeout_seconds=_analysis_llm_timeout(),
+            max_attempts=1,
         )
         mapping_json = _extract_json_block(mapping_text) or {}
         for key in mapping.keys():
@@ -993,14 +1065,13 @@ async def _run_deep_analysis_gen(
             "Neu co classification va exploratory_metrics: dung so lieu thuc (min/max/trung binh) de noi, tranh khuyen nghi chung.\n"
             f"Input: {json.dumps(narrative_payload, ensure_ascii=False)}"
         )
-        # Qwen tren VPS CPU thuong >30s; QWEN_TIMEOUT (.env) la giay cho moi lan doc response.
-        qwen_read_timeout = max(120, int(settings.QWEN_TIMEOUT) + 30)
+        qwen_read_timeout = _analysis_llm_timeout()
         qwen_text = await _chat_completion_with_retry(
             base_url=settings.QWEN_BASE_URL,
             model=settings.QWEN_MODEL,
             messages=[{"role": "user", "content": narrative_prompt}],
             timeout_seconds=qwen_read_timeout,
-            max_attempts=2,
+            max_attempts=1,
         )
         qwen_json = _extract_json_block(qwen_text) or {}
         if isinstance(qwen_json.get("insights"), list):
@@ -1051,9 +1122,9 @@ async def _run_deep_analysis_gen(
                     base_url="https://api.openai.com/v1",
                     model="gpt-4o-mini",
                     messages=[{"role": "user", "content": narrative_prompt}],
-                    timeout_seconds=45,
+                    timeout_seconds=min(20, _analysis_llm_timeout()),
                     api_key=settings.OPENAI_API_KEY,
-                    max_attempts=2,
+                    max_attempts=1,
                 )
                 gpt_json = _extract_json_block(gpt_text) or {}
                 if isinstance(gpt_json.get("insights"), list):
@@ -1109,6 +1180,12 @@ async def _run_deep_analysis_gen(
     yield _overlay_evt(3, "finished", "narrative")
 
     insights = _sanitize_insights_post_llm(insights, kpi_availability)
+    if not insights:
+        insights = _build_deterministic_insights(
+            situations=situations,
+            exploratory_metrics=exploratory_metrics,
+            kpi_availability=kpi_availability,
+        )
     if not _any_core_kpi_computable(kpi_availability):
         action_plan = {"day_30": [], "day_60": [], "day_90": []}
     if not insights and not _any_core_kpi_computable(kpi_availability):
@@ -1145,8 +1222,8 @@ async def _run_deep_analysis_gen(
                 {"role": "system", "content": _DEEPSEEK_JSON_ONLY_SYSTEM},
                 {"role": "user", "content": polish_prompt},
             ],
-            timeout_seconds=max(90, int(settings.QWEN_TIMEOUT) + 30),
-            max_attempts=2,
+            timeout_seconds=_analysis_llm_timeout(),
+            max_attempts=1,
         )
         polish_json = _extract_json_block(polish_text) or {}
         if isinstance(polish_json.get("insights"), list):
@@ -1195,6 +1272,12 @@ async def _run_deep_analysis_gen(
     yield _overlay_evt(4, "finished", "polish_result")
 
     insights = _sanitize_insights_post_llm(insights, kpi_availability)
+    if not insights:
+        insights = _build_deterministic_insights(
+            situations=situations,
+            exploratory_metrics=exploratory_metrics,
+            kpi_availability=kpi_availability,
+        )
     if not _any_core_kpi_computable(kpi_availability):
         action_plan = {"day_30": [], "day_60": [], "day_90": []}
     if not insights and not _any_core_kpi_computable(kpi_availability):
