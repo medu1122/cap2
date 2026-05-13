@@ -639,24 +639,29 @@ export default function OutreachSegmentPage() {
         body,
       );
 
+      // Streaming: fill kết quả từng email một để UI phản hồi liên tục
       const resultsMap = new Map(
         res.results.map((r) => [r.email || r.name, r]),
       );
-
-      setEmails((prev) =>
-        prev.map((e) => {
-          const matched = resultsMap.get(e.email || e.name);
-          if (matched) {
-            return {
-              ...e,
-              subject: matched.subject,
-              body: matched.body,
-              status: "done" as const,
-            };
-          }
-          return { ...e, status: "error" as const, errorMsg: "Không nhận được kết quả từ server." };
-        }),
-      );
+      for (const email of emails) {
+        const matched = resultsMap.get(email.email || email.name);
+        await new Promise<void>((resolve) => setTimeout(resolve, 60));
+        if (matched) {
+          setEmails((prev) =>
+            prev.map((e) =>
+              e.id === email.id
+                ? { ...e, subject: matched.subject, body: matched.body, status: "done" as const }
+                : e,
+            ),
+          );
+        } else {
+          setEmails((prev) =>
+            prev.map((e) =>
+              e.id === email.id ? { ...e, status: "error" as const, errorMsg: "Không nhận được kết quả." } : e,
+            ),
+          );
+        }
+      }
       setMessage("Đã soạn xong tất cả email.");
     } catch (exc) {
       setMessage(exc instanceof Error ? exc.message : "Lỗi khi soạn email.");
@@ -741,6 +746,7 @@ export default function OutreachSegmentPage() {
 
     try {
       await api.post(`/workflow/customer-lists/${activeListId}/smart-contact-batch-send`, {
+        brand_id: brandPick || undefined,
         items: [{ name: email.name, email: email.email, phone: email.phone, subject: email.subject, body: email.body }],
       });
       setEmails((prev) => prev.map((e) => (e.id === id ? { ...e, status: "sent" as const } : e)));
@@ -783,6 +789,7 @@ export default function OutreachSegmentPage() {
       setEmails((prev) => prev.map((e) => (e.id === email.id ? { ...e, status: "sending" as const } : e)));
       try {
         await api.post(`/workflow/customer-lists/${activeListId}/smart-contact-batch-send`, {
+          brand_id: brandPick || undefined,
           items: [{ name: email.name, email: email.email, phone: email.phone, subject: email.subject, body: email.body }],
         });
         setEmails((prev) => prev.map((e) => (e.id === email.id ? { ...e, status: "sent" as const } : e)));
@@ -1038,27 +1045,29 @@ export default function OutreachSegmentPage() {
         </div>
       )}
 
-      {/* ── Footer ── */}
+      {/* ── Sticky send bar ── */}
       {emails.length > 0 && !noAnalysis && (
-        <footer className="border-t border-amber-200 bg-white px-6 py-3">
-          <div className="flex items-center justify-between">
-            <span className="text-[12px] text-slate-500">
-              {sentCount}/{emails.length} email đã gửi
-            </span>
-            <button
-              type="button"
-              className="flex items-center gap-2 rounded-lg bg-amber-500 px-5 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-amber-600 disabled:opacity-50"
-              disabled={
-                sendingAll ||
-                emails.filter((e) => e.body && e.status !== "sent" && e.status !== "sending").length === 0
-              }
-              onClick={() => void handleSendAll()}
-            >
-              {sendingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              Gửi tất cả email
-            </button>
+        <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-amber-200 bg-white px-6 py-3 shadow-[0_-4px_12px_rgba(251,191,36,0.15)]">
+          <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
+            <div className="flex items-center justify-between">
+              <span className="text-[12px] text-slate-500">
+                {sentCount}/{emails.length} email đã gửi
+              </span>
+              <button
+                type="button"
+                className="flex items-center gap-2 rounded-lg bg-amber-500 px-5 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-amber-600 disabled:opacity-50"
+                disabled={
+                  sendingAll ||
+                  emails.filter((e) => e.body && e.status !== "sent" && e.status !== "sending").length === 0
+                }
+                onClick={() => void handleSendAll()}
+              >
+                {sendingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Gửi tất cả email
+              </button>
+            </div>
           </div>
-        </footer>
+        </div>
       )}
     </div>
   );

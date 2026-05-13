@@ -128,7 +128,6 @@ interface PriorityCustomer {
 }
 
 const TEMPLATE_COLUMNS = [
-  "ID",
   "HoVaTen",
   "Tuoi",
   "SDT",
@@ -151,7 +150,6 @@ const PRIMARY_COLUMNS = [
   { key: "TongSoTienDaChiTra", label: "Tổng số tiền đã chi trả" },
 ] as const;
 const COLUMN_LABELS: Record<string, string> = {
-  ID: "ID",
   HoVaTen: "Họ và tên",
   Tuoi: "Tuổi",
   SDT: "SĐT",
@@ -464,12 +462,11 @@ function emptyRow(): Record<string, string> {
 }
 
 function normalizeRows(rows: Record<string, unknown>[]): Record<string, string>[] {
-  return rows.map((row, idx) => {
+  return rows.map((row) => {
     const out: Record<string, string> = { ...emptyRow() };
     for (const key of Object.keys(row || {})) {
       out[key] = String(row[key] ?? "");
     }
-    if (!out.ID) out.ID = String(idx + 1);
     return out;
   });
 }
@@ -982,16 +979,15 @@ export default function CustomerListsPage() {
 
   function addRow() {
     const nextIndex = rows.length;
-    setRows((prev) => [...prev, { ...emptyRow(), ID: String(prev.length + 1) }]);
+    setRows((prev) => [...prev, emptyRow()]);
     setRowsDirty(true);
     setTimeout(() => {
-      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
       setEditingCell({ rowIdx: nextIndex, col: "HoVaTen" });
     }, 80);
   }
 
   function deleteRow(index: number) {
-    setRows((prev) => prev.filter((_, i) => i !== index).map((r, idx) => ({ ...r, ID: String(idx + 1) })));
+    setRows((prev) => prev.filter((_, i) => i !== index));
     setExpandedRowIndex((prev) => (prev === index ? null : prev));
     setEditingCell(null);
     setErrorPopover(null);

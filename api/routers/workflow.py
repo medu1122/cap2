@@ -1731,7 +1731,7 @@ async def _compose_single_email(
         "potential": "khách tiềm năng",
         "new": "khách mới",
         "vip": "VIP",
-    }.get(seg or "potential", "khách hàng")
+    }.get(segment or "potential", "khách hàng")
 
     purpose_subject = {
         "nhac_nhe": ["Những kỷ niệm đẹp đang chờ bạn quay lại", "Đã lâu rồi bạn ơi, ghé thăm nhé", "Bạn ơi, chúng tôi nhớ bạn rồi!"],
