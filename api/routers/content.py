@@ -13,7 +13,9 @@ from models.user import User
 from models.campaign import Campaign
 from models.content_item import ContentItem
 from models.brand import Brand
+from models.campaign_tracking_link import CampaignTrackingLink
 from schemas.campaign import ContentItemOut
+from core.config import settings
 from pydantic import BaseModel
 
 _openai = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
@@ -28,6 +30,10 @@ router = APIRouter()
 class ContentUpdate(BaseModel):
     content_json: dict | None = None
     scheduled_date: date | None = None
+
+
+class SaveEditPayload(BaseModel):
+    content_json: dict
 
 
 class RejectPayload(BaseModel):
@@ -93,6 +99,23 @@ async def update_content(
         item.version += 1
     if payload.scheduled_date is not None:
         item.scheduled_date = payload.scheduled_date
+    await db.commit()
+    await db.refresh(item)
+    return item
+
+
+@router.post("/{content_id}/save-edit", response_model=ContentItemOut)
+async def save_content_edit(
+    content_id: uuid.UUID,
+    payload: SaveEditPayload,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lưu nội dung đã chỉnh sửa trực tiếp bởi user (inline editing)."""
+    item = await _get_content_item(content_id, current_user, db)
+    item.content_json = payload.content_json
+    item.source = "user_edit"
+    item.version += 1
     await db.commit()
     await db.refresh(item)
     return item
@@ -181,6 +204,32 @@ def _brand_context_block(brand: Brand | None) -> str:
     )
 
 
+def _get_tracking_links(db: AsyncSession, campaign_id: uuid.UUID) -> list[dict]:
+    """Lấy danh sách tracking link của chiến dịch để inject vào prompt AI."""
+    result = db.execute(
+        select(CampaignTrackingLink)
+        .where(CampaignTrackingLink.campaign_id == campaign_id)
+        .order_by(CampaignTrackingLink.created_at.desc())
+    )
+    links = result.scalars().all()
+    base = settings.TRACKING_PUBLIC_BASE_URL or "https://aimap.vn"
+    return [
+        {"name": link.name, "url": f"{base}/r/{link.short_code}"}
+        for link in links
+    ]
+
+
+def _build_tracking_links_instruction(links: list[dict]) -> str:
+    """Tạo instruction text về tracking links để nhúng vào prompt."""
+    if not links:
+        return ""
+    lines = ["\nCác link theo dõi có sẵn (CHỈ dùng một trong các link bên dưới, gắn vào vị trí phù hợp):"]
+    for link in links:
+        lines.append(f'  - {link["name"]}: {link["url"]}')
+    lines.append("Nếu có link theo dõi, gắn link vào trong cta_url / CTA text, KHÔNG dùng link gốc.")
+    return "\n".join(lines)
+
+
 def _parse_writer_json(raw: str) -> dict:
     for attempt in range(2):
         try:
@@ -200,6 +249,7 @@ def _regenerate_user_prompt(
     plan: dict,
     deliverable: dict,
     campaign: Campaign,
+    tracking_links: list[dict] | None = None,
 ) -> str:
     bc = _brand_context_block(brand)
     cs = plan.get("campaign_summary") or (
@@ -209,18 +259,20 @@ def _regenerate_user_prompt(
     cg = deliverable.get("content_goal") or campaign.objective
     th = deliverable.get("tone_hint") or (brand.tone_of_voice if brand else "") or "thân thiện"
     cta = deliverable.get("cta") or (brand.preferred_cta if brand else "") or "Liên hệ ngay"
+    links_hint = _build_tracking_links_instruction(tracking_links or [])
 
     if channel == "facebook_post":
         return (
             f"<brand_context>\n{bc}\n</brand_context>\n\n"
-            "Viết một bài đăng Facebook mới (khác nội dung cũ, đổi góc nhìn hoặc cách diễn đạt).\n\n"
+            "Viết một bài đăng Facebook mới (khác nội dung cũ, đổi góc nhìn hoặc cách diỄn đạt).\n\n"
             f"Tóm tắt chiến dịch: {cs}\n"
             f"Thông điệp chính: {km}\n"
             f"Mục tiêu nội dung: {cg}\n"
             f"Hướng giọng văn: {th}\n"
-            f"Call-to-action: {cta}\n\n"
+            f"Call-to-action: {cta}\n"
+            f"{links_hint}\n\n"
             'Trả về JSON:\n{\n  "copy": "...",\n  "hashtags": ["...", "...", "...", "...", "..."],\n  "cta_url": "https://..."\n}'
-            "\nLưu ý: cta_url là link đích (website/landing page) mà người đọc sẽ được chuyển hướng đến khi nhấn vào link bên dưới bài đăng. Nếu không có, để null."
+            "\nLưu ý: cta_url là link đích (website/landing page) mà người đọc sẽ được chuyển hướng đến khi nhấn vào link bên dưới bài đăng."
         )
     if channel == "email":
         return (
@@ -230,7 +282,8 @@ def _regenerate_user_prompt(
             f"Thông điệp chính: {km}\n"
             f"Mục tiêu nội dung: {cg}\n"
             f"Hướng giọng văn: {th}\n"
-            f"Call-to-action: {cta}\n\n"
+            f"Call-to-action: {cta}\n"
+            f"{links_hint}\n\n"
             'Trả về JSON:\n{\n  "subject": "...",\n  "body": "..."\n}'
         )
     return (
@@ -240,7 +293,8 @@ def _regenerate_user_prompt(
         f"Thông điệp chính: {km}\n"
         f"Mục tiêu nội dung: {cg}\n"
         f"Hướng giọng văn: {th}\n"
-        f"Call-to-action: {cta}\n\n"
+        f"Call-to-action: {cta}\n"
+        f"{links_hint}\n\n"
         'Trả về JSON:\n{\n  "hook": "...",\n  "body": "...",\n  "cta": "...",\n  "duration_estimate": "45s"\n}'
     )
 
@@ -285,7 +339,17 @@ async def regenerate_content(
             "cta": (brand.preferred_cta if brand else "") or "Liên hệ ngay",
         }
 
-    user_prompt = _regenerate_user_prompt(item.channel, brand, plan, deliverable, campaign)
+    links_result = await db.execute(
+        select(CampaignTrackingLink)
+        .where(CampaignTrackingLink.campaign_id == campaign.id)
+        .order_by(CampaignTrackingLink.created_at.desc())
+    )
+    tracking_links = [
+        {"name": link.name, "url": f"{settings.TRACKING_PUBLIC_BASE_URL}/r/{link.short_code}"}
+        for link in links_result.scalars().all()
+    ]
+
+    user_prompt = _regenerate_user_prompt(item.channel, brand, plan, deliverable, campaign, tracking_links)
     resp = await _openai.chat.completions.create(
         model="gpt-4o-mini",
         messages=[

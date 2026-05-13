@@ -51,7 +51,15 @@ def build_email_html(
         ab_note = "<p><em>Phiên bản A</em></p>"
     elif ab_variant == "B":
         ab_note = "<p><em>Phiên bản B</em></p>"
-    cta = f'<p><a href="{html.escape(click_url)}">{html.escape(cta_text)}</a></p>'
+    cta = f"""
+    <p style="margin: 24px 0 0 0;">
+      <a href="{html.escape(click_url)}"
+         style="display: inline-block; padding: 14px 28px; background-color: #377D73;
+                color: #ffffff; font-size: 16px; font-weight: 600; text-decoration: none;
+                border-radius: 8px; font-family: Arial, sans-serif;">
+        {html.escape(cta_text)}
+      </a>
+    </p>"""
     pixel = f'<img src="{html.escape(open_url)}" width="1" height="1" alt="" style="display:block;border:0" />'
     html_part = f"""<!DOCTYPE html>
 <html><body>

@@ -347,6 +347,40 @@ function ContentCard({ item, onAction }: { item: ContentItem; onAction: () => vo
   const [showReject, setShowReject] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // Inline edit state
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<Record<string, unknown>>({});
+  const [saving, setSaving] = useState(false);
+
+  // Compare current content_json vs original to detect changes
+  function hasChanges(): boolean {
+    return JSON.stringify(draft) !== JSON.stringify(item.content_json);
+  }
+
+  function startEdit() {
+    setDraft({ ...item.content_json });
+    setEditing(true);
+  }
+
+  function cancelEdit() {
+    setEditing(false);
+    setDraft({});
+  }
+
+  async function saveEdit() {
+    if (!hasChanges()) return;
+    setSaving(true);
+    try {
+      await api.post(`/content/${item.id}/save-edit`, draft);
+      setEditing(false);
+      onAction();
+    } catch {
+      // silent fail
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function approve() {
     setLoading(true);
     await api.patch(`/content/${item.id}/approve`).catch(() => {});
@@ -370,6 +404,10 @@ function ContentCard({ item, onAction }: { item: ContentItem; onAction: () => vo
   }
 
   const c = item.content_json;
+  const isPending = item.status === "pending_approval";
+
+  // Draft version (when editing)
+  const d = editing ? draft : c;
 
   return (
     <div className="bg-white rounded-lg p-3.5 space-y-2 border-l-4 border-l-[#377D73] shadow-sm">
@@ -379,63 +417,169 @@ function ContentCard({ item, onAction }: { item: ContentItem; onAction: () => vo
           <span className="text-xs font-medium text-gray-800">{CHANNEL_LABELS[item.channel]}</span>
           <span className={cn("badge text-[10px]", STATUS_COLORS[item.status])}>{STATUS_LABELS[item.status]}</span>
         </div>
-        {item.status === "pending_approval" && (
+        {editing ? (
           <div className="flex gap-1">
+            <button
+              onClick={saveEdit}
+              disabled={saving || !hasChanges()}
+              className="flex items-center gap-1 text-[10px] py-0.5 px-2.5 rounded-md bg-[#377D73] text-white hover:bg-[#2d6860] disabled:opacity-40 font-medium transition-colors"
+            >
+              {saving ? <Loader2 size={10} className="animate-spin" /> : null}
+              {saving ? "Đang lưu..." : "Lưu"}
+            </button>
+            <button
+              onClick={cancelEdit}
+              disabled={saving}
+              className="btn-secondary text-[10px] py-0.5 px-2"
+            >
+              Hủy
+            </button>
+          </div>
+        ) : isPending ? (
+          <div className="flex gap-1">
+            <button onClick={startEdit} className="btn-secondary text-[10px] py-0.5 px-2">Sửa</button>
             <button onClick={approve} disabled={loading} className="btn-primary text-[10px] py-0.5 px-2">Duyệt</button>
             <button onClick={() => setShowReject(!showReject)} className="btn-secondary text-[10px] py-0.5 px-2">Từ chối</button>
             <button onClick={regenerate} disabled={loading} className="btn-secondary text-[10px] py-0.5 px-2">Tạo lại</button>
+          </div>
+        ) : (
+          <div className="flex gap-1">
+            <button onClick={startEdit} className="btn-secondary text-[10px] py-0.5 px-2">Sửa</button>
           </div>
         )}
       </div>
 
       {item.channel === "facebook_post" && (
         <div>
-          <p className="text-xs text-gray-600 whitespace-pre-line leading-relaxed">{c.copy as string}</p>
-          <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1.5">
-            {(c.hashtags as string[] || []).map((h: string) => (
-              <span key={h} className="text-[10px] text-[#377D73]">#{h.replace("#", "")}</span>
-            ))}
-          </div>
-          {(c.cta_url as string) ? (
-            <div className="mt-2 pt-2 border-t border-gray-100 flex items-center gap-2">
-              <span className="text-[9px] text-gray-400 uppercase tracking-wide font-medium">Link</span>
-              <a
-                href={(c.cta_url as string)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[11px] text-blue-600 hover:underline truncate max-w-[220px]"
-              >
-                {(c.cta_url as string)}
-              </a>
-              <span className="ml-auto text-[9px] text-gray-400 shrink-0">↗</span>
+          {editing ? (
+            <textarea
+              className="w-full text-xs text-gray-600 border border-blue-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#377D73]/30 bg-blue-50/30 resize-none leading-relaxed"
+              rows={5}
+              value={(d.copy as string) || ""}
+              onChange={(e) => setDraft({ ...draft, copy: e.target.value })}
+              placeholder="Nhập nội dung bài đăng..."
+            />
+          ) : (
+            <p
+              className="text-xs text-gray-600 whitespace-pre-line leading-relaxed cursor-text hover:bg-gray-50 rounded px-1 -mx-1 py-0.5 transition-colors"
+              onClick={isPending ? undefined : startEdit}
+              title={!isPending ? "Nhấn để chỉnh sửa" : undefined}
+            >{c.copy as string}</p>
+          )}
+          {editing ? (
+            <div className="mt-2">
+              <p className="text-[9px] text-gray-400 uppercase mb-1">Hashtags</p>
+              <textarea
+                className="w-full text-xs text-gray-600 border border-blue-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#377D73]/30 bg-blue-50/30 resize-none leading-relaxed"
+                rows={2}
+                value={((d.hashtags as string[]) || []).join(", ")}
+                onChange={(e) => setDraft({ ...draft, hashtags: e.target.value.split(",").map((h) => h.trim()).filter(Boolean) })}
+                placeholder="#hashtag1, #hashtag2, ..."
+              />
+              <div className="mt-2">
+                <p className="text-[9px] text-gray-400 uppercase mb-1">Link đích (cta_url)</p>
+                <input
+                  type="url"
+                  className="w-full text-xs text-gray-600 border border-blue-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#377D73]/30 bg-blue-50/30"
+                  value={(d.cta_url as string) || ""}
+                  onChange={(e) => setDraft({ ...draft, cta_url: e.target.value })}
+                  placeholder="https://..."
+                />
+              </div>
             </div>
-          ) : null}
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1.5">
+                {(c.hashtags as string[] || []).map((h: string) => (
+                  <span key={h} className="text-[10px] text-[#377D73]">#{h.replace("#", "")}</span>
+                ))}
+              </div>
+              {(c.cta_url as string) ? (
+                <div className="mt-2 pt-2 border-t border-gray-100 flex items-center gap-2">
+                  <span className="text-[9px] text-gray-400 uppercase tracking-wide font-medium">Link</span>
+                  <a
+                    href={(c.cta_url as string)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-blue-600 hover:underline truncate max-w-[220px]"
+                  >
+                    {(c.cta_url as string)}
+                  </a>
+                  <span className="ml-auto text-[9px] text-gray-400 shrink-0">↗</span>
+                </div>
+              ) : null}
+            </>
+          )}
         </div>
       )}
 
       {item.channel === "email" && (
         <div className="space-y-1">
           <div>
-            <p className="text-[9px] text-gray-400 uppercase tracking-wide font-medium">Tiêu đề</p>
-            <p className="text-xs font-medium text-gray-800 leading-snug">{c.subject as string}</p>
+            <p className="text-[9px] text-gray-400 uppercase tracking-wide font-medium">
+              {editing ? "Tiêu đề" : "Tiêu đề"}
+            </p>
+            {editing ? (
+              <input
+                type="text"
+                className="w-full text-xs font-medium text-gray-800 border border-blue-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#377D73]/30 bg-blue-50/30 leading-snug"
+                value={(d.subject as string) || ""}
+                onChange={(e) => setDraft({ ...draft, subject: e.target.value })}
+                placeholder="Nhập tiêu đề email..."
+              />
+            ) : (
+              <p
+                className="text-xs font-medium text-gray-800 leading-snug cursor-text hover:bg-gray-50 rounded px-1 -mx-1 py-0.5 transition-colors"
+                onClick={isPending ? undefined : startEdit}
+                title={!isPending ? "Nhấn để chỉnh sửa" : undefined}
+              >{c.subject as string}</p>
+            )}
           </div>
           <div>
             <p className="text-[9px] text-gray-400 uppercase tracking-wide font-medium">Nội dung</p>
-            <p className="text-xs text-gray-600 whitespace-pre-line leading-relaxed">{c.body as string}</p>
+            {editing ? (
+              <textarea
+                className="w-full text-xs text-gray-600 border border-blue-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#377D73]/30 bg-blue-50/30 resize-none leading-relaxed"
+                rows={6}
+                value={(d.body as string) || ""}
+                onChange={(e) => setDraft({ ...draft, body: e.target.value })}
+                placeholder="Nhập nội dung email..."
+              />
+            ) : (
+              <p
+                className="text-xs text-gray-600 whitespace-pre-line leading-relaxed cursor-text hover:bg-gray-50 rounded px-1 -mx-1 py-0.5 transition-colors"
+                onClick={isPending ? undefined : startEdit}
+                title={!isPending ? "Nhấn để chỉnh sửa" : undefined}
+              >{c.body as string}</p>
+            )}
           </div>
-          {(c.cta_text as string) || (c.cta_url as string) ? (
+          {(d.cta_text as string) || (d.cta_url as string) ? (
             <div className="mt-2 pt-2 border-t border-gray-100">
-              <p className="text-[9px] text-gray-400 uppercase tracking-wide font-medium mb-1">Call-to-action</p>
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center px-2.5 py-1 bg-[#377D73]/10 text-[#377D73] rounded-lg text-[10px] font-medium">
-                  {(c.cta_text as string) || "Nhấn vào đây"}
-                </span>
-                {(c.cta_url as string) && (
-                  <span className="text-[9px] text-gray-400 truncate max-w-[180px]" title={c.cta_url as string}>
-                    → {c.cta_url as string}
+              {editing ? (
+                <div className="space-y-1">
+                  <p className="text-[9px] text-gray-400 uppercase tracking-wide font-medium mb-1">Call-to-action</p>
+                  <input
+                    type="text"
+                    className="w-full text-xs border border-blue-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#377D73]/30 bg-blue-50/30"
+                    value={(d.cta_text as string) || ""}
+                    onChange={(e) => setDraft({ ...draft, cta_text: e.target.value })}
+                    placeholder="Text nút bấm (VD: Nhấn vào đây)"
+                  />
+                  <input
+                    type="url"
+                    className="w-full text-xs border border-blue-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#377D73]/30 bg-blue-50/30"
+                    value={(d.cta_url as string) || ""}
+                    onChange={(e) => setDraft({ ...draft, cta_url: e.target.value })}
+                    placeholder="https://..."
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="inline-flex items-center px-3 py-1.5 bg-[#377D73] text-white rounded-lg text-[11px] font-semibold shadow-sm">
+                    {(c.cta_text as string) || "Nhấn vào đây"}
                   </span>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           ) : null}
         </div>
@@ -443,10 +587,26 @@ function ContentCard({ item, onAction }: { item: ContentItem; onAction: () => vo
 
       {item.channel === "video_script" && (
         <div className="space-y-1">
-          {["hook", "body", "cta"].map((k) => (
+          {(["hook", "body", "cta"] as const).map((k) => (
             <div key={k}>
-              <p className="text-[9px] text-gray-400 uppercase tracking-wide font-medium">{k === "hook" ? "Mở đầu" : k === "body" ? "Nội dung" : "CTA"}</p>
-              <p className="text-xs text-gray-600 whitespace-pre-line leading-relaxed">{c[k] as string}</p>
+              <p className="text-[9px] text-gray-400 uppercase tracking-wide font-medium">
+                {k === "hook" ? "Mở đầu" : k === "body" ? "Nội dung" : "CTA"}
+              </p>
+              {editing ? (
+                <textarea
+                  className="w-full text-xs text-gray-600 border border-blue-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#377D73]/30 bg-blue-50/30 resize-none leading-relaxed"
+                  rows={3}
+                  value={(d[k] as string) || ""}
+                  onChange={(e) => setDraft({ ...draft, [k]: e.target.value })}
+                  placeholder={`Nhập ${k === "hook" ? "mở đầu" : k === "body" ? "nội dung" : "CTA"}...`}
+                />
+              ) : (
+                <p
+                  className="text-xs text-gray-600 whitespace-pre-line leading-relaxed cursor-text hover:bg-gray-50 rounded px-1 -mx-1 py-0.5 transition-colors"
+                  onClick={isPending ? undefined : startEdit}
+                  title={!isPending ? "Nhấn để chỉnh sửa" : undefined}
+                >{d[k] as string}</p>
+              )}
             </div>
           ))}
         </div>
