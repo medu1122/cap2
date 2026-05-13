@@ -56,6 +56,9 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(brands.router, prefix="/brands", tags=["brands"])
+# tracking_links phải đăng ký TRƯỚC campaigns vì cùng prefix /campaigns
+# để route /campaigns/{id}/tracking-links được match đúng
+app.include_router(tracking_links.router, prefix="/campaigns", tags=["tracking-links"])
 app.include_router(campaigns.router, prefix="/campaigns", tags=["campaigns"])
 app.include_router(campaign_idea.router, prefix="/campaign-ideas", tags=["campaign-ideas"])
 app.include_router(content.router, prefix="/content", tags=["content"])
@@ -66,7 +69,6 @@ app.include_router(insights.router, prefix="/insights", tags=["insights"])
 app.include_router(insights_chat.router, prefix="/insights", tags=["insights-chat"])
 app.include_router(tracking.router, prefix="/track", tags=["tracking"])
 app.include_router(internal.router, prefix="/internal", tags=["internal"])
-app.include_router(tracking_links.router, prefix="/campaigns", tags=["tracking-links"])
 app.include_router(redirect.router, prefix="/r", tags=["redirect"])
 
 
