@@ -40,7 +40,7 @@ class CampaignCreate(BaseModel):
     @field_validator("source_customer_segment")
     @classmethod
     def validate_source_customer_segment(cls, value: str | None) -> str | None:
-        if value is None:
+        if value is None or value.strip() == "":
             return None
         allowed = {"vip", "potential", "inactive", "unknown"}
         normalized = value.strip().lower()

@@ -119,6 +119,10 @@ export default function StepPreview({
 
   async function handleCreateAndBuild() {
     if (!suggestion || !genDone) return;
+    if (!brief.title.trim() || brief.channels.length === 0) {
+      setError("Vui lòng điền tên chiến dịch và chọn ít nhất một kênh nội dung.");
+      return;
+    }
     setCreating(true);
     setError("");
     try {
