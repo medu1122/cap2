@@ -101,6 +101,20 @@ async def create_tracking_link(
     )
     campaign = result.scalar_one_or_none()
     if not campaign:
+        # DEBUG: log chi tiết để diagnose
+        import logging
+        logging.warning(
+            f"[tracking_links] 404 - campaign_id={campaign_id}, user_id={current_user.id}, "
+            f"campaign_found={result.scalar_one_or_none() is not None}"
+        )
+        # Check xem campaign có tồn tại không (bất kể user)
+        check_any = await db.execute(select(Campaign).where(Campaign.id == campaign_id))
+        campaign_any = check_any.scalar_one_or_none()
+        if campaign_any:
+            logging.warning(
+                f"[tracking_links] Campaign tồn tại nhưng thuộc user_id={campaign_any.user_id}, "
+                f"khác với requester={current_user.id}"
+            )
         raise HTTPException(status_code=404, detail="Không tìm thấy chiến dịch")
 
     # Generate unique short code

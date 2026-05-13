@@ -368,3 +368,72 @@ SmartMetricCard:
 - [ ] Metric comparison mode (2 columns side by side)
 - [ ] Real-time annotation on charts
 - [ ] Storytelling flow (phân tích từng bước)
+
+---
+
+## ✅ IMPLEMENTED — Round 3 (2026-05-13 Evening)
+
+### Backend: Expanded chart builder
+- `_build_chart_data_for_suggestion` rewritten to support ALL chart types:
+  - `gauge`: single value → ring gauge
+  - `rank`: sorted top N bars
+  - `scatter`: two-key x/y scatter
+  - `comparison`: planned vs actual bars
+  - `line`/`area` with multi-key (multiple series)
+  - `bar`/`pie`/`horizontal_bar` with single key
+- Fallback for unknown chart types → renders as bar chart
+
+### Backend: Expanded chart_suggestions per report type
+- `sales_report`: 13 suggestions (line, bar x3, area, pie x2, rank, hbar, scatter, gauge, comparison)
+- `marketing_report`: 7 suggestions
+- `expense_report`: 6 suggestions
+- `payroll_report`: 6 suggestions
+- `budget_report`: 4 suggestions
+- `inventory_report`: 4 suggestions
+- `customer_report`: 4 suggestions
+- `financial_summary`: 4 suggestions
+- `project_report`: 4 suggestions
+- `hr_report`: 4 suggestions
+- `product_report`: 3 suggestions
+- `generic_report`: 3 suggestions
+
+### Backend: Enrichment fixes
+- `top_items`: Fixed for date-based rows (sales_report) — uses row number as label
+- `segment_breakdown`: Added quartile grouping for sales_report when no categorical column found
+
+### Frontend: New chart types in SmartChart
+- `gauge`: SVG ring with percentage
+- `rank`: Horizontal sorted bar list with rank numbers
+- `scatter`: ScatterChart with recharts
+- Fixed fallback: renders unknown types as bar instead of null
+- Added `ScatterChart`, `Scatter` imports from recharts
+
+### Frontend: MetricsPanel improvements
+- `tong_hop`: Added `revenue`, `ad_spend`, `gross_profit`, `net_profit`, `product_cost`, `other_cost`
+- `trung_binh`: Added `aov`, `avg_leads_per_day`
+- `khach_hang`: Added `leads`, `orders`, `repeat_orders`, `qty_sold`
+- `ton_kho`: Added `qty_sold`, `headcount`
+- Added `doanh_so` to groupOrder
+
+### Frontend: EnrichmentPanel fixes
+- `EnrichmentPanel` now accepts `computedKpis` prop (not closure on `analysisResult`)
+- `ComparisonCard` fixed: `computedKpis=undefined` → `computedKpis={computedKpis}` (prop passed from parent)
+- `ComparisonCard` expanded: added `gross_margin`, `repeat_rate`, `new_customer_rate`, `aov`
+- `METRIC_GROUP_LABELS`: Added `doanh_so` group label
+
+---
+
+## KEY BUGS FOUND & FIXED
+1. `ComparisonCard` called with `computedKpis={undefined}` — NEVER showed any comparison bars
+2. `EnrichmentPanel` referenced `analysisResult` which was out of scope — fixed with `computedKpis` prop
+3. `_build_chart_data_for_suggestion` returned None for many chart types — rewritten to support all
+4. `top_items`/`segment_breakdown` returned null for sales_report (date-based rows) — fixed logic
+
+---
+
+## GAP: Backend → Frontend Connection
+- Backend computes `computed_kpis` as a flat dict of key: number pairs
+- Frontend `MetricsPanel` iterates all entries of this dict and groups by key name patterns
+- Backend computes `chart_data` (primary + secondary) — frontend `SmartChart` renders all
+- Backend computes `enrichment` (summary, trend_data, top_items, bottom_items, segment_breakdown, anomalies, key_numbers) — frontend renders all
+- **Pattern**: Backend shapes data → Frontend component decides HOW to display

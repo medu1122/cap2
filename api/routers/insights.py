@@ -70,11 +70,48 @@ VIETNAMESE_COLUMN_HINTS: dict[str, list[str]] = {
         "so_lead",
         "khach_tiem_nang",
         "leads",
+        "số khách tiềm năng",
     ],
     "repeat_orders": [
         "so_don_hang_lap_lai",
         "don_lap_lai",
         "repeat_orders",
+        "số đơn hàng lặp lại",
+    ],
+    "new_customers": [
+        "so_khach_moi",
+        "khach_moi",
+        "new_customers",
+        "số khách hàng mới",
+    ],
+    "quantity": [
+        "so_luong",
+        "so_luong_ban",
+        "quantity",
+        "số lượng sản phẩm",
+        "số lượng sản phẩm bán",
+    ],
+    "product_cost": [
+        "chi_phi_san_pham",
+        "gia_von",
+        "product_cost",
+        "cost_of_goods",
+    ],
+    "other_cost": [
+        "chi_phi_khac",
+        "other_cost",
+    ],
+    "gross_profit": [
+        "loi_nhuan_gop",
+        "gross_profit",
+        "lợi nhuận gộp",
+    ],
+    "net_profit": [
+        "loi_nhuan_rong",
+        "loi_nhuan",
+        "net_profit",
+        "lợi nhuận",
+        "lợi nhuận ròng",
     ],
 }
 
@@ -247,7 +284,16 @@ def _build_chart_data_for_suggestion(
     suggestion: dict[str, Any],
     column_mapping: dict[str, str],
 ) -> dict[str, Any] | None:
-    """Build chart data dict tu chart suggestion + data rows + column mapping."""
+    """Build chart data dict tu chart suggestion + data rows + column mapping.
+    
+    Supports:
+    - bar, horizontal_bar, pie, donut: single-key grouped data → {name, value}
+    - line, area: time-series data (date/month) → {name, value} or multi-key
+    - comparison: planned vs actual → {name, planned, actual}
+    - gauge: single metric → {name, value} (first item only)
+    - rank: sorted top N → {name, value} (sorted desc)
+    - scatter: two-key data → {name, planned, actual}
+    """
     try:
         chart_type = suggestion.get("type", "bar")
         title = suggestion.get("title", "Biểu đồ")
@@ -258,13 +304,127 @@ def _build_chart_data_for_suggestion(
         if not data_keys:
             return None
 
+        # ── GAUGE: single value shown as ring ──────────────────
+        if chart_type == "gauge":
+            primary_key = data_keys[0]
+            mapped_col = column_mapping.get(primary_key, "")
+            if not mapped_col:
+                return None
+            total = sum(_to_float(r.get(mapped_col)) for r in rows if _to_float(r.get(mapped_col)) is not None)
+            count = sum(1 for r in rows if _to_float(r.get(mapped_col)) is not None)
+            val = total / count if count > 0 else total
+            return {
+                "type": "gauge",
+                "title": title,
+                "data": [{"name": primary_key.replace("_", " ").title(), "value": round(val, 4)}],
+            }
+
+        # ── RANK: sorted top N bars ────────────────────────────
+        if chart_type == "rank":
+            primary_key = data_keys[0]
+            mapped_col = column_mapping.get(primary_key, "")
+            if not mapped_col:
+                return None
+            # Group by first available categorical column, or use row index
+            name_col = (
+                column_mapping.get("category") or column_mapping.get("product") or
+                column_mapping.get("customer") or column_mapping.get("date") or ""
+            )
+            if name_col:
+                grouped = _build_numeric_groups(rows, name_col, mapped_col)
+                sorted_items = sorted(grouped.items(), key=lambda x: x[1], reverse=True)[:limit]
+                chart_data = [{"name": k, "value": _round_metric(v, "currency")} for k, v in sorted_items]
+            else:
+                vals = [(f"#{i+1}", _to_float(r.get(mapped_col))) for i, r in enumerate(rows)]
+                sorted_vals = sorted(vals, key=lambda x: x[1] or 0, reverse=True)[:limit]
+                chart_data = [{"name": n, "value": _round_metric(v, "currency")} for n, v in sorted_vals]
+            if not chart_data:
+                return None
+            return {"type": "rank", "title": title, "data": chart_data}
+
+        # ── SCATTER: two keys plotted ──────────────────────────
+        if chart_type == "scatter" and len(data_keys) >= 2:
+            x_key = data_keys[0]
+            y_key = data_keys[1]
+            x_col = column_mapping.get(x_key, "")
+            y_col = column_mapping.get(y_key, "")
+            name_col = column_mapping.get("date", "") or column_mapping.get("product", "") or ""
+            scatter_data = []
+            for r in rows:
+                x_val = _to_float(r.get(x_col)) if x_col else None
+                y_val = _to_float(r.get(y_col)) if y_col else None
+                if x_val is not None and y_val is not None:
+                    name = str(r.get(name_col, "")) if name_col else f"{x_key} vs {y_key}"
+                    scatter_data.append({"name": name, "planned": x_val, "actual": y_val})
+            if not scatter_data:
+                return None
+            return {"type": "scatter", "title": title, "data": scatter_data}
+
+        # ── COMPARISON: planned vs actual ──────────────────────
+        if chart_type == "comparison":
+            planned_col = column_mapping.get("planned", "") or column_mapping.get("du_kien", "")
+            actual_col = column_mapping.get("actual", "") or column_mapping.get("thuc_te", "")
+            group_col = (
+                column_mapping.get("budget_item", "") or column_mapping.get("item", "") or
+                column_mapping.get("hang_muc", "") or column_mapping.get("category", "") or
+                column_mapping.get("product", "") or column_mapping.get("date", "")
+            )
+            if not (planned_col and actual_col and group_col):
+                return None
+            grouped_plan: dict[str, float] = {}
+            grouped_actual: dict[str, float] = {}
+            for r in rows:
+                key = str(r.get(group_col, "Khác"))
+                p = _to_float(r.get(planned_col))
+                a = _to_float(r.get(actual_col))
+                if p is not None:
+                    grouped_plan[key] = grouped_plan.get(key, 0.0) + p
+                if a is not None:
+                    grouped_actual[key] = grouped_actual.get(key, 0.0) + a
+            all_keys = sorted(set(grouped_plan.keys()) | set(grouped_actual.keys()))
+            chart_data = [
+                {"name": k, "planned": _round_metric(grouped_plan.get(k, 0.0), "currency"),
+                 "actual": _round_metric(grouped_actual.get(k, 0.0), "currency")}
+                for k in all_keys
+            ]
+            if not chart_data:
+                return None
+            return {"type": "comparison", "title": title, "data": chart_data}
+
+        # ── LINE / AREA with multi-key ─────────────────────────
+        if chart_type in ("line", "area") and len(data_keys) > 1:
+            date_col = column_mapping.get("date", "") or column_mapping.get("month", "")
+            if not date_col:
+                return None
+            # Multi-key: group by date, emit one row per date with all keys
+            date_groups: dict[str, dict[str, float]] = {}
+            for r in rows:
+                dk = str(r.get(date_col, ""))
+                if not dk:
+                    continue
+                if dk not in date_groups:
+                    date_groups[dk] = {}
+                for dk2 in data_keys:
+                    col = column_mapping.get(dk2, "")
+                    if col:
+                        v = _to_float(r.get(col))
+                        if v is not None:
+                            date_groups[dk][dk2] = date_groups[dk].get(dk2, 0.0) + v
+            sorted_dates = sorted(date_groups.keys())
+            chart_data = [
+                {"name": d, **{k: _round_metric(v, "currency") for k, v in date_groups[d].items()}}
+                for d in sorted_dates
+            ]
+            if not chart_data:
+                return None
+            return {"type": chart_type, "title": title, "data": chart_data}
+
+        # ── LINE / AREA / BAR / PIE — single key ──────────────
         primary_key = data_keys[0]
         mapped_col = column_mapping.get(primary_key, "")
-
         if not mapped_col:
             return None
 
-        # Determine grouping column
         if group_by in ("date", "month"):
             date_col = column_mapping.get("date", "") or column_mapping.get("month", "")
             if not date_col:
@@ -345,8 +505,17 @@ REPORT_TYPE_METADATA: dict[str, dict[str, Any]] = {
         "kpis": ["total_revenue", "total_orders", "total_leads", "avg_order_value", "roas", "conversion_rate", "repeat_rate"],
         "chart_suggestions": [
             {"type": "line", "title": "Xu hướng doanh thu", "data_keys": ["revenue"], "group_by": "date"},
-            {"type": "bar", "title": "Doanh thu theo tháng", "data_keys": ["revenue"], "group_by": "month"},
-            {"type": "pie", "title": "Tỷ lệ đơn hàng theo kênh", "data_keys": ["orders"], "group_by": "category"},
+            {"type": "bar", "title": "Chi phí quảng cáo theo ngày", "data_keys": ["ad_spend"], "group_by": "date"},
+            {"type": "bar", "title": "Doanh thu vs Chi phí quảng cáo", "data_keys": ["revenue", "ad_spend"], "group_by": "date"},
+            {"type": "area", "title": "Lợi nhuận gộp theo ngày", "data_keys": ["gross_profit"], "group_by": "date"},
+            {"type": "pie", "title": "Cơ cấu chi phí", "data_keys": ["ad_spend", "product_cost", "other_cost"], "group_by": "category"},
+            {"type": "bar", "title": "Số đơn hàng theo ngày", "data_keys": ["orders"], "group_by": "date"},
+            {"type": "pie", "title": "Tỷ lệ đơn hàng / khách tiềm năng", "data_keys": ["orders", "leads"], "group_by": "category"},
+            {"type": "rank", "title": "Top ngày có doanh thu cao nhất", "data_keys": ["revenue"], "group_by": "date", "limit": 10},
+            {"type": "horizontal_bar", "title": "Top 10 ngày chi phí cao nhất", "data_keys": ["ad_spend"], "group_by": "date", "limit": 10},
+            {"type": "scatter", "title": "Doanh thu vs Số đơn hàng", "data_keys": ["revenue", "orders"], "group_by": "date"},
+            {"type": "gauge", "title": "Tỷ lệ ROAS trung bình", "data_keys": ["roas"]},
+            {"type": "comparison", "title": "Lợi nhuận gộp vs Lợi nhuận ròng", "data_keys": ["gross_profit", "net_profit"], "group_by": "date"},
         ],
     },
     "marketing_report": {
@@ -359,6 +528,9 @@ REPORT_TYPE_METADATA: dict[str, dict[str, Any]] = {
             {"type": "comparison", "title": "Chi phí vs Doanh thu", "data_keys": ["cost", "revenue"], "group_by": "category"},
             {"type": "pie", "title": "Phân bổ ngân sách", "data_keys": ["cost"], "group_by": "category"},
             {"type": "line", "title": "Xu hướng ROAS", "data_keys": ["roas"], "group_by": "date"},
+            {"type": "bar", "title": "Doanh thu theo kênh", "data_keys": ["revenue"], "group_by": "category"},
+            {"type": "rank", "title": "Top kênh có ROAS cao nhất", "data_keys": ["roas"], "group_by": "category", "limit": 10},
+            {"type": "line", "title": "Chi phí quảng cáo theo thời gian", "data_keys": ["cost"], "group_by": "date"},
         ],
     },
     "expense_report": {
@@ -370,7 +542,9 @@ REPORT_TYPE_METADATA: dict[str, dict[str, Any]] = {
             {"type": "pie", "title": "Chi phí theo danh mục", "data_keys": ["cost"], "group_by": "category"},
             {"type": "bar", "title": "Chi phí theo phòng ban", "data_keys": ["cost"], "group_by": "department"},
             {"type": "line", "title": "Chi phí theo thời gian", "data_keys": ["cost"], "group_by": "date"},
-            {"type": "horizontal_bar", "title": "Top chi phí lớn nhất", "data_keys": ["cost"], "group_by": "category", "limit": 8},
+            {"type": "horizontal_bar", "title": "Top chi phí lớn nhất", "data_keys": ["cost"], "group_by": "category", "limit": 10},
+            {"type": "bar", "title": "Chi phí theo tháng", "data_keys": ["cost"], "group_by": "month"},
+            {"type": "rank", "title": "Top danh mục chi phí cao nhất", "data_keys": ["cost"], "group_by": "category", "limit": 10},
         ],
     },
     "payroll_report": {
@@ -383,6 +557,8 @@ REPORT_TYPE_METADATA: dict[str, dict[str, Any]] = {
             {"type": "bar", "title": "Phân bổ lương thành phần", "data_keys": ["base_salary", "allowance", "bonus", "deduction"], "group_by": "department"},
             {"type": "pie", "title": "Tỷ lệ thưởng theo phòng", "data_keys": ["bonus"], "group_by": "department"},
             {"type": "rank", "title": "Top lương cao nhất", "data_keys": ["net_salary"], "limit": 10},
+            {"type": "bar", "title": "Tổng lương theo phòng ban", "data_keys": ["base_salary"], "group_by": "department"},
+            {"type": "pie", "title": "Cơ cấu lương", "data_keys": ["base_salary", "allowance", "bonus"], "group_by": "category"},
         ],
     },
     "budget_report": {
@@ -481,8 +657,23 @@ REPORT_TYPE_METADATA: dict[str, dict[str, Any]] = {
     },
 }
 
-# Heuristic mapping cho cac loai bao cao khong phai sales
+# Heuristic mapping cho cac loai bao cao
 _REPORT_TYPE_COLUMN_HINTS: dict[str, dict[str, list[str]]] = {
+    # --- Generic/Sales (applied when LLM fails) ---
+    "sales_report": {
+        "revenue": ["doanh_thu", "doanh_thu_thuan_vnd", "tong_thu", "revenue", "tong_doanh_so"],
+        "ad_spend": ["chi_phi_quang_cao", "chi_phi_qc", "chi_phi_marketing", "ad_spend", "ads_cost", "chi_phi_ads", "chi_phi"],
+        "orders": ["so_don_hang", "don_hang", "orders", "order_count", "tong_don"],
+        "leads": ["so_khach_tiem_nang", "khach_tiem_nang", "leads", "potential_customers", "số khách tiềm năng"],
+        "repeat_orders": ["so_don_hang_lai", "don_lai", "repeat_orders", "repeated_orders"],
+        "new_customers": ["so_khach_moi", "khach_moi", "new_customers"],
+        "quantity": ["so_luong_san_pham", "san_pham_ban", "quantity", "so_luong"],
+        "product_cost": ["chi_phi_san_pham", "cost_of_goods", "gia_von", "product_cost"],
+        "other_cost": ["chi_phi_khac", "other_cost", "chi_phi_khac"],
+        "gross_profit": ["loi_nhuan_gop", "gross_profit", "lợi nhuận gộp"],
+        "net_profit": ["loi_nhuan_rong", "loi_nhuan", "net_profit", "lợi nhuận ròng", "lợi nhuận"],
+        "date": ["ngay", "date", "thang", "nam", "time"],
+    },
     "expense_report": {
         "total_cost": ["tong_chi_phi", "tong_chi", "chi_phi", "total_expense", "expense"],
         "category": ["danh_muc", "loai_chi", "category", "expense_type"],
@@ -1004,25 +1195,25 @@ def _build_kpi_availability(
         return {"computable": computable, "reason_if_not": None if computable else reason}
 
     return {
-        "revenue": slot(rc is not None, "Chưa ánh xạ cột doanh thu."),
-        "ad_spend": slot(asc is not None, "Chưa ánh xạ cột chi phí quảng cáo."),
-        "orders": slot(oc is not None, "Chưa ánh xạ cột đơn hàng."),
-        "leads": slot(lc is not None, "Chưa ánh xạ cột lead/khách tiềm năng."),
+        "revenue": slot(rc is not None and revenue > 0, "Cần cột doanh thu với giá trị > 0 để tính tổng doanh thu."),
+        "ad_spend": slot(asc is not None and ad_spend > 0, "Cần cột chi phí quảng cáo với giá trị > 0."),
+        "orders": slot(oc is not None and orders > 0, "Cần cột số đơn hàng với giá trị > 0."),
+        "leads": slot(lc is not None and leads > 0, "Cần cột số khách tiềm năng với giá trị > 0."),
         "roas": slot(
             rc is not None and asc is not None and ad_spend > 0,
-            "ROAS cần đủ cột doanh thu + chi phí QC và tổng chi phí QC > 0.",
+            "ROAS = Doanh thu ÷ Chi phí quảng cáo. Cần cả hai cột và chi phí > 0.",
         ),
         "conversion_rate": slot(
             oc is not None and lc is not None and leads > 0,
-            "Tỷ lệ chuyển đổi cần cột đơn + lead và tổng lead > 0.",
+            "Tỷ lệ chuyển đổi = Đơn hàng ÷ Khách tiềm năng. Cần cột đơn và khách tiềm năng.",
         ),
         "repeat_rate": slot(
             oc is not None and rpc is not None and orders > 0,
-            "Tỷ lệ quay lại cần cột đơn + đơn lặp và tổng đơn > 0.",
+            "Tỷ lệ quay lại = Đơn hàng lặp ÷ Tổng đơn. Cần cột đơn và đơn lặp.",
         ),
         "aov": slot(
             rc is not None and oc is not None and orders > 0,
-            "AOV cần doanh thu + đơn và tổng đơn > 0.",
+            "AOV = Doanh thu ÷ Số đơn. Giá trị TB mỗi đơn hàng.",
         ),
     }
 
@@ -1499,33 +1690,67 @@ async def _run_deep_analysis_gen(
     exploratory_metrics = _exploratory_column_stats(payload.report_rows, columns)
 
     if report_type == "sales_report":
+        # Map tat ca cac cot co the co trong du lieu test
         revenue_col = mapping.get("revenue")
         ad_spend_col = mapping.get("ad_spend")
         orders_col = mapping.get("orders")
         leads_col = mapping.get("leads")
         repeat_col = mapping.get("repeat_orders")
+        new_cust_col = mapping.get("new_customers")
+        qty_col = mapping.get("quantity")
+        product_cost_col = mapping.get("product_cost")
+        other_cost_col = mapping.get("other_cost")
+        gross_profit_col = mapping.get("gross_profit")
+        net_profit_col = mapping.get("net_profit")
+        date_col = mapping.get("date")
 
+        # Tinh tong
         revenue = sum(_to_float(row.get(revenue_col)) for row in payload.report_rows) if revenue_col else 0.0
         ad_spend = sum(_to_float(row.get(ad_spend_col)) for row in payload.report_rows) if ad_spend_col else 0.0
         orders = sum(_to_float(row.get(orders_col)) for row in payload.report_rows) if orders_col else 0.0
         leads = sum(_to_float(row.get(leads_col)) for row in payload.report_rows) if leads_col else 0.0
         repeat_orders = sum(_to_float(row.get(repeat_col)) for row in payload.report_rows) if repeat_col else 0.0
+        new_customers = sum(_to_float(row.get(new_cust_col)) for row in payload.report_rows) if new_cust_col else 0.0
+        qty_sold = sum(_to_float(row.get(qty_col)) for row in payload.report_rows) if qty_col else 0.0
+        product_cost = sum(_to_float(row.get(product_cost_col)) for row in payload.report_rows) if product_cost_col else 0.0
+        other_cost = sum(_to_float(row.get(other_cost_col)) for row in payload.report_rows) if other_cost_col else 0.0
+        gross_profit = sum(_to_float(row.get(gross_profit_col)) for row in payload.report_rows) if gross_profit_col else 0.0
+        net_profit = sum(_to_float(row.get(net_profit_col)) for row in payload.report_rows) if net_profit_col else 0.0
+
+        # Tong chi phi
+        total_cost = ad_spend + product_cost + other_cost
+        # Loi nhuan (neu chua co net_profit thi tu tinh)
+        if net_profit == 0 and gross_profit > 0:
+            net_profit = gross_profit - ad_spend - other_cost
 
         computed_kpis = {
+            # Co ban
             "revenue": revenue,
             "ad_spend": ad_spend,
+            "total_cost": total_cost,
             "orders": orders,
             "leads": leads,
             "repeat_orders": repeat_orders,
+            "new_customers": new_customers,
+            "qty_sold": qty_sold,
+            "product_cost": product_cost,
+            "other_cost": other_cost,
+            "gross_profit": gross_profit,
+            "net_profit": net_profit,
+            # Ty le
             "roas": _safe_div(revenue, ad_spend),
             "conversion_rate": _safe_div(orders, leads),
             "repeat_rate": _safe_div(repeat_orders, orders),
+            "new_customer_rate": _safe_div(new_customers, leads) if leads > 0 else 0.0,
+            # Trung binh
             "aov": _safe_div(revenue, orders),
+            "avg_leads_per_day": _safe_div(leads, max(len(payload.report_rows), 1)),
+            # Loi nhuan
+            "profit_margin": _safe_div(net_profit, revenue),
+            "gross_margin": _safe_div(gross_profit, revenue) if revenue > 0 else 0.0,
         }
         if not revenue_col:
-            data_warnings.append("Không tìm thấy cột doanh thu.")
-        if not orders_col:
-            limitations.append("Chưa đánh giá được tỷ lệ chuyển đổi.")
+            data_warnings.append("Không tìm thấy cột doanh thu ('doanh thu').")
 
     elif report_type == "expense_report":
         total_cost_col = mapping.get("total_cost")
@@ -1818,10 +2043,22 @@ async def _run_deep_analysis_gen(
             if mapped_col:
                 # Find rows with this column
                 vals: list[tuple[str, float]] = []
-                for row in payload.report_rows:
+                for i, row in enumerate(payload.report_rows):
                     v = row.get(mapped_col, 0)
-                    if isinstance(v, (int, float)) and v == v:
-                        label = str(row.get(list({k: v for k in row if k != mapped_col}.keys())[0] if len(row) > 1 else mapped_col, str(v)))
+                    if isinstance(v, (int, float)) and v == v and float(v) != 0:
+                        # For sales_report with date-based rows, use row number as label
+                        # Otherwise try to find the first non-metric string column
+                        label = None
+                        if report_type == "sales_report":
+                            date_val = row.get(mapping.get("date", ""), f"Hàng {i+1}")
+                            label = str(date_val) if date_val else f"Hàng {i+1}"
+                        else:
+                            for k, vv in row.items():
+                                if k != mapped_col and not isinstance(vv, (int, float)):
+                                    label = str(vv)
+                                    break
+                        if label is None:
+                            label = f"Hàng {i+1}"
                         vals.append((label, float(v)))
                 if vals:
                     top5 = sorted(vals, key=lambda x: x[1], reverse=True)[:5]
@@ -1915,7 +2152,44 @@ async def _run_deep_analysis_gen(
             else:
                 enrichment["segment_breakdown"] = None
         else:
-            enrichment["segment_breakdown"] = None
+            # No categorical column found — for sales_report: split by revenue quartiles
+            if report_type == "sales_report" and payload.report_rows:
+                revenue_col = mapping.get("revenue", "") or mapping.get("doanh_thu", "")
+                if revenue_col:
+                    revenues = sorted([
+                        float(row.get(revenue_col, 0)) for row in payload.report_rows
+                        if isinstance(row.get(revenue_col), (int, float))
+                    ], reverse=True)
+                    if revenues:
+                        q1 = revenues[len(revenues)//4] if len(revenues) >= 4 else revenues[-1]
+                        q2 = revenues[len(revenues)//2] if len(revenues) >= 2 else revenues[len(revenues)//2]
+                        q3 = revenues[3*len(revenues)//4] if len(revenues) >= 4 else revenues[0]
+                        # Group into quartiles
+                        groups: dict[str, list[float]] = {"Cao (Top 25%)": [], "Khá (50-75%)": [], "TB (25-50%)": [], "Thấp (Bottom 25%)": []}
+                        for rev in revenues:
+                            if rev >= q1:
+                                groups["Cao (Top 25%)"].append(rev)
+                            elif rev >= q3:
+                                groups["Khá (50-75%)"].append(rev)
+                            elif rev >= q2:
+                                groups["TB (25-50%)"].append(rev)
+                            else:
+                                groups["Thấp (Bottom 25%)"].append(rev)
+                        segments = [
+                            {"name": g, "value": round(sum(vs), 0), "count": len(vs),
+                             "percentage": round(len(vs)/len(revenues)*100, 1)}
+                            for g, vs in groups.items() if vs
+                        ]
+                        if segments:
+                            enrichment["segment_breakdown"] = segments
+                        else:
+                            enrichment["segment_breakdown"] = None
+                    else:
+                        enrichment["segment_breakdown"] = None
+                else:
+                    enrichment["segment_breakdown"] = None
+            else:
+                enrichment["segment_breakdown"] = None
     except Exception:
         enrichment["segment_breakdown"] = None
 
