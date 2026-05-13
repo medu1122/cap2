@@ -1853,6 +1853,7 @@ class BatchSendItem(BaseModel):
 
 
 class SmartContactBatchSendPayload(BaseModel):
+    brand_id: uuid.UUID | None = None
     items: list[BatchSendItem]
 
 
@@ -1885,6 +1886,18 @@ async def smart_contact_batch_send(
         )
     from services.campaign_delivery_service import send_smtp_sync
 
+    # Lấy brand info để hiển thị tên trong email
+    brand_name = None
+    brand_reply_to = None
+    if payload.brand_id:
+        brand_result = await db.execute(
+            select(Brand).where(Brand.id == payload.brand_id, Brand.user_id == current_user.id)
+        )
+        brand = brand_result.scalar_one_or_none()
+        if brand:
+            brand_name = brand.brand_name
+            brand_reply_to = brand.contact_email
+
     results: list[dict[str, str | None]] = []
 
     for item in items:
@@ -1907,7 +1920,15 @@ async def smart_contact_batch_send(
         safe_html = html.escape(rendered_body).replace("\n", "<br>\n")
         html_body = f"<!DOCTYPE html><html><body><div>{safe_html}</div></body></html>"
         try:
-            await asyncio.to_thread(send_smtp_sync, email_addr, rendered_subject, rendered_body, html_body)
+            await asyncio.to_thread(
+                send_smtp_sync,
+                email_addr,
+                rendered_subject,
+                rendered_body,
+                html_body,
+                from_name=brand_name,
+                reply_to=brand_reply_to,
+            )
             results.append({"to": email_addr, "status": "sent", "detail": None})
         except Exception as exc:
             results.append({"to": email_addr, "status": "failed", "detail": str(exc)[:300]})

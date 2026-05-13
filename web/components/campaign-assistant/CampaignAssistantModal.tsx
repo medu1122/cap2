@@ -6,6 +6,15 @@ import StepSuggestions from "./steps/StepSuggestions";
 import StepUserPrefs from "./steps/StepUserPrefs";
 import StepPreview from "./steps/StepPreview";
 
+export type BlockStatus = "idle" | "loading" | "done" | "error";
+export type BuildingStatus = Record<string, BlockStatus>;
+export type ContentBlocks = {
+  email?: Record<string, unknown> | null;
+  post?: Record<string, unknown> | null;
+  video?: Record<string, unknown> | null;
+  imagePrompt?: string | null;
+};
+
 export type SuggestionItem = {
   id: string;
   title: string;

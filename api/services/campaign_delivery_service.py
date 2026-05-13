@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config import settings
 from core.database import AsyncSessionLocal
 from models.campaign import Campaign
+from models.brand import Brand
 from models.campaign_execution_log import CampaignExecutionLog
 from models.campaign_tracking_link import CampaignTrackingLink
 from models.content_item import ContentItem
@@ -62,14 +63,28 @@ def build_email_html(
     return plain, html_part
 
 
-def send_smtp_sync(to_email: str, subject: str, text_body: str, html_body: str) -> None:
+def send_smtp_sync(
+    to_email: str,
+    subject: str,
+    text_body: str,
+    html_body: str,
+    from_name: str | None = None,
+    reply_to: str | None = None,
+) -> None:
     if not settings.SMTP_HOST or not settings.SMTP_USER:
         raise RuntimeError("Chưa cấu hình SMTP (SMTP_HOST / SMTP_USER).")
     from_addr = (settings.SMTP_FROM_EMAIL or settings.SMTP_USER).strip()
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = from_addr
+    # Custom display name: "Brand Name" <system@email.com>
+    if from_name:
+        msg["From"] = f'"{from_name}" <{from_addr}>'
+    else:
+        msg["From"] = from_addr
     msg["To"] = to_email
+    # Reply-To = email thật của user (để khách reply đúng chỗ)
+    if reply_to:
+        msg["Reply-To"] = reply_to
     msg.attach(MIMEText(text_body, "plain", "utf-8"))
     msg.attach(MIMEText(html_body, "html", "utf-8"))
 
@@ -118,6 +133,17 @@ async def run_email_delivery(
             campaign = camp_r.scalar_one_or_none()
             if not campaign:
                 return
+
+            # Lấy brand để có tên hiển thị trong email
+            brand = None
+            brand_name = None
+            brand_reply_to = None
+            if campaign.brand_id:
+                brand_r = await db.execute(select(Brand).where(Brand.id == campaign.brand_id))
+                brand = brand_r.scalar_one_or_none()
+                if brand:
+                    brand_name = brand.brand_name
+                    brand_reply_to = brand.contact_email
 
             list_r = await db.execute(
                 select(CustomerList).where(
@@ -233,6 +259,8 @@ async def run_email_delivery(
                         subject,
                         text_part,
                         html_part,
+                        from_name=brand_name,
+                        reply_to=brand_reply_to,
                     )
                     log.status = "sent"
                     log.sent_at = datetime.now(timezone.utc)
