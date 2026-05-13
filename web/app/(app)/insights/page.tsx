@@ -28,6 +28,17 @@ interface DataSource {
   updated_at: string;
 }
 
+interface DataSourceDetail {
+  id: string;
+  name: string;
+  source_type: string;
+  original_filename: string | null;
+  schema: { columns: Array<{ name: string }> };
+  data: { rows: TableRow[] };
+  created_at: string;
+  updated_at: string;
+}
+
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -793,6 +804,7 @@ export default function InsightsPage() {
   const [columns, setColumns] = useState<Column[]>([]);
   const [rows, setRows] = useState<TableRow[]>([]);
   const [tableName, setTableName] = useState("Bảng dữ liệu mới");
+  const [tableSourceType, setTableSourceType] = useState<"manual" | "csv_upload" | "xlsx_upload">("manual");
   const [dataSources, setDataSources] = useState<DataSource[]>([]);
   const [activeSourceId, setActiveSourceId] = useState<string | null>(null);
   const [chatSession, setChatSession] = useState<ChatSession | null>(null);
@@ -889,6 +901,7 @@ export default function InsightsPage() {
       setColumns(detectedColumns);
       setRows(parsedRows);
       setTableName(file.name.replace(/\.[^/.]+$/, ""));
+      setTableSourceType(lowerName.endsWith(".csv") ? "csv_upload" : "xlsx_upload");
       setActiveSourceId(null);
       setAnalysisResult(null);
     } catch (e) {
@@ -920,7 +933,7 @@ export default function InsightsPage() {
       if (!sourceId) {
         const created = await api.post<{ id: string }>("/insights/data-sources", {
           name: tableName,
-          source_type: "manual",
+          source_type: tableSourceType,
           table_data: {
             columns: columns.map((c) => ({ name: c.name, data_type: c.dataType })),
             rows,
@@ -943,12 +956,20 @@ export default function InsightsPage() {
       const raw = await postNdjsonStream("/insights/a2a/deep-analysis-stream", {
         business_name: tableName,
         industry: null,
-        source_filename: tableName,
+        source_filename: tableSourceType !== "manual" ? tableName : null,
         report_rows: rows,
       }, { signal: controller.signal, onEvent: applyStreamEvent });
 
       const result = raw as DeepAnalysisResult;
       setAnalysisResult(result);
+
+      // Cache to localStorage (no DB needed)
+      try {
+        localStorage.setItem(`insights_result_${sourceId}`, JSON.stringify(result));
+      } catch {
+        // ignore quota errors
+      }
+
       setStreamProgress((p) => ({ ...p, success: true }));
 
       // Create a chat session linked to this analysis result.
@@ -1005,10 +1026,7 @@ export default function InsightsPage() {
     setActiveSourceId(ds.id);
     setTableName(ds.name);
     try {
-      const detail = await api.get<{
-        schema: { columns: Array<{ name: string }> };
-        data: { rows: TableRow[] };
-      }>(`/insights/data-sources/${ds.id}`);
+      const detail = await api.get<DataSourceDetail>(`/insights/data-sources/${ds.id}`);
       setColumns(
         detail.schema.columns.map((c) => ({
           id: generateId(),
@@ -1017,8 +1035,21 @@ export default function InsightsPage() {
         }))
       );
       setRows(detail.data.rows);
+      setTableSourceType((detail.source_type as "manual" | "csv_upload" | "xlsx_upload") || "manual");
       setAnalysisResult(null);
       setChatSession(null);
+      setAppStep("input");
+
+      // Restore cached analysis result from localStorage if available
+      try {
+        const cached = localStorage.getItem(`insights_result_${ds.id}`);
+        if (cached) {
+          setAnalysisResult(JSON.parse(cached));
+          setAppStep("results");
+        }
+      } catch {
+        // ignore cache errors
+      }
     } catch {
       // Ignore
     }

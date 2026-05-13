@@ -69,18 +69,20 @@ def send_smtp_sync(
     text_body: str,
     html_body: str,
     from_name: str | None = None,
+    from_addr: str | None = None,
     reply_to: str | None = None,
 ) -> None:
     if not settings.SMTP_HOST or not settings.SMTP_USER:
         raise RuntimeError("Chưa cấu hình SMTP (SMTP_HOST / SMTP_USER).")
-    from_addr = (settings.SMTP_FROM_EMAIL or settings.SMTP_USER).strip()
+    default_from = (settings.SMTP_FROM_EMAIL or settings.SMTP_USER).strip()
+    sender_addr = (from_addr or default_from).strip()
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     # Custom display name: "Brand Name" <system@email.com>
     if from_name:
-        msg["From"] = f'"{from_name}" <{from_addr}>'
+        msg["From"] = f'"{from_name}" <{sender_addr}>'
     else:
-        msg["From"] = from_addr
+        msg["From"] = sender_addr
     msg["To"] = to_email
     # Reply-To = email thật của user (để khách reply đúng chỗ)
     if reply_to:
@@ -92,7 +94,7 @@ def send_smtp_sync(
         smtp.starttls()
         if settings.SMTP_PASSWORD:
             smtp.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-        smtp.sendmail(from_addr, [to_email], msg.as_string())
+        smtp.sendmail(sender_addr, [to_email], msg.as_string())
 
 
 async def merge_campaign_delivery(db: AsyncSession, campaign: Campaign, patch: dict[str, Any]) -> None:

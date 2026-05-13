@@ -1927,6 +1927,7 @@ async def smart_contact_batch_send(
                 rendered_body,
                 html_body,
                 from_name=brand_name,
+                from_addr=brand.contact_email if brand else None,
                 reply_to=brand_reply_to,
             )
             results.append({"to": email_addr, "status": "sent", "detail": None})

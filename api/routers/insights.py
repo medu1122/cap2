@@ -78,6 +78,320 @@ VIETNAMESE_COLUMN_HINTS: dict[str, list[str]] = {
     ],
 }
 
+# =============================================================================
+# REPORT TYPE TAXONOMY - Moi loai bao cao co schema + KPI + insights rieng
+# =============================================================================
+
+REPORT_TYPE_METADATA: dict[str, dict[str, Any]] = {
+    # --- Marketing & Sales ---
+    "sales_report": {
+        "label": "Báo cáo bán hàng",
+        "description": "Theo dõi doanh thu, đơn hàng, khách hàng theo thời gian hoặc danh mục",
+        "expected_columns": ["doanh_thu", "don_hang", "khach_hang", "ngay", "thang", "nam"],
+        "kpis": ["revenue", "orders", "leads", "ad_spend", "roas", "conversion_rate", "repeat_rate", "aov"],
+        "insight_templates": [
+            "tong_quan_sales",
+            "top_performer",
+            "trend_growth",
+            "anomaly_detection",
+            "customer_segments",
+        ],
+    },
+    "marketing_report": {
+        "label": "Báo cáo Marketing",
+        "description": "Phân tích hiệu quả chiến dịch, chi phí quảng cáo, ROAS theo kênh",
+        "expected_columns": ["kenh", "chi_phi", "doanh_thu", "roi", "click", "impression"],
+        "kpis": ["revenue", "ad_spend", "roas", "conversion_rate", "aov"],
+        "insight_templates": [
+            "channel_roi",
+            "ad_efficiency",
+            "budget_allocation",
+            "campaign_performance",
+        ],
+    },
+    "expense_report": {
+        "label": "Báo cáo chi phí",
+        "description": "Phân tích các khoản chi phí theo danh mục, bộ phận hoặc thời gian",
+        "expected_columns": ["chi_phi", "danh_muc", "bo_phan", "ngay", "nha_cung_cap", "nguoi_duyet"],
+        "kpis": ["total_cost", "cost_by_category", "cost_by_department", "variance"],
+        "insight_templates": [
+            "top_expense_category",
+            "cost_trend",
+            "department_spending",
+            "budget_vs_actual",
+        ],
+    },
+    "payroll_report": {
+        "label": "Báo cáo lương",
+        "description": "Tổng hợp lương, phụ cấp, thưởng, khấu trừ theo nhân viên hoặc phòng ban",
+        "expected_columns": ["nhan_vien", "luong_co_ban", "phu_cap", "thuong", "khau_tru", "luong_rong", "bo_phan"],
+        "kpis": ["total_payroll", "avg_salary", "total_bonus", "total_allowance", "total_deduction", "headcount"],
+        "insight_templates": [
+            "payroll_summary",
+            "department_salary",
+            "bonus_distribution",
+            "salary_outlier",
+        ],
+    },
+    "budget_report": {
+        "label": "Báo cáo ngân sách",
+        "description": "So sánh ngân sách kế hoạch vs thực tế theo hạng mục hoặc quý",
+        "expected_columns": ["hang_muc", "du_kien", "thuc_te", "chenh_lech", "quy", "bo_phan"],
+        "kpis": ["total_planned", "total_actual", "variance", "variance_pct", "budget_utilization"],
+        "insight_templates": [
+            "budget_overview",
+            "over_budget_items",
+            "under_budget_items",
+            "quarterly_comparison",
+        ],
+    },
+    "inventory_report": {
+        "label": "Báo cáo tồn kho",
+        "description": "Theo dõi hàng tồn kho, nhập xuất, điểm đặt hàng lại",
+        "expected_columns": ["san_pham", "ton_kho", "nhap", "xuat", "dau_ky", "cuoi_ky", "dinh_muc"],
+        "kpis": ["total_stock", "stock_value", "turnover_rate", "reorder_needed", "dead_stock"],
+        "insight_templates": [
+            "stock_overview",
+            "low_stock_alert",
+            "slow_moving",
+            "inventory_value",
+        ],
+    },
+    "customer_report": {
+        "label": "Báo cáo khách hàng",
+        "description": "Phân tích danh sách khách hàng, phân loại, giá trị vòng đời",
+        "expected_columns": ["khach_hang", "email", "sdt", "ngay_tao", "phan_loai", "tong_mua"],
+        "kpis": ["total_customers", "new_customers", "active_customers", "avg_ltv", "churn_rate"],
+        "insight_templates": [
+            "customer_overview",
+            "customer_segments",
+            "top_customers",
+            "churn_risk",
+        ],
+    },
+    "financial_summary": {
+        "label": "Báo cáo tài chính",
+        "description": "Bảng cân đối thu chi, lãi lỗ, dòng tiền theo kỳ",
+        "expected_columns": ["ngay", "thu", "chi", "lai_lo", "tong", "quy", "nam"],
+        "kpis": ["total_income", "total_expense", "net_profit", "profit_margin", "cash_flow"],
+        "insight_templates": [
+            "financial_overview",
+            "profit_trend",
+            "expense_breakdown",
+            "monthly_comparison",
+        ],
+    },
+    "project_report": {
+        "label": "Báo cáo dự án",
+        "description": "Theo dõi tiến độ, chi phí, nhân sự theo dự án",
+        "expected_columns": ["du_an", "ngay_bat_dau", "ngay_ket_thuc", "chi_phi", "tien_do", "trang_thai"],
+        "kpis": ["total_projects", "on_time", "over_budget", "completion_rate"],
+        "insight_templates": [
+            "project_overview",
+            "overdue_projects",
+            "budget_by_project",
+        ],
+    },
+    "hr_report": {
+        "label": "Báo cáo nhân sự",
+        "description": "Tổng hợp nhân sự, tuyển dụng, đào tạo, KPI nhân viên",
+        "expected_columns": ["nhan_vien", "bo_phan", "chuc_vu", "ngay_vao", "kpi", "trang_thai"],
+        "kpis": ["total_headcount", "new_hires", "turnover_rate", "avg_kpi", "productivity"],
+        "insight_templates": [
+            "hr_overview",
+            "turnover_analysis",
+            "department_distribution",
+            "kpi_performance",
+        ],
+    },
+    "product_report": {
+        "label": "Báo cáo sản phẩm",
+        "description": "Phân tích doanh số, tồn kho, đánh giá sản phẩm theo SKU",
+        "expected_columns": ["san_pham", "sku", "doanh_so", "so_luong_ban", "gia", "danh_gia"],
+        "kpis": ["total_revenue", "units_sold", "avg_price", "top_products", "return_rate"],
+        "insight_templates": [
+            "product_overview",
+            "top_selling",
+            "slow_moving_products",
+            "price_analysis",
+        ],
+    },
+    "generic_report": {
+        "label": "Báo cáo tổng hợp",
+        "description": "Bảng dữ liệu không xác định rõ loại — phân tích tổng quát",
+        "expected_columns": [],
+        "kpis": [],
+        "insight_templates": ["generic_summary", "numeric_overview", "categorical_overview"],
+    },
+}
+
+# Heuristic mapping cho cac loai bao cao khong phai sales
+_REPORT_TYPE_COLUMN_HINTS: dict[str, dict[str, list[str]]] = {
+    "expense_report": {
+        "total_cost": ["tong_chi_phi", "tong_chi", "chi_phi", "total_expense", "expense"],
+        "category": ["danh_muc", "loai_chi", "category", "expense_type"],
+        "department": ["bo_phan", "phong_ban", "department", "dept"],
+        "vendor": ["nha_cung_cap", "vendor", "supplier"],
+        "date": ["ngay", "date", "thang", "nam"],
+    },
+    "payroll_report": {
+        "employee": ["nhan_vien", "ho_ten", "employee", "name", "staff"],
+        "base_salary": ["luong_co_ban", "luong", "basic_salary", "salary"],
+        "allowance": ["phu_cap", "allowance", "benefits"],
+        "bonus": ["thuong", "bonus", "incentive"],
+        "deduction": ["khau_tru", "deduction", "扣款"],
+        "net_salary": ["luong_rong", "net_salary", "take_home"],
+        "department": ["bo_phan", "phong_ban", "department", "dept"],
+    },
+    "budget_report": {
+        "budget_item": ["hang_muc", "muc", "item", "budget_item"],
+        "planned": ["du_kien", "ke_hoach", "planned", "budget"],
+        "actual": ["thuc_te", "actual", "spent"],
+        "variance": ["chenh_lech", "variance", "difference"],
+        "quarter": ["quy", "quarter", "Q1", "Q2", "Q3", "Q4"],
+        "department": ["bo_phan", "phong_ban", "department"],
+    },
+    "inventory_report": {
+        "item": ["san_pham", "item", "product", "sku", "ten_hang"],
+        "stock_in": ["nhap", "stock_in", "import"],
+        "stock_out": ["xuat", "stock_out", "export"],
+        "balance": ["ton_kho", "balance", "stock", "ton"],
+        "reorder_point": ["dinh_muc", "reorder", "min_stock"],
+    },
+    "customer_report": {
+        "customer": ["khach_hang", "customer", "ho_ten", "name"],
+        "email": ["email", "mail"],
+        "phone": ["sdt", "phone", "dien_thoai"],
+        "segment": ["phan_loai", "segment", "loai_khach", "rank"],
+        "total_purchase": ["tong_mua", "total_purchase", "revenue"],
+        "join_date": ["ngay_tao", "ngay_tham_gia", "join_date", "created"],
+    },
+    "financial_summary": {
+        "income": ["thu", "income", "revenue", "doanh_thu"],
+        "expense": ["chi", "expense", "cost"],
+        "net_profit": ["lai_lo", "profit", "net_profit", "loi_nhuan"],
+        "date": ["ngay", "date", "thang", "nam"],
+    },
+    "project_report": {
+        "project": ["du_an", "project", "ten_du_an"],
+        "start_date": ["ngay_bat_dau", "start_date", "bat_dau"],
+        "end_date": ["ngay_ket_thuc", "end_date", "ket_thuc"],
+        "cost": ["chi_phi", "cost", "budget"],
+        "progress": ["tien_do", "progress", "percent"],
+        "status": ["trang_thai", "status", "state"],
+    },
+    "hr_report": {
+        "employee": ["nhan_vien", "employee", "ho_ten"],
+        "department": ["bo_phan", "phong_ban", "department"],
+        "position": ["chuc_vu", "position", "title", "role"],
+        "hire_date": ["ngay_vao", "hire_date", "ngay_tuyen"],
+        "kpi_score": ["kpi", "score", "diem_kpi"],
+        "status": ["trang_thai", "status"],
+    },
+    "product_report": {
+        "product": ["san_pham", "product", "ten_sp"],
+        "sku": ["sku", "ma_sp", "code"],
+        "revenue": ["doanh_so", "revenue", "doanh_thu"],
+        "quantity": ["so_luong", "quantity", "qty", "ban_ra"],
+        "price": ["gia", "price", "don_gia"],
+        "rating": ["danh_gia", "rating", "sao", "star"],
+    },
+}
+
+
+def _build_report_type_heuristic(columns: list[str]) -> str:
+    """
+    Fallback nhanh khi LLM that bai: guess report type tu ten cot.
+    Khong can doc du lieu.
+    """
+    normalized = {_normalize_text(c): c for c in columns}
+
+    def has_any(tokens: list[str]) -> bool:
+        return any(tkn in normalized for tkn in tokens)
+
+    def score(tokens: list[str]) -> int:
+        return sum(1 for tkn in tokens if tkn in normalized)
+
+    # Chi so cho tung loai
+    payroll_score = score(["luong", "nhan_vien", "phu_cap", "thuong", "khau_tru", "bo_phan"])
+    expense_score = score(["chi_phi", "danh_muc", "nha_cung_cap", "bo_phan"])
+    budget_score = score(["du_kien", "thuc_te", "chenh_lech", "hang_muc", "quy"])
+    inventory_score = score(["ton_kho", "nhap", "xuat", "san_pham", "dinh_muc"])
+    customer_score = score(["khach_hang", "email", "sdt", "phan_loai", "tong_mua"])
+    marketing_score = score(["kenh", "chi_phi", "roi", "click", "impression", "ads"])
+    financial_score = score(["thu", "chi", "lai_lo", "tong", "quy"])
+    project_score = score(["du_an", "tien_do", "trang_thai", "chi_phi"])
+    hr_score = score(["nhan_vien", "chuc_vu", "kpi", "trang_thai"])
+    product_score = score(["san_pham", "sku", "doanh_so", "so_luong", "danh_gia"])
+    sales_score = score(["doanh_thu", "don_hang", "khach_hang", "ngay", "leads"])
+
+    best_type = "generic_report"
+    best_score = 0
+
+    score_map = [
+        ("payroll_report", payroll_score),
+        ("expense_report", expense_score),
+        ("budget_report", budget_score),
+        ("inventory_report", inventory_score),
+        ("customer_report", customer_score),
+        ("marketing_report", marketing_score),
+        ("financial_summary", financial_score),
+        ("project_report", project_score),
+        ("hr_report", hr_score),
+        ("product_report", product_score),
+        ("sales_report", sales_score),
+    ]
+
+    for rtype, sc in score_map:
+        if sc > best_score:
+            best_score = sc
+            best_type = rtype
+
+    return best_type
+
+
+def _map_columns_for_report_type(
+    columns: list[str],
+    report_type: str,
+) -> tuple[dict[str, str | None], dict[str, float]]:
+    """
+    Map cot cu the cho tung loai bao cao.
+    Dung heuristic + LLM (neu co).
+    """
+    mapping: dict[str, str | None] = {}
+    confidence: dict[str, float] = {}
+
+    # Lay hints cho loai nay
+    hints = _REPORT_TYPE_COLUMN_HINTS.get(report_type, {})
+    if not hints:
+        # Fallback ve sales
+        hints = VIETNAMESE_COLUMN_HINTS
+
+    # Tim cot cho tung canonical key
+    for canonical, hint_list in hints.items():
+        found_col: str | None = None
+        found_score = 0.0
+
+        for col in columns:
+            n_col = _normalize_text(col)
+            for hint in hint_list:
+                n_hint = _normalize_text(hint)
+                if n_col == n_hint:
+                    found_col = col
+                    found_score = 0.95
+                    break
+                if n_hint in n_col or n_col in n_hint:
+                    if found_score < 0.82:
+                        found_col = col
+                        found_score = 0.82
+            if found_score >= 0.95:
+                break
+
+        mapping[canonical] = found_col
+        confidence[canonical] = found_score if found_col else 0.0
+
+    return mapping, confidence
+
 # DeepSeek/Ollama hay tra them markdown hoac loi; system ep format de giam trace failed gia.
 _DEEPSEEK_JSON_ONLY_SYSTEM = (
     "Ban chi xuat DUY NHAT mot object JSON hop le (UTF-8). "
@@ -218,13 +532,11 @@ async def _chat_completion_with_retry(
 
 
 def _report_type_vi(report_type: str) -> str:
-    mapping = {
-        "sales_report": "Báo cáo bán hàng",
-        "expense_report": "Báo cáo chi phí",
-        "payroll_report": "Báo cáo lương",
-        "generic_report": "Báo cáo tổng hợp",
-    }
-    return mapping.get(report_type, "Báo cáo tổng hợp")
+    return REPORT_TYPE_METADATA.get(report_type, {}).get("label", "Báo cáo tổng hợp")
+
+
+def _report_description(report_type: str) -> str:
+    return REPORT_TYPE_METADATA.get(report_type, {}).get("description", "")
 
 
 def _build_data_quality(
@@ -232,12 +544,14 @@ def _build_data_quality(
     row_count: int,
     mapping_confidence: dict[str, float],
     data_warnings: list[str],
+    report_type: str = "generic_report",
 ) -> tuple[float, dict[str, float]]:
-    required_keys = ("revenue", "orders", "leads")
-    required_score = sum(mapping_confidence.get(k, 0.0) for k in required_keys) / len(required_keys)
-    optional_keys = ("ad_spend", "repeat_orders")
-    optional_score = sum(mapping_confidence.get(k, 0.0) for k in optional_keys) / len(optional_keys)
-    mapping_score = _clamp(required_score * 0.8 + optional_score * 0.2, 0.0, 1.0)
+    # Lay cac key can thiet tu mapping_confidence thay vi hardcode
+    all_keys = list(mapping_confidence.keys())
+    if not all_keys:
+        mapping_score = 0.0
+    else:
+        mapping_score = sum(mapping_confidence.get(k, 0.0) for k in all_keys) / len(all_keys)
     row_score = _clamp(row_count / 50.0, 0.0, 1.0)
     warning_penalty = min(0.35, 0.08 * len(data_warnings))
     validity_score = _clamp(1.0 - warning_penalty, 0.0, 1.0)
@@ -757,14 +1071,20 @@ async def _run_deep_analysis_gen(
     report_type = "generic_report"
     classify_started = time.perf_counter()
     try:
+        # Danh sach loai bao cao de model chon
+        report_types_list = "\n".join(
+            f"  - {rt}: {meta['description']}"
+            for rt, meta in REPORT_TYPE_METADATA.items()
+            if rt != "generic_report"
+        )
         classify_prompt = (
             "Ban la ClassifierAgent. Chi dung danh sach ten cot va toi da 2 dong mau — KHONG can doc het toan bo hang.\n"
-            "Nhiem vu: xac dinh loai bao cao, mo ta ngan (bang tong hop / bieu do / chi tiet giao dich...), "
-            "va doan vai tro tung cot (revenue, orders, date, category, customer, price, metric_other, unknown).\n"
-            'Tra ve JSON duy nhat: {"report_type":"sales_report|expense_report|payroll_report|generic_report",'
-            '"reason":"ly do ngan",'
-            '"columns_overview":[{"name":"ten cot chinh xac trong Columns","role_guess":"..."}],'
-            '"structure_summary":"mot cau tieng Viet mo ta file"}\n'
+            "Nhiem vu: xac dinh LOAI BAO CAO phu hop nhat, goi y can nhat loai, mo ta ngan, va doan vai tro tung cot.\n"
+            f"Danh sach loai bao cao:\n{report_types_list}\n\n"
+            'Tra ve JSON duy nhat: {"report_type":"<loai bao cao>",'
+            '"report_type_reason":"ly do ngan 1-2 cau vi sao la loai nay",'
+            '"structure_summary":"1 cau tieng Viet mo ta cau truc cua file nay",'
+            '"columns_overview":[{"name":"ten cot chinh xac","role_guess":"<revenue|date|category|customer|metric|other>"}]}\n'
             f"Columns: {json.dumps(columns, ensure_ascii=False)}\n"
             f"Sample toi da 2 dong: {json.dumps(sample_preview, ensure_ascii=False)}\n"
             "Chi tra ve object JSON, khong markdown."
@@ -802,10 +1122,10 @@ async def _run_deep_analysis_gen(
             )
         )
     except Exception as exc:
-        report_type = "sales_report" if any("doanh_thu" in c.lower() for c in columns) else "generic_report"
+        report_type = _build_report_type_heuristic(columns)
         classification = {
             "report_type": report_type,
-            "reason": None,
+            "reason": f"Phân loại tự động (LLM thất bại: {exc})",
             "columns_overview": [],
             "structure_summary": "",
         }
@@ -826,19 +1146,20 @@ async def _run_deep_analysis_gen(
     yield _overlay_evt(0, "finished", "classify_report")
     step_order += 1
 
-    # Buoc 2: DeepSeek map cot ve canonical schema.
+    # Buoc 2: Map cot ve canonical schema theo LOAI BAO CAO.
     yield _overlay_evt(1, "started", "map_schema")
     mapping_started = time.perf_counter()
-    mapping: dict[str, str | None] = {k: None for k in VIETNAMESE_COLUMN_HINTS.keys()}
-    mapping_confidence: dict[str, float] = {k: 0.0 for k in VIETNAMESE_COLUMN_HINTS.keys()}
+    # Chi khoi tao mapping rong; ham map se fill tuy theo report_type
+    mapping: dict[str, str | None] = {}
+    mapping_confidence: dict[str, float] = {}
     try:
         mapping_prompt = (
-            "Ban la MapperAgent. Buoc nay chi chon ten cot CAN THIET de tinh KPI (khong can doc het tung o).\n"
-            "Map sang canonical keys: revenue, ad_spend, orders, leads, repeat_orders. "
-            "Tra ve JSON duy nhat: "
-            '{"revenue":"column_or_null","ad_spend":"column_or_null","orders":"column_or_null","leads":"column_or_null","repeat_orders":"column_or_null"}.\n'
-            f"Columns: {json.dumps(columns, ensure_ascii=False)}\nReport type: {report_type}\n"
-            "Gia tri phai la ten cot chinh xac trong Columns hoac null. Chi tra ve JSON, khong markdown."
+            "Ban la MapperAgent. Map cot sang canonical keys phu hop voi LOAI BAO CAO da xac dinh.\n"
+            f"Loai bao cao: {report_type}\n"
+            "Dung danh sach canonical keys phu hop voi loai nay trong REPORT_TYPE_METADATA lam chuan.\n"
+            "Tra ve JSON duy nhat voi cac canonical_key: ten_cot_chinh_xac_hoac_null.\n"
+            f"Columns: {json.dumps(columns, ensure_ascii=False)}\n"
+            "Chi tra ve JSON, khong markdown."
         )
         mapping_text = await _chat_completion_with_retry(
             base_url=settings.DEEPSEEK_BASE_URL,
@@ -851,14 +1172,13 @@ async def _run_deep_analysis_gen(
             max_attempts=1,
         )
         mapping_json = _extract_json_block(mapping_text) or {}
-        for key in mapping.keys():
-            candidate = mapping_json.get(key)
-            if isinstance(candidate, str) and candidate in columns:
-                mapping[key] = candidate
+        for key, val in mapping_json.items():
+            if isinstance(val, str) and val in columns:
+                mapping[key] = val
                 mapping_confidence[key] = 0.75
-        # Cross-check voi heuristic tieng Viet de tang do tin cay.
-        heuristic_mapping, heuristic_confidence = _heuristic_map_columns(columns)
-        for key in mapping.keys():
+        # Cross-check voi heuristic theo report_type
+        heuristic_mapping, heuristic_confidence = _map_columns_for_report_type(columns, report_type)
+        for key in heuristic_mapping.keys():
             if mapping.get(key) is None and heuristic_mapping.get(key):
                 mapping[key] = heuristic_mapping[key]
                 mapping_confidence[key] = heuristic_confidence[key]
@@ -873,11 +1193,11 @@ async def _run_deep_analysis_gen(
                 settings.DEEPSEEK_MODEL,
                 "success",
                 int((time.perf_counter() - mapping_started) * 1000),
-                {"mapping": mapping, "mapping_confidence": mapping_confidence},
+                {"report_type": report_type, "mapping": mapping, "mapping_confidence": mapping_confidence},
             )
         )
     except Exception as exc:
-        mapping, mapping_confidence = _heuristic_map_columns(columns)
+        mapping, mapping_confidence = _map_columns_for_report_type(columns, report_type)
         if fallback_provider is None:
             fallback_provider = "heuristic"
             fallback_reason = f"schema mapping failed: {exc}"
@@ -912,60 +1232,267 @@ async def _run_deep_analysis_gen(
     step_order += 1
 
     yield _overlay_evt(2, "started", "compute_metrics")
-    revenue_col = mapping.get("revenue")
-    ad_spend_col = mapping.get("ad_spend")
-    orders_col = mapping.get("orders")
-    leads_col = mapping.get("leads")
-    repeat_col = mapping.get("repeat_orders")
-
     metrics_started = time.perf_counter()
-    revenue = sum(_to_float(row.get(revenue_col)) for row in payload.report_rows) if revenue_col else 0.0
-    ad_spend = sum(_to_float(row.get(ad_spend_col)) for row in payload.report_rows) if ad_spend_col else 0.0
-    orders = sum(_to_float(row.get(orders_col)) for row in payload.report_rows) if orders_col else 0.0
-    leads = sum(_to_float(row.get(leads_col)) for row in payload.report_rows) if leads_col else 0.0
-    repeat_orders = sum(_to_float(row.get(repeat_col)) for row in payload.report_rows) if repeat_col else 0.0
 
-    roas = _safe_div(revenue, ad_spend)
-    conversion_rate = _safe_div(orders, leads)
-    repeat_rate = _safe_div(repeat_orders, orders)
-    aov = _safe_div(revenue, orders)
+    # === Tinh KPI dong theo loai bao cao ===
+    computed_kpis: dict[str, Any] = {}
     data_warnings: list[str] = []
-    if mapping.get("revenue") is None:
-        data_warnings.append("Không tìm thấy cột doanh thu. Một số phân tích có thể thiếu chính xác.")
-    if mapping.get("orders") is None:
-        data_warnings.append("Không tìm thấy cột đơn hàng. Hệ thống sẽ hạn chế các phân tích chuyển đổi.")
-    if len(payload.report_rows) < 20:
-        data_warnings.append("Số dòng dữ liệu dưới 20, độ tin cậy phân tích có thể thấp.")
-    if leads_col and orders_col and leads <= 0:
-        data_warnings.append("Tổng lead = 0 sau khi cộng — không tính được tỷ lệ chuyển đổi (không hiển thị 0% như kết luận).")
-    if revenue_col and len(payload.report_rows) >= 5 and revenue == 0:
-        data_warnings.append(
-            "Tổng doanh thu = 0 — kiểm tra đúng cột tiền và định dạng số (phân cách nghìn/thập phân). Độ tin ánh xạ cột doanh thu được hạ xuống."
-        )
-        mapping_confidence["revenue"] = min(float(mapping_confidence.get("revenue", 0.5)), 0.4)
-    if all(score < 0.7 for score in mapping_confidence.values()):
-        data_warnings.append("Khớp cột còn thấp, nên đặt lại tiêu đề cột gần với file mẫu tiếng Việt.")
-
     limitations: list[str] = []
-    if not orders_col:
-        limitations.append("Chưa thể đánh giá chính xác tỷ lệ chuyển đổi do thiếu cột đơn hàng.")
-    if not ad_spend_col:
-        limitations.append("Chưa thể đánh giá hiệu quả quảng cáo đầy đủ do thiếu cột chi phí quảng cáo.")
-    if not repeat_col:
-        limitations.append("Chưa thể đánh giá hành vi khách quay lại do thiếu cột đơn hàng lặp lại.")
-    if not revenue_col:
-        limitations.append("Thiếu cột doanh thu nên các chỉ số giá trị đơn hàng chỉ mang tính tham khảo.")
+
+    # Thong ke khap bo (luon chay, phuc vu insight)
+    exploratory_metrics = _exploratory_column_stats(payload.report_rows, columns)
+
+    if report_type == "sales_report":
+        revenue_col = mapping.get("revenue")
+        ad_spend_col = mapping.get("ad_spend")
+        orders_col = mapping.get("orders")
+        leads_col = mapping.get("leads")
+        repeat_col = mapping.get("repeat_orders")
+
+        revenue = sum(_to_float(row.get(revenue_col)) for row in payload.report_rows) if revenue_col else 0.0
+        ad_spend = sum(_to_float(row.get(ad_spend_col)) for row in payload.report_rows) if ad_spend_col else 0.0
+        orders = sum(_to_float(row.get(orders_col)) for row in payload.report_rows) if orders_col else 0.0
+        leads = sum(_to_float(row.get(leads_col)) for row in payload.report_rows) if leads_col else 0.0
+        repeat_orders = sum(_to_float(row.get(repeat_col)) for row in payload.report_rows) if repeat_col else 0.0
+
+        computed_kpis = {
+            "revenue": revenue,
+            "ad_spend": ad_spend,
+            "orders": orders,
+            "leads": leads,
+            "repeat_orders": repeat_orders,
+            "roas": _safe_div(revenue, ad_spend),
+            "conversion_rate": _safe_div(orders, leads),
+            "repeat_rate": _safe_div(repeat_orders, orders),
+            "aov": _safe_div(revenue, orders),
+        }
+        if not revenue_col:
+            data_warnings.append("Không tìm thấy cột doanh thu.")
+        if not orders_col:
+            limitations.append("Chưa đánh giá được tỷ lệ chuyển đổi.")
+
+    elif report_type == "expense_report":
+        total_cost_col = mapping.get("total_cost")
+        category_col = mapping.get("category")
+        department_col = mapping.get("department")
+
+        total_cost = sum(_to_float(row.get(total_cost_col)) for row in payload.report_rows) if total_cost_col else 0.0
+        computed_kpis = {"total_cost": total_cost}
+
+        # Thong ke chi phi theo danh muc
+        if category_col:
+            category_totals: dict[str, float] = {}
+            for row in payload.report_rows:
+                cat = str(row.get(category_col) or "Khác")
+                category_totals[cat] = category_totals.get(cat, 0.0) + _to_float(row.get(total_cost_col))
+            computed_kpis["cost_by_category"] = category_totals
+        if department_col:
+            dept_totals: dict[str, float] = {}
+            for row in payload.report_rows:
+                dept = str(row.get(department_col) or "Khác")
+                dept_totals[dept] = dept_totals.get(dept, 0.0) + _to_float(row.get(total_cost_col))
+            computed_kpis["cost_by_department"] = dept_totals
+
+    elif report_type == "payroll_report":
+        base_salary_col = mapping.get("base_salary")
+        allowance_col = mapping.get("allowance")
+        bonus_col = mapping.get("bonus")
+        deduction_col = mapping.get("deduction")
+        net_salary_col = mapping.get("net_salary")
+        employee_col = mapping.get("employee")
+
+        salaries = _series_numeric_values([row.get(base_salary_col) for row in payload.report_rows]) if base_salary_col else []
+        allowances = _series_numeric_values([row.get(allowance_col) for row in payload.report_rows]) if allowance_col else []
+        bonuses = _series_numeric_values([row.get(bonus_col) for row in payload.report_rows]) if bonus_col else []
+        deductions = _series_numeric_values([row.get(deduction_col) for row in payload.report_rows]) if deduction_col else []
+        net_salaries = _series_numeric_values([row.get(net_salary_col) for row in payload.report_rows]) if net_salary_col else []
+
+        headcount = len(payload.report_rows)
+        computed_kpis = {
+            "headcount": headcount,
+            "total_payroll": sum(net_salaries) if net_salaries else sum(salaries) + sum(allowances) + sum(bonuses) - sum(deductions),
+            "avg_salary": sum(salaries) / len(salaries) if salaries else 0.0,
+            "total_allowance": sum(allowances),
+            "total_bonus": sum(bonuses),
+            "total_deduction": sum(deductions),
+            "min_salary": min(salaries) if salaries else 0.0,
+            "max_salary": max(salaries) if salaries else 0.0,
+        }
+        if employee_col:
+            computed_kpis["employees"] = list({str(row.get(employee_col)) for row in payload.report_rows if row.get(employee_col)})
+
+    elif report_type == "budget_report":
+        planned_col = mapping.get("planned")
+        actual_col = mapping.get("actual")
+        variance_col = mapping.get("variance")
+        item_col = mapping.get("budget_item")
+
+        planned_vals = _series_numeric_values([row.get(planned_col) for row in payload.report_rows]) if planned_col else []
+        actual_vals = _series_numeric_values([row.get(actual_col) for row in payload.report_rows]) if actual_col else []
+        total_planned = sum(planned_vals)
+        total_actual = sum(actual_vals)
+        total_variance = total_actual - total_planned
+
+        computed_kpis = {
+            "total_planned": total_planned,
+            "total_actual": total_actual,
+            "total_variance": total_variance,
+            "variance_pct": _safe_div(total_variance, total_planned),
+            "budget_utilization": _safe_div(total_actual, total_planned),
+        }
+        if item_col:
+            item_breakdown = []
+            for row in payload.report_rows:
+                p = _to_float(row.get(planned_col))
+                a = _to_float(row.get(actual_col))
+                item_breakdown.append({
+                    "item": str(row.get(item_col) or ""),
+                    "planned": p,
+                    "actual": a,
+                    "variance": a - p,
+                })
+            computed_kpis["items"] = item_breakdown
+
+    elif report_type == "inventory_report":
+        balance_col = mapping.get("balance")
+        stock_in_col = mapping.get("stock_in")
+        stock_out_col = mapping.get("stock_out")
+        item_col = mapping.get("item")
+
+        balances = _series_numeric_values([row.get(balance_col) for row in payload.report_rows]) if balance_col else []
+        stock_ins = _series_numeric_values([row.get(stock_in_col) for row in payload.report_rows]) if stock_in_col else []
+        stock_outs = _series_numeric_values([row.get(stock_out_col) for row in payload.report_rows]) if stock_out_col else []
+
+        computed_kpis = {
+            "total_stock": sum(balances),
+            "total_stock_in": sum(stock_ins),
+            "total_stock_out": sum(stock_outs),
+            "avg_stock": sum(balances) / len(balances) if balances else 0.0,
+            "item_count": len(payload.report_rows),
+        }
+        if item_col:
+            low_stock_items = [str(row.get(item_col)) for row in payload.report_rows if _to_float(row.get(balance_col)) < _to_float(row.get("reorder_point", 0))]
+            computed_kpis["low_stock_items"] = low_stock_items
+
+    elif report_type == "customer_report":
+        customer_col = mapping.get("customer")
+        total_purchase_col = mapping.get("total_purchase")
+        segment_col = mapping.get("segment")
+
+        customers = [str(row.get(customer_col)) for row in payload.report_rows if row.get(customer_col)]
+        purchases = _series_numeric_values([row.get(total_purchase_col) for row in payload.report_rows]) if total_purchase_col else []
+
+        computed_kpis = {
+            "total_customers": len(set(customers)),
+            "avg_ltv": sum(purchases) / len(purchases) if purchases else 0.0,
+            "total_revenue": sum(purchases),
+        }
+        if segment_col:
+            seg_counts: dict[str, int] = {}
+            for row in payload.report_rows:
+                seg = str(row.get(segment_col) or "Khác")
+                seg_counts[seg] = seg_counts.get(seg, 0) + 1
+            computed_kpis["segments"] = seg_counts
+
+    elif report_type == "financial_summary":
+        income_col = mapping.get("income")
+        expense_col = mapping.get("expense")
+        profit_col = mapping.get("net_profit")
+
+        incomes = _series_numeric_values([row.get(income_col) for row in payload.report_rows]) if income_col else []
+        expenses = _series_numeric_values([row.get(expense_col) for row in payload.report_rows]) if expense_col else []
+        profits = _series_numeric_values([row.get(profit_col) for row in payload.report_rows]) if profit_col else []
+
+        total_income = sum(incomes)
+        total_expense = sum(expenses)
+        total_profit = sum(profits) if profits else (total_income - total_expense)
+
+        computed_kpis = {
+            "total_income": total_income,
+            "total_expense": total_expense,
+            "net_profit": total_profit,
+            "profit_margin": _safe_div(total_profit, total_income),
+            "expense_ratio": _safe_div(total_expense, total_income),
+        }
+
+    elif report_type == "project_report":
+        cost_col = mapping.get("cost")
+        progress_col = mapping.get("progress")
+        status_col = mapping.get("status")
+
+        costs = _series_numeric_values([row.get(cost_col) for row in payload.report_rows]) if cost_col else []
+        progress_vals = _series_numeric_values([row.get(progress_col) for row in payload.report_rows]) if progress_col else []
+        statuses = [str(row.get(status_col) or "") for row in payload.report_rows]
+
+        computed_kpis = {
+            "total_projects": len(payload.report_rows),
+            "total_cost": sum(costs),
+            "avg_progress": sum(progress_vals) / len(progress_vals) if progress_vals else 0.0,
+            "completed": statuses.count("Hoàn thành") + statuses.count("completed") + statuses.count("done"),
+            "in_progress": statuses.count("Đang thực hiện") + statuses.count("in_progress") + statuses.count("active"),
+            "overdue": statuses.count("Quá hạn") + statuses.count("overdue") + statuses.count("late"),
+        }
+
+    elif report_type == "hr_report":
+        employee_col = mapping.get("employee")
+        kpi_col = mapping.get("kpi_score")
+        status_col = mapping.get("status")
+
+        employees = [str(row.get(employee_col)) for row in payload.report_rows if row.get(employee_col)]
+        kpis = _series_numeric_values([row.get(kpi_col) for row in payload.report_rows]) if kpi_col else []
+        statuses = [str(row.get(status_col) or "") for row in payload.report_rows]
+
+        computed_kpis = {
+            "total_headcount": len(set(employees)),
+            "avg_kpi": sum(kpis) / len(kpis) if kpis else 0.0,
+            "active": statuses.count("active") + statuses.count("Đang làm") + statuses.count("Đang hoạt động"),
+            "on_leave": statuses.count("leave") + statuses.count("Nghỉ phép") + statuses.count("nghỉ"),
+        }
+
+    elif report_type == "product_report":
+        revenue_col = mapping.get("revenue")
+        quantity_col = mapping.get("quantity")
+        price_col = mapping.get("price")
+
+        revenues = _series_numeric_values([row.get(revenue_col) for row in payload.report_rows]) if revenue_col else []
+        quantities = _series_numeric_values([row.get(quantity_col) for row in payload.report_rows]) if quantity_col else []
+        prices = _series_numeric_values([row.get(price_col) for row in payload.report_rows]) if price_col else []
+
+        computed_kpis = {
+            "total_revenue": sum(revenues),
+            "total_units_sold": sum(quantities),
+            "avg_price": sum(prices) / len(prices) if prices else 0.0,
+            "product_count": len(payload.report_rows),
+        }
+
+    else:
+        # generic_report: chi lay thong ke so
+        computed_kpis = {}
+        data_warnings.append("Không xác định được loại báo cáo — chỉ hiển thị thống kê tổng quan.")
+
+    # Kiem tra chat luong du lieu chung
+    if len(payload.report_rows) < 5:
+        data_warnings.append(f"Số dòng dữ liệu rất ít ({len(payload.report_rows)}) — kết quả chỉ mang tính tham khảo.")
+    if mapping and all(v == 0.0 for v in mapping_confidence.values()):
+        data_warnings.append("Ánh xạ cột còn thấp — kết quả có thể không chính xác. Hãy đặt tên cột gần với tiếng Việt chuẩn.")
+
+    # Chi so KPI co ban (gan lai de tuong thich frontend)
+    revenue = computed_kpis.get("revenue", computed_kpis.get("total_income", 0.0))
+    ad_spend = computed_kpis.get("ad_spend", 0.0)
+    orders = computed_kpis.get("orders", computed_kpis.get("total_units_sold", 0.0))
+    leads = computed_kpis.get("leads", 0.0)
+    repeat_orders = computed_kpis.get("repeat_orders", 0.0)
+
+    kpi_availability = _build_kpi_availability(
+        mapping, revenue, ad_spend, orders, leads, repeat_orders
+    )
 
     data_quality_score, data_quality_breakdown = _build_data_quality(
         row_count=len(payload.report_rows),
         mapping_confidence=mapping_confidence,
         data_warnings=data_warnings,
+        report_type=report_type,
     )
-
-    kpi_availability = _build_kpi_availability(mapping, revenue, ad_spend, orders, leads, repeat_orders)
-
-    # Thong ke khap bo: min/max/trung binh cot so, top gia tri cot phan loai, goi y cot khach/gia (nhieu truong hop).
-    exploratory_metrics = _exploratory_column_stats(payload.report_rows, columns)
 
     traces.append(
         (
@@ -977,10 +1504,10 @@ async def _run_deep_analysis_gen(
             "success",
             int((time.perf_counter() - metrics_started) * 1000),
             {
+                "report_type": report_type,
                 "rows": len(payload.report_rows),
                 "mapping": mapping,
-                "numeric_stats_count": len(exploratory_metrics.get("numeric_columns") or []),
-                "categorical_stats_count": len(exploratory_metrics.get("categorical_columns") or []),
+                "kpis_computed": list(computed_kpis.keys()),
             },
         )
     )
@@ -1017,6 +1544,16 @@ async def _run_deep_analysis_gen(
                 )
             )
 
+    # Buoc 5: Qwen dien giai ket qua. Neu fail thi fallback GPT/OpenAI.
+    yield _overlay_evt(3, "started", "narrative")
+    narrative_started = time.perf_counter()
+
+    # Lay KPI tuong thich voi frontend (luon tra ve cac field co ban)
+    roas = _safe_div(revenue, ad_spend)
+    conversion_rate = _safe_div(orders, leads)
+    repeat_rate = _safe_div(repeat_orders, orders)
+    aov = _safe_div(revenue, orders)
+
     issues = _build_issues_from_kpis(kpi_availability, roas, conversion_rate, repeat_rate)
     situations, suggested_actions = _build_situations_and_actions(
         kpi_availability=kpi_availability,
@@ -1027,15 +1564,13 @@ async def _run_deep_analysis_gen(
         },
         issues=issues,
     )
-
-    # Khong seed insight template — de LLM hoac fallback rong; insight chi sau validate.
     insights: list[dict[str, Any]] = []
     action_plan: dict[str, list[str]] = {"day_30": [], "day_60": [], "day_90": []}
 
-    # Buoc 5: Qwen dien giai ket qua. Neu fail thi fallback GPT/OpenAI.
-    yield _overlay_evt(3, "started", "narrative")
-    narrative_started = time.perf_counter()
     narrative_payload = {
+        "report_type": report_type,
+        "report_type_vi": _report_type_vi(report_type),
+        "report_description": REPORT_TYPE_METADATA.get(report_type, {}).get("description", ""),
         "kpis": {
             "revenue": revenue,
             "ad_spend": ad_spend,
@@ -1046,23 +1581,36 @@ async def _run_deep_analysis_gen(
             "repeat_rate": repeat_rate,
             "aov": aov,
         },
+        "computed_kpis": computed_kpis,
         "kpi_availability": kpi_availability,
         "issues": issues,
         "business_name": payload.business_name,
         "industry": payload.industry,
         "classification": classification,
         "exploratory_metrics": exploratory_metrics,
+        "data_warnings": data_warnings,
     }
     try:
+        # Prompt cho NarrativeAgent: phan biet theo loai bao cao
+        report_type_info = REPORT_TYPE_METADATA.get(report_type, {})
+        insight_templates = ", ".join(report_type_info.get("insight_templates", []))
+        report_desc = _report_description(report_type)
+
         narrative_prompt = (
-            "Ban la NarratorAgent cho SMB. Tra ve JSON schema: "
+            "Ban la NarratorAgent cho doanh nghiep nho VN.\n"
+            f"Loai bao cao: {_report_type_vi(report_type)}\n"
+            f"Mo ta: {report_desc}\n"
+            "Nhiem vu: dien giai ket qua phan tich, dua ra nhận định va goi y hanh dong CU THE, PHU HOP voi loai bao cao.\n"
+            "Tra ve JSON schema:\n"
             '{"insights":[{"title":"...","severity":"Cao|Vừa|Thấp","evidence":{"metric":1},"recommendation":"..."}],'
             '"action_plan_30_60_90":{"day_30":["..."],"day_60":["..."],"day_90":["..."]}}.\n'
-            "QUY TAC BAT BUOC: field kpi_availability cho biet KPI nao 'tinh duoc' (computable=true). "
-            "NEU computable=false cho roas / conversion_rate / repeat_rate thi TUYET DOI khong viet insight "
-            "ve ROAS, toi uu quang cao, ty le chuyen doi, ty le quay lai cho chi so do. "
-            "Neu khong co KPI marketing tinh duoc, tra ve insights: [] va action_plan rong hoac chi goi y bo sung cot du lieu.\n"
-            "Neu co classification va exploratory_metrics: dung so lieu thuc (min/max/trung binh) de noi, tranh khuyen nghi chung.\n"
+            "QUY TAC BAT BUOC:\n"
+            "1. Dung loai bao cao de chon insight phu hop. Neu la expense thi chi noi chi phi, neu la payroll thi chi noi luong, khong bat chap.\n"
+            "2. KPI nao co computable=false trong kpi_availability thi TUYET DOI khong viet insight ve no.\n"
+            "3. Dung computed_kpis va exploratory_metrics (min/max/trung binh) lam minh chung, khong nghi ra.\n"
+            "4. Neu computed_kpis co key dac thu (vd cost_by_category, items, segments) thi PHAN TICH no, khong bo qua.\n"
+            f"5. Goi y cac loai insight: {insight_templates}\n"
+            "6. Hanh dong phai THEO LOAI: expense -> goi y tiet che; payroll -> goi y tot nhan su; budget -> goi y can doi ngan sach...\n"
             f"Input: {json.dumps(narrative_payload, ensure_ascii=False)}"
         )
         qwen_read_timeout = _analysis_llm_timeout()
@@ -1347,6 +1895,8 @@ async def _run_deep_analysis_gen(
             "repeat_rate": repeat_rate,
             "aov": aov,
         },
+        "computed_kpis": computed_kpis,
+        "report_description": _report_description(report_type),
         "schema_mapping": mapping,
         "mapping_confidence": mapping_confidence,
         "insights": insights,

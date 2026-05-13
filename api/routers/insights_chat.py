@@ -56,6 +56,7 @@ class TableDataSchema(BaseModel):
 class CreateDataSourceRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     source_type: str = "manual"
+    original_filename: str | None = None
     table_data: TableDataSchema | None = None
 
 
@@ -335,13 +336,76 @@ async def list_data_sources(
         {
             "id": str(s.id),
             "name": s.name,
+            "source_type": s.source_type,
             "row_count": len(s.data_json.get("rows", []))
             if s.data_json
             else 0,
+            "column_count": len(s.schema_json.get("columns", []))
+            if s.schema_json
+            else 0,
+            "original_filename": s.original_filename,
             "created_at": s.created_at.isoformat(),
+            "updated_at": s.updated_at.isoformat(),
         }
         for s in sources
     ]
+
+
+@router.get("/data-sources/{source_id}")
+async def get_data_source(
+    source_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(InsightDataSource).where(
+            InsightDataSource.id == source_id,
+            InsightDataSource.user_id == current_user.id,
+        )
+    )
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(404, "Data source not found")
+
+    return {
+        "id": str(source.id),
+        "name": source.name,
+        "source_type": source.source_type,
+        "original_filename": source.original_filename,
+        "schema": source.schema_json or {"columns": []},
+        "data": source.data_json or {"rows": []},
+        "created_at": source.created_at.isoformat(),
+        "updated_at": source.updated_at.isoformat(),
+    }
+
+
+@router.put("/data-sources/{source_id}")
+async def update_data_source(
+    source_id: uuid.UUID,
+    payload: CreateDataSourceRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(InsightDataSource).where(
+            InsightDataSource.id == source_id,
+            InsightDataSource.user_id == current_user.id,
+        )
+    )
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(404, "Data source not found")
+
+    if payload.name:
+        source.name = payload.name
+    if payload.source_type:
+        source.source_type = payload.source_type
+    if payload.table_data:
+        source.schema_json = {"columns": [c.model_dump() for c in payload.table_data.columns]}
+        source.data_json = {"rows": payload.table_data.rows}
+
+    await db.commit()
+    return {"id": str(source.id), "name": source.name}
 
 
 @router.post("/data-sources")
@@ -361,6 +425,7 @@ async def create_data_source(
         user_id=current_user.id,
         name=payload.name,
         source_type=payload.source_type,
+        original_filename=payload.original_filename,
         schema_json={
             "columns": [
                 c.model_dump()
