@@ -15,6 +15,11 @@ export type ContentBlocks = {
   imagePrompt?: string | null;
 };
 
+export type TrackingLinkInput = {
+  name: string;
+  destination_url: string;
+};
+
 export type SuggestionItem = {
   id: string;
   title: string;
@@ -74,6 +79,7 @@ export default function CampaignAssistantModal({ onClose }: Props) {
     timing: "",
     customer_segment: "",
   });
+  const [trackingLinks, setTrackingLinks] = useState<TrackingLinkInput[]>([]);
 
   const stepIndex = STEPS.indexOf(step);
 
@@ -157,6 +163,8 @@ export default function CampaignAssistantModal({ onClose }: Props) {
               brief={brief}
               onBriefChange={setBrief}
               brandId={brandId}
+              trackingLinks={trackingLinks}
+              onTrackingLinksChange={setTrackingLinks}
               onClose={onClose}
             />
           )}

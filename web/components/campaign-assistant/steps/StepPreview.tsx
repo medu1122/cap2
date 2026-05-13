@@ -1,9 +1,9 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Clock, Users, Check, ChevronDown } from "lucide-react";
+import { Loader2, Clock, Users, Check, ChevronDown, Link2, Plus, Trash2, Copy, CheckCircle2 } from "lucide-react";
 import { api } from "@/lib/api-client";
-import type { SuggestionItem, BriefForm, UserPrefs } from "../CampaignAssistantModal";
+import type { SuggestionItem, BriefForm, UserPrefs, TrackingLinkInput } from "../CampaignAssistantModal";
 
 interface Props {
   suggestion: SuggestionItem | null;
@@ -11,6 +11,8 @@ interface Props {
   brief: BriefForm;
   onBriefChange: (b: BriefForm) => void;
   brandId: string;
+  trackingLinks: TrackingLinkInput[];
+  onTrackingLinksChange: (links: TrackingLinkInput[]) => void;
   onClose: () => void;
 }
 
@@ -55,6 +57,8 @@ export default function StepPreview({
   brief,
   onBriefChange,
   brandId,
+  trackingLinks,
+  onTrackingLinksChange,
   onClose,
 }: Props) {
   const router = useRouter();
@@ -63,6 +67,12 @@ export default function StepPreview({
   const [error, setError] = useState("");
   const [genDone, setGenDone] = useState(false);
   const [showObjectivePicker, setShowObjectivePicker] = useState(false);
+  const [showTrackingForm, setShowTrackingForm] = useState(false);
+  const [linkForm, setLinkForm] = useState({ name: "", destination_url: "" });
+  const [linkError, setLinkError] = useState("");
+  const [createdLinks, setCreatedLinks] = useState<{ short_code: string; name: string }[]>([]);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [createdCampaignId, setCreatedCampaignId] = useState<string>("");
 
   // Auto-generate brief when entering this step
   useEffect(() => {
@@ -143,18 +153,34 @@ export default function StepPreview({
       });
       const campaignId = campaignRes.id;
       console.log("[StepPreview] Campaign created:", campaignId);
+      setCreatedCampaignId(campaignId);
 
-      // 3. Run the agent dispatcher to generate content (same as manual flow)
+      // 3. Tạo tracking links nếu user có bổ sung
+      if (trackingLinks.length > 0) {
+        const created: { short_code: string; name: string }[] = [];
+        for (const link of trackingLinks) {
+          const createdLink = await api.post<{ short_code: string }>(`/campaigns/${campaignId}/tracking-links`, {
+            name: link.name,
+            destination_url: link.destination_url,
+          });
+          created.push({ short_code: createdLink.short_code, name: link.name });
+        }
+        setCreatedLinks(created);
+        console.log("[StepPreview] Tracking links created:", created);
+      }
+
+      // 4. Run the agent dispatcher to generate content (same as manual flow)
       // This ensures content_items are created properly with brand context
       await api.post(`/campaigns/${campaignId}/run`);
       console.log("[StepPreview] Campaign agent started");
 
-      // 4. Close modal + redirect to campaign page
-      onClose();
-      // Wait for modal to close, then redirect and force reload
-      setTimeout(() => {
-        router.push(`/campaigns/${campaignId}`);
-      }, 300);
+      // 5. Close modal + redirect to campaign page
+      if (trackingLinks.length === 0) {
+        onClose();
+        setTimeout(() => {
+          router.push(`/campaigns/${campaignId}`);
+        }, 300);
+      }
     } catch (err) {
       console.error("[StepPreview] create error:", err);
       const msg = err instanceof Error ? err.message : "Không thể tạo. Vui lòng thử lại.";
@@ -175,9 +201,86 @@ export default function StepPreview({
     updateBrief("channels", channels);
   }
 
+  function addTrackingLink() {
+    if (!linkForm.name.trim() || !linkForm.destination_url.trim()) {
+      setLinkError("Nhập đầy đủ tên và URL đích");
+      return;
+    }
+    if (!linkForm.destination_url.startsWith("http")) {
+      setLinkError("URL phải bắt đầu bằng http:// hoặc https://");
+      return;
+    }
+    setLinkError("");
+    onTrackingLinksChange([...trackingLinks, { name: linkForm.name.trim(), destination_url: linkForm.destination_url.trim() }]);
+    setLinkForm({ name: "", destination_url: "" });
+  }
+
+  function removeTrackingLink(index: number) {
+    onTrackingLinksChange(trackingLinks.filter((_, i) => i !== index));
+  }
+
+  function copyRedirectUrl(shortCode: string) {
+    const url = `${window.location.origin}/r/${shortCode}`;
+    navigator.clipboard.writeText(url);
+    setCopiedCode(shortCode);
+    setTimeout(() => setCopiedCode(null), 1500);
+  }
+
   if (!suggestion) return null;
 
   const objectives = OBJECTIVE_OPTIONS[suggestion.category] || OBJECTIVE_OPTIONS["default"];
+
+  // Đã tạo xong - hiển thị tracking links
+  if (createdLinks.length > 0) {
+    return (
+      <div className="space-y-4">
+        <div className="text-center">
+          <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-3">
+            <CheckCircle2 size={24} className="text-green-600" />
+          </div>
+          <h3 className="text-lg font-bold text-gray-900">Chiến dịch đã được tạo!</h3>
+          <p className="text-sm text-gray-600 mt-1">Tracking links của bạn:</p>
+        </div>
+
+        <div className="space-y-2">
+          {createdLinks.map((link) => (
+            <div key={link.short_code} className="flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-xl">
+              <Link2 size={14} className="text-green-600 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900">{link.name}</p>
+                <p className="text-[10px] text-gray-500 font-mono">
+                  {typeof window !== "undefined" ? window.location.origin : ""}/r/{link.short_code}
+                </p>
+              </div>
+              <button
+                onClick={() => copyRedirectUrl(link.short_code)}
+                className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium text-white bg-green-600 rounded-md hover:bg-green-700 shrink-0"
+              >
+                {copiedCode === link.short_code ? <Check size={10} /> : <Copy size={10} />}
+                {copiedCode === link.short_code ? "Đã copy!" : "Copy link"}
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <p className="text-xs text-gray-500 text-center">
+          Dùng các link trên thay cho link gốc trong nội dung email/post. Mỗi click sẽ được theo dõi tự động.
+        </p>
+
+        <button
+          onClick={() => {
+            onClose();
+            setTimeout(() => {
+              router.push(`/campaigns/${createdCampaignId}`);
+            }, 300);
+          }}
+          className="w-full btn-primary py-3"
+        >
+          Đi đến chiến dịch
+        </button>
+      </div>
+    );
+  }
 
   // Loading state - AI generating brief
   if (generating) {
@@ -312,6 +415,89 @@ export default function StepPreview({
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
+
+      {/* Tracking links opt-in */}
+      <div className="border border-gray-200 rounded-xl p-4 bg-gray-50 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Link2 size={14} className="text-gray-500" />
+            <p className="text-sm font-medium text-gray-700">Theo dõi clicks</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowTrackingForm(!showTrackingForm)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              showTrackingForm || trackingLinks.length > 0
+                ? "bg-blue-100 text-blue-700 border border-blue-200"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+          >
+            {showTrackingForm || trackingLinks.length > 0 ? (
+              <>
+                <CheckCircle2 size={12} />
+                Đã bổ sung {trackingLinks.length > 0 && `(${trackingLinks.length})`}
+              </>
+            ) : (
+              <>
+                <Plus size={12} />
+                Thêm link
+              </>
+            )}
+          </button>
+        </div>
+
+        {showTrackingForm && (
+          <div className="space-y-2">
+            <p className="text-xs text-gray-500">
+              Tạo link trung gian để theo dõi clicks. Nếu không cần, bỏ qua phần này.
+            </p>
+
+            {/* Existing links */}
+            {trackingLinks.map((link, i) => (
+              <div key={i} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-gray-200">
+                <Link2 size={12} className="text-[#377D73] shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] font-medium text-gray-800 truncate">{link.name}</p>
+                  <p className="text-[9px] text-gray-400 truncate">{link.destination_url}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeTrackingLink(i)}
+                  className="p-1 text-gray-300 hover:text-red-500 shrink-0"
+                >
+                  <Trash2 size={10} />
+                </button>
+              </div>
+            ))}
+
+            {/* Add new link form */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={linkForm.name}
+                onChange={(e) => setLinkForm({ ...linkForm, name: e.target.value })}
+                placeholder="Tên link (VD: Đặt phòng)"
+                className="input text-[11px] flex-1"
+              />
+              <input
+                type="url"
+                value={linkForm.destination_url}
+                onChange={(e) => setLinkForm({ ...linkForm, destination_url: e.target.value })}
+                placeholder="https://..."
+                className="input text-[11px] flex-[2]"
+              />
+              <button
+                type="button"
+                onClick={addTrackingLink}
+                className="px-3 py-1.5 text-[11px] font-medium text-white bg-[#377D73] rounded-md hover:bg-[#2d635c] shrink-0"
+              >
+                Thêm
+              </button>
+            </div>
+            {linkError && <p className="text-[10px] text-red-500">{linkError}</p>}
+          </div>
+        )}
+      </div>
 
       {/* Action button */}
       <button

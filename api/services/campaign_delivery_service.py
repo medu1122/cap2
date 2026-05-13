@@ -28,8 +28,12 @@ from models.customer_list import CustomerList
 
 logger = logging.getLogger(__name__)
 
-def tracking_urls(token: str) -> tuple[str, str]:
+def tracking_urls(token: str, short_code: str | None = None) -> tuple[str, str]:
     base = settings.TRACKING_PUBLIC_BASE_URL.rstrip("/")
+    # Ưu tiên dùng /r/{short_code}?token= để redirect đi qua tracking link
+    # (cho phép đếm click trên campaign_tracking_links ĐỒNG THỜI ghi clicked_at vào execution_log)
+    if short_code:
+        return f"{base}/track/open/{token}", f"{base}/r/{short_code}?token={token}"
     return f"{base}/track/open/{token}", f"{base}/track/click/{token}"
 
 
@@ -235,7 +239,7 @@ async def run_email_delivery(
                         body_use = body + "\n\n[Gợi ý B] Ưu đãi dành riêng cho bạn — đừng bỏ lỡ!"
 
                 token = secrets.token_urlsafe(24)
-                open_u, click_u = tracking_urls(token)
+                open_u, click_u = tracking_urls(token, tracking_link.short_code if tracking_link else None)
                 text_part, html_part = build_email_html(body_use, open_u, click_u, ab_var, cta_text)
 
                 log = CampaignExecutionLog(

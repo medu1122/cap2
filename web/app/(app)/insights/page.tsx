@@ -1,9 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+} from "recharts";
 import { api, postNdjsonStream, type DeepAnalysisStreamEvent } from "@/lib/api-client";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
-import { Upload, Table2, MessageSquare, TrendingUp, AlertTriangle, CheckCircle2, Sparkles, BarChart3, FileSpreadsheet, ChevronRight, Loader2, Maximize2, X, Plus } from "lucide-react";
+import {
+  Upload, Table2, MessageSquare, TrendingUp, AlertTriangle,
+  CheckCircle2, Sparkles, BarChart3, FileSpreadsheet, ChevronRight,
+  Loader2, Maximize2, X, Plus,
+} from "lucide-react";
 
 // ============= TYPES =============
 
@@ -61,10 +69,30 @@ interface ChatSession {
   };
 }
 
+interface ChartDataItem {
+  name: string;
+  value?: number;
+  planned?: number;
+  actual?: number;
+}
+
+interface ChartData {
+  type: string;
+  title: string;
+  data: ChartDataItem[];
+  group_by?: string;
+}
+
+interface ComputedKPI {
+  [key: string]: string | number | Record<string, number> | string[] | undefined;
+}
+
 interface DeepAnalysisResult {
   run_id: string;
   business_name: string;
   report_type: string;
+  report_type_label?: string;
+  report_description?: string;
   kpis: {
     revenue: number;
     ad_spend: number;
@@ -74,6 +102,48 @@ interface DeepAnalysisResult {
     conversion_rate: number;
     repeat_rate: number;
     aov: number;
+  };
+  computed_kpis?: ComputedKPI;
+  chart_data?: {
+    primary: ChartData | null;
+    secondary: ChartData[];
+  };
+  enrichment?: {
+    summary?: string | null;
+    trend_data?: Record<string, unknown>;
+    top_items?: Array<{
+      rank: number;
+      name: string;
+      value: number;
+      metric: string;
+      metric_label?: string;
+    }>;
+    bottom_items?: Array<{
+      rank: number;
+      name: string;
+      value: number;
+      metric: string;
+    }>;
+    segment_breakdown?: Array<{
+      name: string;
+      value: number;
+      count: number;
+      percentage: number;
+    }>;
+    anomalies?: Array<{
+      column: string;
+      outlier_count: number;
+      total_count: number;
+      outlier_pct: number;
+      examples: string[];
+      direction: string;
+    }>;
+    key_numbers?: Array<{
+      key: string;
+      label: string;
+      value: number;
+      format: string;
+    }>;
   };
   insights: Array<{
     title: string;
@@ -90,6 +160,58 @@ interface DeepAnalysisResult {
   }>;
   data_quality_score: number;
 }
+
+
+// Type alias for enrichment data
+type EnrichmentData = {
+  summary?: string | null;
+  trend_data?: Record<string, unknown>;
+  top_items?: Array<{
+    rank: number;
+    name: string;
+    value: number;
+    metric: string;
+    metric_label?: string;
+  }>;
+  bottom_items?: Array<{
+    rank: number;
+    name: string;
+    value: number;
+    metric: string;
+  }>;
+  segment_breakdown?: Array<{
+    name: string;
+    value: number;
+    count: number;
+    percentage: number;
+  }>;
+  anomalies?: Array<{
+    column: string;
+    outlier_count: number;
+    total_count: number;
+    outlier_pct: number;
+    examples: string[];
+    direction: string;
+  }>;
+  key_numbers?: Array<{
+    key: string;
+    label: string;
+    value: number;
+    format: string;
+  }>;
+};
+
+type KeyNumbers = EnrichmentData["key_numbers"];
+type SegmentBreakdown = EnrichmentData["segment_breakdown"];
+type AnomalyItem = {
+  column: string;
+  outlier_count: number;
+  total_count: number;
+  outlier_pct: number;
+  examples: string[];
+  direction: string;
+};
+type TrendData = EnrichmentData["trend_data"];
 
 // ============= TYPES FOR UI STATE =============
 
@@ -133,6 +255,56 @@ function detectColumnType(values: string[]): "text" | "number" | "date" {
   if (sample.every((v) => !isNaN(Date.parse(v)) && v !== "")) return "date";
   return "text";
 }
+
+// ============= METRIC & CHART HELPERS =============
+
+const CHART_COLORS = [
+  "#93c5fd", "#86efac", "#fde68a", "#fbcfe8",
+  "#c4b5fd", "#fed7aa", "#99f6e4", "#d1d5db",
+];
+
+function formatMetricValue(value: number, fmt: string): string {
+  if (typeof value !== "number" || !isFinite(value)) return "—";
+  if (value === 0) return "0";
+  if (fmt === "percent") return `${(value * 100).toFixed(1)}%`;
+  if (fmt === "ratio") return value.toFixed(2);
+  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  if (value < 1) return value.toFixed(2);
+  return Math.round(value).toLocaleString("vi-VN");
+}
+
+function isMetricComputable(value: unknown): boolean {
+  return typeof value === "number" && isFinite(value) && value !== 0;
+}
+
+const METRIC_GROUP_LABELS: Record<string, string> = {
+  tong_hop: "Tổng hợp",
+  trung_binh: "Trung bình",
+  ti_le: "Tỷ lệ",
+  chenh_lech: "Chênh lệch",
+  ton_kho: "Tồn kho",
+  luong: "Lương",
+  nhan_su: "Nhân sự",
+  du_an: "Dự án",
+  khach_hang: "Khách hàng",
+  san_pham: "Sản phẩm",
+  chat_luong: "Chất lượng",
+  khac: "Khác",
+};
+
+const CHART_TYPE_LABELS: Record<string, string> = {
+  bar: "Biểu đồ cột",
+  horizontal_bar: "Biểu đồ cột ngang",
+  pie: "Biểu đồ tròn",
+  donut: "Biểu đồ donut",
+  line: "Biểu đồ đường",
+  area: "Biểu đồ vùng",
+  comparison: "So sánh",
+  gauge: "Đồng hồ",
+  rank: "Xếp hạng",
+};
 
 // ============= CONSTANTS =============
 
@@ -564,6 +736,635 @@ function ActionCard({ action }: {
           <p className="text-sm text-gray-600">{action.reason}</p>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Smart Chart Component
+function SmartChart({ chart, compact = false }: { chart: ChartData; compact?: boolean }) {
+  const { type, title, data } = chart;
+  if (!data || data.length === 0) return null;
+
+  const height = compact ? 180 : 260;
+
+  const renderContent = () => {
+    if (type === "bar") {
+      return (
+        <BarChart data={data} margin={{ top: 4, right: 4, left: -10, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+          <XAxis dataKey="name" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+          <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => formatMetricValue(v, "currency")} />
+          <Tooltip formatter={(v: number) => [formatMetricValue(v, "currency"), "Giá trị"]} contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }} />
+          <Bar dataKey="value" fill="#93c5fd" radius={[4, 4, 0, 0]} maxBarSize={40} />
+        </BarChart>
+      );
+    }
+
+    if (type === "horizontal_bar") {
+      return (
+        <BarChart data={data} layout="vertical" margin={{ top: 4, right: 20, left: 0, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
+          <XAxis type="number" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => formatMetricValue(v, "currency")} />
+          <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={100} tickLine={false} axisLine={false} />
+          <Tooltip formatter={(v: number) => [formatMetricValue(v, "currency"), "Giá trị"]} contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }} />
+          <Bar dataKey="value" fill="#86efac" radius={[0, 4, 4, 0]} maxBarSize={20} />
+        </BarChart>
+      );
+    }
+
+    if (type === "pie" || type === "donut") {
+      return (
+        <PieChart>
+          <Pie
+            data={data}
+            dataKey="value"
+            nameKey="name"
+            cx="50%"
+            cy="50%"
+            outerRadius={compact ? 60 : 90}
+            innerRadius={type === "donut" ? (compact ? 35 : 55) : 0}
+            paddingAngle={2}
+          >
+            {data.map((_, i) => (
+              <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+            ))}
+          </Pie>
+          <Tooltip formatter={(v: number) => [formatMetricValue(v, "currency"), "Giá trị"]} contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }} />
+          <Legend iconType="circle" iconSize={8} formatter={(val) => <span style={{ fontSize: 11 }}>{val}</span>} />
+        </PieChart>
+      );
+    }
+
+    if (type === "line") {
+      return (
+        <LineChart data={data} margin={{ top: 4, right: 4, left: -10, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+          <XAxis dataKey="name" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+          <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => formatMetricValue(v, "currency")} />
+          <Tooltip formatter={(v: number) => [formatMetricValue(v, "currency"), "Giá trị"]} contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }} />
+          <Line type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2} dot={{ r: 3, fill: "#6366f1" }} />
+        </LineChart>
+      );
+    }
+
+    if (type === "comparison") {
+      return (
+        <BarChart data={data} margin={{ top: 4, right: 4, left: -10, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+          <XAxis dataKey="name" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+          <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => formatMetricValue(v, "currency")} />
+          <Tooltip formatter={(v: number, n: string) => [formatMetricValue(v, "currency"), n]} contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }} />
+          <Legend iconType="square" iconSize={8} formatter={(val) => <span style={{ fontSize: 11 }}>{val === "planned" ? "Kế hoạch" : "Thực tế"}</span>} />
+          <Bar dataKey="planned" fill="#93c5fd" radius={[4, 4, 0, 0]} maxBarSize={32} />
+          <Bar dataKey="actual" fill="#86efac" radius={[4, 4, 0, 0]} maxBarSize={32} />
+        </BarChart>
+      );
+    }
+
+    if (type === "area") {
+      return (
+        <LineChart data={data} margin={{ top: 4, right: 4, left: -10, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+          <XAxis dataKey="name" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+          <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => formatMetricValue(v, "currency")} />
+          <Tooltip formatter={(v: number) => [formatMetricValue(v, "currency"), ""]} contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }} />
+          <Legend iconType="square" iconSize={8} />
+          {data[0] && "income" in data[0] && <Line type="monotone" dataKey="income" stroke="#93c5fd" fill="#93c5fd" fillOpacity={0.2} strokeWidth={2} />}
+          {data[0] && "expense" in data[0] && <Line type="monotone" dataKey="expense" stroke="#fca5a5" fill="#fca5a5" fillOpacity={0.2} strokeWidth={2} />}
+          {!data[0] || !("income" in data[0]) ? <Line type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2} dot={false} /> : null}
+        </LineChart>
+      );
+    }
+
+    return (
+      <BarChart data={data} margin={{ top: 4, right: 4, left: -10, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+        <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+        <YAxis tick={{ fontSize: 11 }} />
+        <Tooltip />
+        <Bar dataKey="value" fill="#93c5fd" radius={[4, 4, 0, 0]} />
+      </BarChart>
+    );
+  };
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-4">
+      <h4 className="text-sm font-medium text-gray-700 mb-3">{title}</h4>
+      <ResponsiveContainer width="100%" height={height}>
+        {renderContent()}
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// Smart Metric Card — chi hien thi khi gia tri hop le
+function SmartMetricCard({ label, value, format = "number" }: {
+  label: string;
+  value: number;
+  format?: string;
+}) {
+  if (!isMetricComputable(value)) return null;
+
+  const display = formatMetricValue(value, format);
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex flex-col gap-1">
+      <span className="text-xs font-medium text-gray-400">{label}</span>
+      <span className="text-base font-bold text-gray-900">{display}</span>
+    </div>
+  );
+}
+
+// Smart Metric Group
+function SmartMetricGroup({ metrics, groupLabel }: {
+  metrics: Array<{ key: string; label: string; value: number; format?: string }>;
+  groupLabel: string;
+}) {
+  const computable = metrics.filter((m) => isMetricComputable(m.value));
+  if (computable.length === 0) return null;
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{groupLabel}</span>
+        <div className="flex-1 h-px bg-gray-100" />
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+        {computable.map((m) => (
+          <SmartMetricCard key={m.key} label={m.label} value={m.value} format={m.format} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Metric Summary Panel
+function MetricsPanel({ computedKpis }: { computedKpis?: ComputedKPI }) {
+  if (!computedKpis) return null;
+
+  const groups: Record<string, Array<{ key: string; label: string; value: number; format?: string }>> = {};
+
+  for (const [key, val] of Object.entries(computedKpis)) {
+    if (typeof val !== "number" || !isFinite(val) || val === 0) continue;
+
+    // Determine group + label from key
+    let group = "khac";
+    let label = key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+    if (["total_revenue", "total_cost", "total_payroll", "total_income", "total_expense",
+         "total_profit", "total_budget", "total_stock_value"].includes(key)) {
+      group = "tong_hop"; label = label.replace("Total ", "Tổng ");
+    } else if (["avg_salary", "avg_revenue", "avg_cost", "avg_order_value", "avg_ltv",
+                "avg_kpi", "avg_price", "avg_stock"].includes(key)) {
+      group = "trung_binh"; label = label.replace("Avg ", "TB ");
+    } else if (["roas", "conversion_rate", "repeat_rate", "profit_margin", "expense_ratio",
+                "budget_utilization", "turnover_rate_hr", "churn_rate", "completion_rate",
+                "on_time_rate", "return_rate", "new_customer_rate", "active_rate"].includes(key)) {
+      group = "ti_le";
+    } else if (["variance", "variance_pct", "growth_rate", "cagr"].includes(key)) {
+      group = "chenh_lech";
+    } else if (["total_stock", "total_stock_in", "total_stock_out", "low_stock_count", "dead_stock_count"].includes(key)) {
+      group = "ton_kho";
+    } else if (["total_allowance", "total_bonus", "total_deduction", "min_salary", "max_salary", "salary_range"].includes(key)) {
+      group = "luong";
+    } else if (["new_hires", "active_headcount", "on_leave_count", "turnover_count", "productivity_score"].includes(key)) {
+      group = "nhan_su";
+    } else if (["completed_projects", "in_progress_projects", "overdue_projects", "avg_progress", "over_budget_projects"].includes(key)) {
+      group = "du_an";
+    } else if (["new_customers", "active_customers", "inactive_customers", "vip_customers", "churned_customers"].includes(key)) {
+      group = "khach_hang";
+    } else if (["total_units_sold", "top_product_revenue", "return_count", "avg_rating"].includes(key)) {
+      group = "san_pham";
+    }
+
+    let fmt: string = "number";
+    if (key.includes("salary") || key.includes("revenue") || key.includes("cost") ||
+        key.includes("profit") || key.includes("budget") || key.includes("allowance") ||
+        key.includes("bonus") || key.includes("deduction") || key.includes("price") ||
+        key.includes("ltv")) {
+      fmt = "currency";
+    } else if (key.includes("rate") || key.includes("margin") || key.includes("ratio") ||
+               key.includes("utilization") || key.includes("completion") || key.includes("return") ||
+               key.includes("churn") || key.includes("turnover") || key.includes("active")) {
+      fmt = "percent";
+    }
+
+    if (!groups[group]) groups[group] = [];
+    groups[group].push({ key, label, value: val, format: fmt });
+  }
+
+  const groupOrder = ["tong_hop", "trung_binh", "ti_le", "chenh_lech", "luong",
+                       "nhan_su", "du_an", "khach_hang", "san_pham", "ton_kho", "khac"];
+  const orderedGroups = groupOrder.filter((g) => groups[g]?.length > 0);
+
+  if (orderedGroups.length === 0) return null;
+
+  return (
+    <div className="space-y-4">
+      {orderedGroups.map((group) => (
+        <SmartMetricGroup
+          key={group}
+          metrics={groups[group]}
+          groupLabel={METRIC_GROUP_LABELS[group] || group}
+        />
+      ))}
+    </div>
+  );
+}
+
+// Charts Panel
+function ChartsPanel({ chartData }: { chartData?: { primary: ChartData | null; secondary: ChartData[] } }) {
+  if (!chartData) return null;
+  if (!chartData.primary && chartData.secondary.length === 0) return null;
+
+  return (
+    <div className="space-y-4">
+      {chartData.primary && (
+        <SmartChart chart={chartData.primary} />
+      )}
+      {chartData.secondary.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {chartData.secondary.map((chart, i) => (
+            <SmartChart key={i} chart={chart} compact />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// ENRICHMENT COMPONENTS — diverse result display
+// ============================================================
+
+// 1. Report Summary Banner
+function ReportSummaryBanner({ enrichment }: { enrichment: EnrichmentData }) {
+  if (!enrichment.summary) return null;
+  return (
+    <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-100 rounded-xl px-5 py-4 mb-5">
+      <p className="text-sm text-indigo-800 leading-relaxed font-medium">
+        {enrichment.summary}
+      </p>
+    </div>
+  );
+}
+
+// 2. Key Numbers — highlight row of 4 KPIs
+function KeyNumbersRow({ keyNumbers }: { keyNumbers: KeyNumbers }) {
+  if (!keyNumbers || keyNumbers.length === 0) return null;
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+      {keyNumbers.map((kn) => (
+        <div key={kn.key} className="bg-white border border-gray-200 rounded-xl px-4 py-3 text-center">
+          <p className="text-xs font-medium text-gray-400 mb-1">{kn.label}</p>
+          <p className="text-lg font-bold text-gray-900">{formatMetricValue(kn.value, kn.format)}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// 3. Trend Badge — colored label
+function TrendBadge({ label }: { label: string }) {
+  const config: Record<string, { bg: string; text: string; dot: string }> = {
+    "Tăng trưởng": { bg: "bg-green-50", text: "text-green-700", dot: "bg-green-500" },
+    "Xuất sắc": { bg: "bg-green-50", text: "text-green-700", dot: "bg-green-500" },
+    "Tốt": { bg: "bg-blue-50", text: "text-blue-700", dot: "bg-blue-500" },
+    "Ổn định": { bg: "bg-gray-50", text: "text-gray-600", dot: "bg-gray-400" },
+    "Cần cải thiện": { bg: "bg-amber-50", text: "text-amber-700", dot: "bg-amber-500" },
+    "Lãi": { bg: "bg-green-50", text: "text-green-700", dot: "bg-green-500" },
+    "Lỗ": { bg: "bg-red-50", text: "text-red-700", dot: "bg-red-500" },
+    "Hòa vốn": { bg: "bg-gray-50", text: "text-gray-600", dot: "bg-gray-400" },
+    "Trong ngân sách": { bg: "bg-blue-50", text: "text-blue-700", dot: "bg-blue-500" },
+    "Vượt ngân sách": { bg: "bg-red-50", text: "text-red-700", dot: "bg-red-500" },
+    "Ngân sách thấp": { bg: "bg-amber-50", text: "text-amber-700", dot: "bg-amber-500" },
+    "Chưa có dữ liệu": { bg: "bg-gray-50", text: "text-gray-400", dot: "bg-gray-300" },
+  };
+  const c = config[label] || { bg: "bg-gray-50", text: "text-gray-600", dot: "bg-gray-400" };
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${c.bg} ${c.text}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
+      {label}
+    </span>
+  );
+}
+
+// 4. Trend Summary Row
+function TrendSummaryRow({ trendData }: { trendData: TrendData }) {
+  if (!trendData || Object.keys(trendData).length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 mb-5">
+      {Object.entries(trendData).map(([key, val]) => {
+        if (typeof val !== "string") return null;
+        const cleanLabel = key.replace(/_label$/, "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+        return <TrendBadge key={key} label={String(val)} />;
+      })}
+    </div>
+  );
+}
+
+// 5. Ranking List — top / bottom performers
+function RankingRow({ rank, name, value, isBottom = false }: { rank: number; name: string; value: number; isBottom?: boolean }) {
+  const medalColors = ["text-yellow-600", "text-gray-500", "text-amber-600"];
+  return (
+    <div className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
+      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+        rank <= 3 ? medalColors[rank - 1] : "text-gray-400"
+      }`}>
+        {rank <= 3 ? ["🥇", "🥈", "🥉"][rank - 1] : rank}
+      </span>
+      <span className="flex-1 text-sm text-gray-700 truncate">{name}</span>
+      <span className={`text-sm font-semibold ${isBottom ? "text-amber-600" : "text-gray-900"}`}>
+        {formatMetricValue(value, "currency")}
+      </span>
+    </div>
+  );
+}
+
+function TopBottomSection({ enrichment }: { enrichment: EnrichmentData }) {
+  const hasTop = enrichment.top_items && enrichment.top_items.length > 0;
+  const hasBottom = enrichment.bottom_items && enrichment.bottom_items.length > 0;
+  if (!hasTop && !hasBottom) return null;
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+      {hasTop && (
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="bg-green-50 px-4 py-2.5 border-b border-green-100">
+            <h4 className="text-sm font-semibold text-green-800 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4" />
+              Top hiệu suất cao
+            </h4>
+          </div>
+          <div className="px-4 py-1">
+            {enrichment.top_items!.slice(0, 5).map((item) => (
+              <RankingRow key={item.rank} rank={item.rank} name={item.name} value={item.value} />
+            ))}
+          </div>
+        </div>
+      )}
+      {hasBottom && (
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="bg-amber-50 px-4 py-2.5 border-b border-amber-100">
+            <h4 className="text-sm font-semibold text-amber-800 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4" />
+              Cần chú ý
+            </h4>
+          </div>
+          <div className="px-4 py-1">
+            {enrichment.bottom_items!.slice(0, 5).map((item) => (
+              <RankingRow key={item.rank} rank={item.rank} name={item.name} value={item.value} isBottom />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 6. Segment Breakdown — mini pie + list
+function SegmentBreakdownCard({ segments }: { segments: SegmentBreakdown }) {
+  if (!segments || segments.length === 0) return null;
+  const totalPct = segments.reduce((s, seg) => s + seg.percentage, 0);
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-gray-100">
+        <h4 className="text-sm font-semibold text-gray-700">Phân bổ theo nhóm</h4>
+      </div>
+      <div className="p-4">
+        <div className="space-y-2">
+          {segments.map((seg, i) => (
+            <div key={i}>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}
+                  />
+                  <span className="text-sm text-gray-700 truncate max-w-[120px]">{seg.name}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-gray-400">{seg.count} dòng</span>
+                  <span className="text-sm font-semibold text-gray-900 w-12 text-right">
+                    {seg.percentage}%
+                  </span>
+                </div>
+              </div>
+              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-700"
+                  style={{
+                    width: `${Math.min(seg.percentage, 100)}%`,
+                    backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 7. Anomaly Detection Card
+function AnomalyCard({ anomaly }: { anomaly: AnomalyItem }) {
+  return (
+    <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <span className="text-sm font-medium text-red-800 truncate">{anomaly.column}</span>
+            <span className="text-xs font-medium text-red-600 bg-red-100 px-2 py-0.5 rounded-full flex-shrink-0">
+              {anomaly.outlier_pct}% bất thường
+            </span>
+          </div>
+          {anomaly.examples.length > 0 && (
+            <p className="text-xs text-red-600 mb-1">
+              Ví dụ: {anomaly.examples.slice(0, 2).join(" | ")}
+            </p>
+          )}
+          <p className="text-xs text-red-500">
+            {anomaly.outlier_count}/{anomaly.total_count} giá trị lệch khỏi phân bổ thông thường
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AnomalySection({ anomalies }: { anomalies?: Array<AnomalyItem> | null }) {
+  if (!anomalies || anomalies.length === 0) return null;
+  return (
+    <div className="mb-5">
+      <div className="flex items-center gap-2 mb-2">
+        <AlertTriangle className="w-4 h-4 text-red-500" />
+        <h4 className="text-sm font-semibold text-gray-700">Phát hiện bất thường</h4>
+      </div>
+      <div className="space-y-2">
+        {anomalies.slice(0, 3).map((a, i) => (
+          <AnomalyCard key={i} anomaly={a} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// 8. Data Quality Details Card
+function DataQualityCard({ score }: { score: number }) {
+  if (!score) return null;
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-sm font-medium text-gray-700">Điểm chất lượng dữ liệu</span>
+        <span className={`text-sm font-bold ${
+          score >= 80 ? "text-green-600" : score >= 50 ? "text-amber-600" : "text-red-600"
+        }`}>
+          {score}%
+        </span>
+      </div>
+      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-700 ${
+            score >= 80 ? "bg-green-400" : score >= 50 ? "bg-amber-400" : "bg-red-400"
+          }`}
+          style={{ width: `${score}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// 9. Comparison vs Benchmark Card
+function ComparisonCard({ computedKpis }: { computedKpis?: ComputedKPI }) {
+  if (!computedKpis) return null;
+  const comparisons: Array<{ label: string; value: number; benchmark: number; format: string }> = [];
+
+  if (computedKpis.roas) {
+    comparisons.push({ label: "ROAS", value: Number(computedKpis.roas), benchmark: 3.0, format: "ratio" });
+  }
+  if (computedKpis.profit_margin) {
+    comparisons.push({ label: "Biên lợi nhuận", value: Number(computedKpis.profit_margin), benchmark: 0.15, format: "percent" });
+  }
+  if (computedKpis.conversion_rate) {
+    comparisons.push({ label: "Tỷ lệ chuyển đổi", value: Number(computedKpis.conversion_rate), benchmark: 0.05, format: "percent" });
+  }
+
+  if (comparisons.length === 0) return null;
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-gray-100">
+        <h4 className="text-sm font-semibold text-gray-700">So sánh với ngưỡng tham chiếu</h4>
+      </div>
+      <div className="p-4 space-y-3">
+        {comparisons.map((comp) => {
+          const pct = comp.format === "percent"
+            ? Math.round(comp.value * 100)
+            : Math.round(comp.value * 100);
+          const benchPct = comp.format === "percent"
+            ? Math.round(comp.benchmark * 100)
+            : Math.round(comp.benchmark * 100);
+          const isGood = comp.format === "percent" ? comp.value > comp.benchmark : comp.value >= comp.benchmark;
+          const ratio = benchPct > 0 ? Math.min(pct / benchPct, 1.5) : 0;
+          return (
+            <div key={comp.label}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm text-gray-700">{comp.label}</span>
+                <span className={`text-sm font-semibold ${isGood ? "text-green-600" : "text-amber-600"}`}>
+                  {formatMetricValue(comp.value, comp.format)}
+                </span>
+              </div>
+              <div className="relative h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className="absolute h-full bg-gray-300 rounded-full"
+                  style={{ width: `${Math.min(benchPct / 1.5, 100)}%` }}
+                />
+                <div
+                  className={`absolute h-full rounded-full transition-all duration-700 ${isGood ? "bg-green-400" : "bg-amber-400"}`}
+                  style={{ width: `${Math.min(ratio * 66, 100)}%` }}
+                />
+              </div>
+              <p className="text-xs text-gray-400 mt-0.5">Ngưỡng: {formatMetricValue(comp.benchmark, comp.format)}</p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// 10. Progress Ring — simple SVG ring
+function ProgressRing({ value, label }: { value: number; label: string }) {
+  const radius = 28;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - Math.min(value, 1));
+  const color = value >= 0.8 ? "#86efac" : value >= 0.5 ? "#fde68a" : "#fca5a5";
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <svg width="72" height="72" viewBox="0 0 72 72">
+        <circle cx="36" cy="36" r={radius} fill="none" stroke="#f0f0f0" strokeWidth="6" />
+        <circle
+          cx="36" cy="36" r={radius} fill="none"
+          stroke={color} strokeWidth="6"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          transform="rotate(-90 36 36)"
+        />
+        <text x="36" y="36" textAnchor="middle" dominantBaseline="central" fontSize="12" fontWeight="bold" fill={color}>
+          {Math.round(value * 100)}%
+        </text>
+      </svg>
+      <span className="text-xs text-gray-500 text-center">{label}</span>
+    </div>
+  );
+}
+
+// 11. Mini KPI with Sparkline (fake sparkline from bar heights)
+function MiniKpiWithSparkline({ label, value, format, sparkData }: {
+  label: string; value: number; format: string; sparkData: number[];
+}) {
+  if (!isMetricComputable(value)) return null;
+  const max = Math.max(...sparkData.filter(isFinite));
+  const bars = sparkData.map((v) => (max > 0 ? v / max : 0));
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-medium text-gray-400 mb-1">{label}</p>
+        <p className="text-base font-bold text-gray-900">{formatMetricValue(value, format)}</p>
+      </div>
+      <div className="flex items-end gap-0.5 h-8 flex-shrink-0">
+        {bars.slice(-12).map((h, i) => (
+          <div
+            key={i}
+            className="w-1.5 rounded-sm bg-indigo-200"
+            style={{ height: `${Math.max(h * 32, 2)}px` }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// 12. Enrichment Panel — wraps all enrichment sections
+function EnrichmentPanel({ enrichment }: { enrichment: EnrichmentData }) {
+  if (!enrichment) return null;
+  return (
+    <div className="space-y-4">
+      {enrichment.summary && <ReportSummaryBanner enrichment={enrichment} />}
+      {enrichment.trend_data && <TrendSummaryRow trendData={enrichment.trend_data} />}
+      {enrichment.key_numbers && enrichment.key_numbers.length > 0 && (
+        <KeyNumbersRow keyNumbers={enrichment.key_numbers} />
+      )}
+      <TopBottomSection enrichment={enrichment} />
+      {enrichment.segment_breakdown && enrichment.segment_breakdown.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <SegmentBreakdownCard segments={enrichment.segment_breakdown} />
+          <ComparisonCard computedKpis={undefined} />
+        </div>
+      )}
+      <AnomalySection anomalies={enrichment.anomalies} />
     </div>
   );
 }
@@ -1129,65 +1930,95 @@ export default function InsightsPage() {
         {/* Results Step */}
         {appStep === "results" && analysisResult && (
           <div className="space-y-6">
-            {/* KPIs Section */}
+            {/* Header: Report Type + Data Quality */}
             <div className="bg-white rounded-2xl border border-gray-200 p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg font-semibold text-gray-900">Kết quả phân tích</h2>
+              <div className="flex items-start justify-between mb-5">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <BarChart3 className="w-5 h-5 text-indigo-500" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700">
+                        {analysisResult.report_type?.replace(/_/g, " ") || "Báo cáo"}
+                      </span>
+                      {analysisResult.report_description && (
+                        <span className="text-sm text-gray-500">{analysisResult.report_description}</span>
+                      )}
+                    </div>
+                    <h2 className="text-lg font-semibold text-gray-900 mt-1">Kết quả phân tích</h2>
+                  </div>
+                </div>
                 <button
                   onClick={() => setAppStep("input")}
-                  className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                  className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1 flex-shrink-0"
                 >
                   Chỉnh sửa dữ liệu
                   <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
 
-              {/* KPI Cards */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <KpiCard
-                  label="Doanh thu"
-                  value={analysisResult.kpis.revenue}
-                  format="currency"
-                  icon={<TrendingUp className="w-4 h-4" />}
-                />
-                <KpiCard
-                  label="Đơn hàng"
-                  value={analysisResult.kpis.orders}
-                  format="number"
-                  icon={<FileSpreadsheet className="w-4 h-4" />}
-                />
-                <KpiCard
-                  label="ROAS"
-                  value={analysisResult.kpis.roas}
-                  format="number"
-                  icon={<BarChart3 className="w-4 h-4" />}
-                />
-                <KpiCard
-                  label="AOV"
-                  value={analysisResult.kpis.aov}
-                  format="currency"
-                  icon={<TrendingUp className="w-4 h-4" />}
-                />
-              </div>
+              {/* Metrics + Charts + Enrichment layout */}
+              {(analysisResult.computed_kpis || analysisResult.chart_data || analysisResult.enrichment) && (
+                <div className="mb-6">
+                  {/* Data Quality Bar — small, inside content area */}
+                  <div className="bg-gray-50 rounded-xl p-3 mb-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-gray-400" />
+                        <span className="text-xs font-medium text-gray-500">Chất lượng dữ liệu</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-24 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              analysisResult.data_quality_score >= 0.8 ? "bg-green-400" :
+                              analysisResult.data_quality_score >= 0.5 ? "bg-amber-400" : "bg-red-400"
+                            }`}
+                            style={{ width: `${Math.round(analysisResult.data_quality_score * 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-semibold text-gray-700 w-8 text-right">
+                          {Math.round(analysisResult.data_quality_score * 100)}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
 
-              {/* Data Quality */}
-              <div className="bg-gray-50 rounded-xl p-4 mb-6">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-700">Chất lượng dữ liệu</span>
-                  <span className="text-sm font-semibold text-gray-900">
-                    {Math.round(analysisResult.data_quality_score * 100)}%
-                  </span>
+                  {/* 2-column: Metrics + Charts */}
+                  <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 mb-4">
+                    <div className="lg:col-span-2">
+                      <MetricsPanel computedKpis={analysisResult.computed_kpis} />
+                    </div>
+                    <div className="lg:col-span-3">
+                      <ChartsPanel chartData={analysisResult.chart_data} />
+                    </div>
+                  </div>
+
+                  {/* Enrichment: Summary + Trends + Top/Bottom + Segments + Anomalies */}
+                  {analysisResult.enrichment && (
+                    <EnrichmentPanel enrichment={analysisResult.enrichment} />
+                  )}
                 </div>
-                <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full transition-all duration-500 ${
-                      analysisResult.data_quality_score >= 0.8 ? "bg-green-500" :
-                      analysisResult.data_quality_score >= 0.5 ? "bg-amber-500" : "bg-red-500"
-                    }`}
-                    style={{ width: `${Math.round(analysisResult.data_quality_score * 100)}%` }}
-                  />
+              )}
+
+              {/* Fallback: old KPI cards if no computed_kpis */}
+              {!analysisResult.computed_kpis && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                  {analysisResult.kpis.revenue > 0 && (
+                    <KpiCard label="Doanh thu" value={analysisResult.kpis.revenue} format="currency" icon={<TrendingUp className="w-4 h-4" />} />
+                  )}
+                  {analysisResult.kpis.orders > 0 && (
+                    <KpiCard label="Đơn hàng" value={analysisResult.kpis.orders} format="number" icon={<FileSpreadsheet className="w-4 h-4" />} />
+                  )}
+                  {analysisResult.kpis.roas > 0 && (
+                    <KpiCard label="ROAS" value={analysisResult.kpis.roas} format="number" icon={<BarChart3 className="w-4 h-4" />} />
+                  )}
+                  {analysisResult.kpis.aov > 0 && (
+                    <KpiCard label="AOV" value={analysisResult.kpis.aov} format="currency" icon={<TrendingUp className="w-4 h-4" />} />
+                  )}
                 </div>
-              </div>
+              )}
 
               {/* Insights */}
               {analysisResult.insights.length > 0 && (

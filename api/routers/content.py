@@ -219,7 +219,8 @@ def _regenerate_user_prompt(
             f"Mục tiêu nội dung: {cg}\n"
             f"Hướng giọng văn: {th}\n"
             f"Call-to-action: {cta}\n\n"
-            'Trả về JSON:\n{\n  "copy": "...",\n  "hashtags": ["...", "...", "...", "...", "..."]\n}'
+            'Trả về JSON:\n{\n  "copy": "...",\n  "hashtags": ["...", "...", "...", "...", "..."],\n  "cta_url": "https://..."\n}'
+            "\nLưu ý: cta_url là link đích (website/landing page) mà người đọc sẽ được chuyển hướng đến khi nhấn vào link bên dưới bài đăng. Nếu không có, để null."
         )
     if channel == "email":
         return (

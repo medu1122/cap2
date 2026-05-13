@@ -396,6 +396,20 @@ function ContentCard({ item, onAction }: { item: ContentItem; onAction: () => vo
               <span key={h} className="text-[10px] text-[#377D73]">#{h.replace("#", "")}</span>
             ))}
           </div>
+          {(c.cta_url as string) ? (
+            <div className="mt-2 pt-2 border-t border-gray-100 flex items-center gap-2">
+              <span className="text-[9px] text-gray-400 uppercase tracking-wide font-medium">Link</span>
+              <a
+                href={(c.cta_url as string)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] text-blue-600 hover:underline truncate max-w-[220px]"
+              >
+                {(c.cta_url as string)}
+              </a>
+              <span className="ml-auto text-[9px] text-gray-400 shrink-0">↗</span>
+            </div>
+          ) : null}
         </div>
       )}
 

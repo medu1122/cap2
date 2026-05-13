@@ -79,82 +79,334 @@ VIETNAMESE_COLUMN_HINTS: dict[str, list[str]] = {
 }
 
 # =============================================================================
-# REPORT TYPE TAXONOMY - Moi loai bao cao co schema + KPI + insights rieng
+# CHART TYPES + METRIC DEFINITIONS + REPORT TYPE METADATA
 # =============================================================================
 
+CHART_TYPES: dict[str, str] = {
+    "bar": "Biểu đồ cột",
+    "horizontal_bar": "Biểu đồ cột ngang",
+    "pie": "Biểu đồ tròn",
+    "donut": "Biểu đồ donut",
+    "line": "Biểu đồ đường",
+    "area": "Biểu đồ vùng",
+    "scatter": "Biểu đồ phân tán",
+    "comparison": "So sánh kế hoạch - thực tế",
+    "gauge": "Đồng hồ đo",
+    "rank": "Xếp hạng",
+}
+
+METRIC_DEFINITIONS: dict[str, dict[str, Any]] = {
+    "total_revenue": {"label": "Tổng doanh thu", "format": "currency", "group": "tong_hop"},
+    "total_cost": {"label": "Tổng chi phí", "format": "currency", "group": "tong_hop"},
+    "total_payroll": {"label": "Tổng quỹ lương", "format": "currency", "group": "tong_hop"},
+    "total_income": {"label": "Tổng thu", "format": "currency", "group": "tong_hop"},
+    "total_expense": {"label": "Tổng chi", "format": "currency", "group": "tong_hop"},
+    "total_profit": {"label": "Lợi nhuận ròng", "format": "currency", "group": "tong_hop"},
+    "total_budget": {"label": "Tổng ngân sách", "format": "currency", "group": "tong_hop"},
+    "total_stock_value": {"label": "Giá trị tồn kho", "format": "currency", "group": "tong_hop"},
+    "headcount": {"label": "Số nhân viên", "format": "number", "group": "tong_hop"},
+    "total_customers": {"label": "Tổng khách hàng", "format": "number", "group": "tong_hop"},
+    "total_orders": {"label": "Tổng đơn hàng", "format": "number", "group": "tong_hop"},
+    "total_leads": {"label": "Tổng lead", "format": "number", "group": "tong_hop"},
+    "total_products": {"label": "Số sản phẩm", "format": "number", "group": "tong_hop"},
+    "total_projects": {"label": "Số dự án", "format": "number", "group": "tong_hop"},
+    "total_rows": {"label": "Tổng dòng dữ liệu", "format": "number", "group": "tong_hop"},
+    "avg_salary": {"label": "Lương TB", "format": "currency", "group": "trung_binh"},
+    "avg_revenue": {"label": "Doanh thu TB", "format": "currency", "group": "trung_binh"},
+    "avg_cost": {"label": "Chi phí TB", "format": "currency", "group": "trung_binh"},
+    "avg_order_value": {"label": "Giá trị đơn TB", "format": "currency", "group": "trung_binh"},
+    "avg_ltv": {"label": "Giá trị vòng đời TB", "format": "currency", "group": "trung_binh"},
+    "avg_kpi": {"label": "Điểm KPI TB", "format": "number", "group": "trung_binh"},
+    "avg_price": {"label": "Đơn giá TB", "format": "currency", "group": "trung_binh"},
+    "avg_stock": {"label": "Tồn kho TB", "format": "number", "group": "trung_binh"},
+    "roas": {"label": "ROAS", "format": "ratio", "group": "ti_le"},
+    "conversion_rate": {"label": "Tỷ lệ chuyển đổi", "format": "percent", "group": "ti_le"},
+    "repeat_rate": {"label": "Tỷ lệ quay lại", "format": "percent", "group": "ti_le"},
+    "profit_margin": {"label": "Biên lợi nhuận", "format": "percent", "group": "ti_le"},
+    "expense_ratio": {"label": "Tỷ lệ chi phí", "format": "percent", "group": "ti_le"},
+    "budget_utilization": {"label": "Tỷ lệ sử dụng ngân sách", "format": "percent", "group": "ti_le"},
+    "turnover_rate_hr": {"label": "Tỷ lệ nghỉ việc", "format": "percent", "group": "ti_le"},
+    "churn_rate": {"label": "Tỷ lệ mất khách", "format": "percent", "group": "ti_le"},
+    "completion_rate": {"label": "Tỷ lệ hoàn thành", "format": "percent", "group": "ti_le"},
+    "on_time_rate": {"label": "Tỷ lệ đúng hạn", "format": "percent", "group": "ti_le"},
+    "return_rate": {"label": "Tỷ lệ trả hàng", "format": "percent", "group": "ti_le"},
+    "new_customer_rate": {"label": "Tỷ lệ khách mới", "format": "percent", "group": "ti_le"},
+    "active_rate": {"label": "Tỷ lệ hoạt động", "format": "percent", "group": "ti_le"},
+    "variance": {"label": "Chênh lệch", "format": "currency", "group": "chenh_lech"},
+    "variance_pct": {"label": "Chênh lệch %", "format": "percent", "group": "chenh_lech"},
+    "growth_rate": {"label": "Tăng trưởng", "format": "percent", "group": "chenh_lech"},
+    "total_stock": {"label": "Tổng tồn kho", "format": "number", "group": "ton_kho"},
+    "total_stock_in": {"label": "Nhập kho", "format": "number", "group": "ton_kho"},
+    "total_stock_out": {"label": "Xuất kho", "format": "number", "group": "ton_kho"},
+    "low_stock_count": {"label": "Hàng sắp hết", "format": "number", "group": "ton_kho"},
+    "dead_stock_count": {"label": "Hàng ứ đọng", "format": "number", "group": "ton_kho"},
+    "total_allowance": {"label": "Tổng phụ cấp", "format": "currency", "group": "luong"},
+    "total_bonus": {"label": "Tổng thưởng", "format": "currency", "group": "luong"},
+    "total_deduction": {"label": "Tổng khấu trừ", "format": "currency", "group": "luong"},
+    "min_salary": {"label": "Lương thấp nhất", "format": "currency", "group": "luong"},
+    "max_salary": {"label": "Lương cao nhất", "format": "currency", "group": "luong"},
+    "salary_range": {"label": "Khoảng lương", "format": "currency", "group": "luong"},
+    "new_hires": {"label": "Tuyển mới", "format": "number", "group": "nhan_su"},
+    "active_headcount": {"label": "Nhân sự hoạt động", "format": "number", "group": "nhan_su"},
+    "on_leave_count": {"label": "Nghỉ phép", "format": "number", "group": "nhan_su"},
+    "turnover_count": {"label": "Nghỉ việc", "format": "number", "group": "nhan_su"},
+    "productivity_score": {"label": "Điểm năng suất", "format": "number", "group": "nhan_su"},
+    "completed_projects": {"label": "Hoàn thành", "format": "number", "group": "du_an"},
+    "in_progress_projects": {"label": "Đang thực hiện", "format": "number", "group": "du_an"},
+    "overdue_projects": {"label": "Quá hạn", "format": "number", "group": "du_an"},
+    "avg_progress": {"label": "Tiến độ TB", "format": "percent", "group": "du_an"},
+    "over_budget_projects": {"label": "Vượt ngân sách", "format": "number", "group": "du_an"},
+    "new_customers": {"label": "Khách mới", "format": "number", "group": "khach_hang"},
+    "active_customers": {"label": "Khách hoạt động", "format": "number", "group": "khach_hang"},
+    "inactive_customers": {"label": "Khách không hoạt động", "format": "number", "group": "khach_hang"},
+    "vip_customers": {"label": "Khách VIP", "format": "number", "group": "khach_hang"},
+    "churned_customers": {"label": "Khách mất", "format": "number", "group": "khach_hang"},
+    "total_units_sold": {"label": "Tổng số sản phẩm bán", "format": "number", "group": "san_pham"},
+    "top_product_revenue": {"label": "Sản phẩm bán chạy", "format": "currency", "group": "san_pham"},
+    "return_count": {"label": "Số lần trả", "format": "number", "group": "san_pham"},
+    "avg_rating": {"label": "Điểm đánh giá TB", "format": "number", "group": "san_pham"},
+    "data_quality_score_metric": {"label": "Chất lượng dữ liệu", "format": "percent", "group": "chat_luong"},
+    "row_count_metric": {"label": "Số dòng dữ liệu", "format": "number", "group": "chat_luong"},
+    "duplicate_count": {"label": "Dòng trùng lặp", "format": "number", "group": "chat_luong"},
+}
+
+
+def _get_metric_definitions_for_report_type(report_type: str) -> list[dict[str, Any]]:
+    """Tra ve danh sach metric definition phu hop voi loai bao cao."""
+    meta = REPORT_TYPE_METADATA.get(report_type, {})
+    metric_keys = meta.get("kpis", [])
+    result = []
+    for key in metric_keys:
+        if key in METRIC_DEFINITIONS:
+            result.append({**METRIC_DEFINITIONS[key], "key": key})
+        else:
+            result.append({"key": key, "label": key.replace("_", " ").title(), "format": "number", "group": "khac"})
+    return result
+
+
+def _get_chart_suggestions_for_report_type(report_type: str) -> list[dict[str, Any]]:
+    """Tra ve danh sach chart suggestions phu hop voi loai bao cao."""
+    meta = REPORT_TYPE_METADATA.get(report_type, {})
+    return meta.get("chart_suggestions", [])
+
+
+def _round_metric(value: float, fmt: str) -> float:
+    """Lam tron gia tri metric theo format."""
+    if not isinstance(value, (int, float)) or value != value:
+        return 0.0
+    if fmt == "currency":
+        return round(value, -3)
+    elif fmt in ("percent", "ratio"):
+        return round(value, 2)
+    else:
+        return round(value, 1)
+
+
+def _safe_sum(values: list[Any]) -> float:
+    """Tinh tong an toan."""
+    total = 0.0
+    for v in values:
+        if isinstance(v, (int, float)) and v == v:
+            total += v
+    return total
+
+
+def _safe_avg(values: list[Any]) -> float:
+    """Tinh trung binh an toan."""
+    valid = [v for v in values if isinstance(v, (int, float)) and v == v]
+    if not valid:
+        return 0.0
+    return _safe_sum(valid) / len(valid)
+
+
+def _safe_max(values: list[Any]) -> float:
+    """Tim max an toan."""
+    valid = [v for v in values if isinstance(v, (int, float)) and v == v]
+    return max(valid) if valid else 0.0
+
+
+def _safe_min(values: list[Any]) -> float:
+    """Tim min an toan."""
+    valid = [v for v in values if isinstance(v, (int, float)) and v == v]
+    return min(valid) if valid else 0.0
+
+
+def _build_numeric_groups(rows: list[dict[str, Any]], group_col: str, value_col: str) -> dict[str, float]:
+    """Group rows theo group_col, tinh tong value_col."""
+    groups: dict[str, float] = {}
+    for row in rows:
+        key = str(row.get(group_col, "Khác"))
+        val = row.get(value_col, 0)
+        if isinstance(val, (int, float)) and val == val:
+            groups[key] = groups.get(key, 0.0) + val
+    return groups
+
+
+def _build_chart_data_for_suggestion(
+    rows: list[dict[str, Any]],
+    suggestion: dict[str, Any],
+    column_mapping: dict[str, str],
+) -> dict[str, Any] | None:
+    """Build chart data dict tu chart suggestion + data rows + column mapping."""
+    try:
+        chart_type = suggestion.get("type", "bar")
+        title = suggestion.get("title", "Biểu đồ")
+        group_by = suggestion.get("group_by", "category")
+        limit = suggestion.get("limit", 8)
+        data_keys = suggestion.get("data_keys", [])
+
+        if not data_keys:
+            return None
+
+        primary_key = data_keys[0]
+        mapped_col = column_mapping.get(primary_key, "")
+
+        if not mapped_col:
+            return None
+
+        # Determine grouping column
+        if group_by in ("date", "month"):
+            date_col = column_mapping.get("date", "") or column_mapping.get("month", "")
+            if not date_col:
+                return None
+            grouped = _build_numeric_groups(rows, date_col, mapped_col)
+            sorted_keys = sorted(grouped.keys())
+            chart_data = [{"name": k, "value": _round_metric(grouped[k], "currency")} for k in sorted_keys]
+        elif group_by in ("category", "department", "segment", "status", "item", "product", "customer", "project", "quarter"):
+            grouped = _build_numeric_groups(rows, group_by, mapped_col)
+            sorted_items = sorted(grouped.items(), key=lambda x: x[1], reverse=True)[:limit]
+            chart_data = [{"name": k, "value": _round_metric(v, "currency")} for k, v in sorted_items]
+        else:
+            return None
+
+        if not chart_data:
+            return None
+
+        return {
+            "type": chart_type,
+            "title": title,
+            "data": chart_data,
+            "group_by": group_by,
+        }
+    except Exception:
+        return None
+
+
+def _build_comparison_chart_data(
+    rows: list[dict[str, Any]],
+    suggestion: dict[str, Any],
+    column_mapping: dict[str, str],
+) -> dict[str, Any] | None:
+    """Build comparison chart (planned vs actual)."""
+    try:
+        planned_col = column_mapping.get("planned", "") or column_mapping.get("du_kien", "")
+        actual_col = column_mapping.get("actual", "") or column_mapping.get("thuc_te", "")
+        group_col = (column_mapping.get("budget_item", "") or column_mapping.get("item", "")
+                     or column_mapping.get("hang_muc", ""))
+
+        if not (planned_col and actual_col and group_col):
+            return None
+
+        grouped_plan: dict[str, float] = {}
+        grouped_actual: dict[str, float] = {}
+
+        for row in rows:
+            key = str(row.get(group_col, "Khác"))
+            p = row.get(planned_col, 0)
+            a = row.get(actual_col, 0)
+            if isinstance(p, (int, float)) and p == p:
+                grouped_plan[key] = grouped_plan.get(key, 0.0) + p
+            if isinstance(a, (int, float)) and a == a:
+                grouped_actual[key] = grouped_actual.get(key, 0.0) + a
+
+        all_keys = sorted(set(grouped_plan.keys()) | set(grouped_actual.keys()))
+        chart_data = [
+            {"name": k, "planned": _round_metric(grouped_plan.get(k, 0.0), "currency"),
+             "actual": _round_metric(grouped_actual.get(k, 0.0), "currency")}
+            for k in all_keys
+        ]
+
+        return {
+            "type": "comparison",
+            "title": suggestion.get("title", "So sánh Kế hoạch - Thực tế"),
+            "data": chart_data,
+            "group_by": "item",
+        }
+    except Exception:
+        return None
+
+
+
 REPORT_TYPE_METADATA: dict[str, dict[str, Any]] = {
-    # --- Marketing & Sales ---
     "sales_report": {
         "label": "Báo cáo bán hàng",
         "description": "Theo dõi doanh thu, đơn hàng, khách hàng theo thời gian hoặc danh mục",
         "expected_columns": ["doanh_thu", "don_hang", "khach_hang", "ngay", "thang", "nam"],
-        "kpis": ["revenue", "orders", "leads", "ad_spend", "roas", "conversion_rate", "repeat_rate", "aov"],
-        "insight_templates": [
-            "tong_quan_sales",
-            "top_performer",
-            "trend_growth",
-            "anomaly_detection",
-            "customer_segments",
+        "kpis": ["total_revenue", "total_orders", "total_leads", "avg_order_value", "roas", "conversion_rate", "repeat_rate"],
+        "chart_suggestions": [
+            {"type": "line", "title": "Xu hướng doanh thu", "data_keys": ["revenue"], "group_by": "date"},
+            {"type": "bar", "title": "Doanh thu theo tháng", "data_keys": ["revenue"], "group_by": "month"},
+            {"type": "pie", "title": "Tỷ lệ đơn hàng theo kênh", "data_keys": ["orders"], "group_by": "category"},
         ],
     },
     "marketing_report": {
         "label": "Báo cáo Marketing",
         "description": "Phân tích hiệu quả chiến dịch, chi phí quảng cáo, ROAS theo kênh",
         "expected_columns": ["kenh", "chi_phi", "doanh_thu", "roi", "click", "impression"],
-        "kpis": ["revenue", "ad_spend", "roas", "conversion_rate", "aov"],
-        "insight_templates": [
-            "channel_roi",
-            "ad_efficiency",
-            "budget_allocation",
-            "campaign_performance",
+        "kpis": ["total_revenue", "total_cost", "roas", "conversion_rate", "avg_order_value"],
+        "chart_suggestions": [
+            {"type": "bar", "title": "Chi phí theo kênh", "data_keys": ["cost"], "group_by": "category"},
+            {"type": "comparison", "title": "Chi phí vs Doanh thu", "data_keys": ["cost", "revenue"], "group_by": "category"},
+            {"type": "pie", "title": "Phân bổ ngân sách", "data_keys": ["cost"], "group_by": "category"},
+            {"type": "line", "title": "Xu hướng ROAS", "data_keys": ["roas"], "group_by": "date"},
         ],
     },
     "expense_report": {
         "label": "Báo cáo chi phí",
         "description": "Phân tích các khoản chi phí theo danh mục, bộ phận hoặc thời gian",
         "expected_columns": ["chi_phi", "danh_muc", "bo_phan", "ngay", "nha_cung_cap", "nguoi_duyet"],
-        "kpis": ["total_cost", "cost_by_category", "cost_by_department", "variance"],
-        "insight_templates": [
-            "top_expense_category",
-            "cost_trend",
-            "department_spending",
-            "budget_vs_actual",
+        "kpis": ["total_cost", "avg_cost", "variance_pct"],
+        "chart_suggestions": [
+            {"type": "pie", "title": "Chi phí theo danh mục", "data_keys": ["cost"], "group_by": "category"},
+            {"type": "bar", "title": "Chi phí theo phòng ban", "data_keys": ["cost"], "group_by": "department"},
+            {"type": "line", "title": "Chi phí theo thời gian", "data_keys": ["cost"], "group_by": "date"},
+            {"type": "horizontal_bar", "title": "Top chi phí lớn nhất", "data_keys": ["cost"], "group_by": "category", "limit": 8},
         ],
     },
     "payroll_report": {
         "label": "Báo cáo lương",
         "description": "Tổng hợp lương, phụ cấp, thưởng, khấu trừ theo nhân viên hoặc phòng ban",
         "expected_columns": ["nhan_vien", "luong_co_ban", "phu_cap", "thuong", "khau_tru", "luong_rong", "bo_phan"],
-        "kpis": ["total_payroll", "avg_salary", "total_bonus", "total_allowance", "total_deduction", "headcount"],
-        "insight_templates": [
-            "payroll_summary",
-            "department_salary",
-            "bonus_distribution",
-            "salary_outlier",
+        "kpis": ["total_payroll", "avg_salary", "total_bonus", "total_allowance", "total_deduction", "headcount", "min_salary", "max_salary"],
+        "chart_suggestions": [
+            {"type": "horizontal_bar", "title": "Lương theo phòng ban", "data_keys": ["avg_salary"], "group_by": "department"},
+            {"type": "bar", "title": "Phân bổ lương thành phần", "data_keys": ["base_salary", "allowance", "bonus", "deduction"], "group_by": "department"},
+            {"type": "pie", "title": "Tỷ lệ thưởng theo phòng", "data_keys": ["bonus"], "group_by": "department"},
+            {"type": "rank", "title": "Top lương cao nhất", "data_keys": ["net_salary"], "limit": 10},
         ],
     },
     "budget_report": {
         "label": "Báo cáo ngân sách",
         "description": "So sánh ngân sách kế hoạch vs thực tế theo hạng mục hoặc quý",
         "expected_columns": ["hang_muc", "du_kien", "thuc_te", "chenh_lech", "quy", "bo_phan"],
-        "kpis": ["total_planned", "total_actual", "variance", "variance_pct", "budget_utilization"],
-        "insight_templates": [
-            "budget_overview",
-            "over_budget_items",
-            "under_budget_items",
-            "quarterly_comparison",
+        "kpis": ["total_budget", "total_cost", "variance", "variance_pct", "budget_utilization"],
+        "chart_suggestions": [
+            {"type": "comparison", "title": "Kế hoạch vs Thực tế", "data_keys": ["planned", "actual"], "group_by": "item"},
+            {"type": "bar", "title": "Chênh lệch theo hạng mục", "data_keys": ["variance"], "group_by": "item"},
+            {"type": "gauge", "title": "Tỷ lệ sử dụng ngân sách", "data_keys": ["utilization"], "is_gauge": True},
+            {"type": "bar", "title": "Ngân sách theo quý", "data_keys": ["planned", "actual"], "group_by": "quarter"},
         ],
     },
     "inventory_report": {
         "label": "Báo cáo tồn kho",
         "description": "Theo dõi hàng tồn kho, nhập xuất, điểm đặt hàng lại",
         "expected_columns": ["san_pham", "ton_kho", "nhap", "xuat", "dau_ky", "cuoi_ky", "dinh_muc"],
-        "kpis": ["total_stock", "stock_value", "turnover_rate", "reorder_needed", "dead_stock"],
-        "insight_templates": [
-            "stock_overview",
-            "low_stock_alert",
-            "slow_moving",
-            "inventory_value",
+        "kpis": ["total_stock", "total_stock_in", "total_stock_out", "avg_stock", "low_stock_count", "dead_stock_count"],
+        "chart_suggestions": [
+            {"type": "bar", "title": "Tồn kho theo sản phẩm", "data_keys": ["balance"], "group_by": "item"},
+            {"type": "horizontal_bar", "title": "Top sản phẩm sắp hết", "data_keys": ["balance"], "group_by": "item", "limit": 8},
+            {"type": "line", "title": "Nhập xuất theo thời gian", "data_keys": ["stock_in", "stock_out"], "group_by": "date"},
+            {"type": "pie", "title": "Tỷ lệ tồn kho", "data_keys": ["balance"], "group_by": "category"},
         ],
     },
     "customer_report": {
@@ -162,66 +414,70 @@ REPORT_TYPE_METADATA: dict[str, dict[str, Any]] = {
         "description": "Phân tích danh sách khách hàng, phân loại, giá trị vòng đời",
         "expected_columns": ["khach_hang", "email", "sdt", "ngay_tao", "phan_loai", "tong_mua"],
         "kpis": ["total_customers", "new_customers", "active_customers", "avg_ltv", "churn_rate"],
-        "insight_templates": [
-            "customer_overview",
-            "customer_segments",
-            "top_customers",
-            "churn_risk",
+        "chart_suggestions": [
+            {"type": "pie", "title": "Phân bố khách hàng", "data_keys": ["count"], "group_by": "segment"},
+            {"type": "bar", "title": "Top khách hàng giá trị cao", "data_keys": ["ltv"], "group_by": "customer", "limit": 10},
+            {"type": "line", "title": "Khách mới theo tháng", "data_keys": ["new_customers"], "group_by": "month"},
+            {"type": "pie", "title": "Tỷ lệ Active vs Inactive", "data_keys": ["active", "inactive"], "group_by": "status"},
         ],
     },
     "financial_summary": {
         "label": "Báo cáo tài chính",
         "description": "Bảng cân đối thu chi, lãi lỗ, dòng tiền theo kỳ",
         "expected_columns": ["ngay", "thu", "chi", "lai_lo", "tong", "quy", "nam"],
-        "kpis": ["total_income", "total_expense", "net_profit", "profit_margin", "cash_flow"],
-        "insight_templates": [
-            "financial_overview",
-            "profit_trend",
-            "expense_breakdown",
-            "monthly_comparison",
+        "kpis": ["total_income", "total_expense", "total_profit", "profit_margin", "expense_ratio"],
+        "chart_suggestions": [
+            {"type": "area", "title": "Thu chi theo thời gian", "data_keys": ["income", "expense"], "group_by": "date"},
+            {"type": "comparison", "title": "Thu vs Chi", "data_keys": ["income", "expense"], "group_by": "month"},
+            {"type": "bar", "title": "Lợi nhuận theo tháng", "data_keys": ["profit"], "group_by": "month"},
+            {"type": "pie", "title": "Cơ cấu chi phí", "data_keys": ["expense"], "group_by": "category"},
         ],
     },
     "project_report": {
         "label": "Báo cáo dự án",
         "description": "Theo dõi tiến độ, chi phí, nhân sự theo dự án",
         "expected_columns": ["du_an", "ngay_bat_dau", "ngay_ket_thuc", "chi_phi", "tien_do", "trang_thai"],
-        "kpis": ["total_projects", "on_time", "over_budget", "completion_rate"],
-        "insight_templates": [
-            "project_overview",
-            "overdue_projects",
-            "budget_by_project",
+        "kpis": ["total_projects", "completed_projects", "in_progress_projects", "overdue_projects", "avg_progress"],
+        "chart_suggestions": [
+            {"type": "bar", "title": "Dự án theo trạng thái", "data_keys": ["count"], "group_by": "status"},
+            {"type": "horizontal_bar", "title": "Tiến độ dự án", "data_keys": ["progress"], "group_by": "project"},
+            {"type": "bar", "title": "Chi phí theo dự án", "data_keys": ["cost"], "group_by": "project"},
+            {"type": "comparison", "title": "Dự án vượt ngân sách", "data_keys": ["planned", "actual"], "group_by": "project"},
         ],
     },
     "hr_report": {
         "label": "Báo cáo nhân sự",
         "description": "Tổng hợp nhân sự, tuyển dụng, đào tạo, KPI nhân viên",
         "expected_columns": ["nhan_vien", "bo_phan", "chuc_vu", "ngay_vao", "kpi", "trang_thai"],
-        "kpis": ["total_headcount", "new_hires", "turnover_rate", "avg_kpi", "productivity"],
-        "insight_templates": [
-            "hr_overview",
-            "turnover_analysis",
-            "department_distribution",
-            "kpi_performance",
+        "kpis": ["headcount", "new_hires", "active_headcount", "turnover_rate_hr", "avg_kpi", "productivity_score"],
+        "chart_suggestions": [
+            {"type": "bar", "title": "Nhân sự theo phòng ban", "data_keys": ["count"], "group_by": "department"},
+            {"type": "bar", "title": "Điểm KPI theo phòng", "data_keys": ["avg_kpi"], "group_by": "department"},
+            {"type": "pie", "title": "Tỷ lệ nghỉ việc", "data_keys": ["count"], "group_by": "status"},
+            {"type": "line", "title": "Tuyển dụng theo tháng", "data_keys": ["new_hires"], "group_by": "month"},
         ],
     },
     "product_report": {
         "label": "Báo cáo sản phẩm",
         "description": "Phân tích doanh số, tồn kho, đánh giá sản phẩm theo SKU",
         "expected_columns": ["san_pham", "sku", "doanh_so", "so_luong_ban", "gia", "danh_gia"],
-        "kpis": ["total_revenue", "units_sold", "avg_price", "top_products", "return_rate"],
-        "insight_templates": [
-            "product_overview",
-            "top_selling",
-            "slow_moving_products",
-            "price_analysis",
+        "kpis": ["total_revenue", "total_units_sold", "avg_price", "top_product_revenue", "avg_rating"],
+        "chart_suggestions": [
+            {"type": "bar", "title": "Top sản phẩm bán chạy", "data_keys": ["revenue"], "group_by": "product", "limit": 10},
+            {"type": "horizontal_bar", "title": "Top sản phẩm bán ít", "data_keys": ["revenue"], "group_by": "product", "limit": 8, "ascending": True},
+            {"type": "bar", "title": "Đánh giá TB theo sản phẩm", "data_keys": ["rating"], "group_by": "product"},
         ],
     },
     "generic_report": {
         "label": "Báo cáo tổng hợp",
         "description": "Bảng dữ liệu không xác định rõ loại — phân tích tổng quát",
         "expected_columns": [],
-        "kpis": [],
-        "insight_templates": ["generic_summary", "numeric_overview", "categorical_overview"],
+        "kpis": ["total_rows", "row_count_metric", "duplicate_count"],
+        "chart_suggestions": [
+            {"type": "bar", "title": "Top giá trị số", "data_keys": ["value"], "group_by": "category", "limit": 8},
+            {"type": "pie", "title": "Phân bố", "data_keys": ["value"], "group_by": "category"},
+            {"type": "line", "title": "Xu hướng", "data_keys": ["value"], "group_by": "date"},
+        ],
     },
 }
 
@@ -1470,7 +1726,282 @@ async def _run_deep_analysis_gen(
         computed_kpis = {}
         data_warnings.append("Không xác định được loại báo cáo — chỉ hiển thị thống kê tổng quan.")
 
-    # Kiem tra chat luong du lieu chung
+    # Kiem tra chat luong du lieu chung    # --- Build chart_data tu chart_suggestions ---
+    chart_data: dict[str, Any] = {"primary": None, "secondary": []}
+    chart_suggestions = _get_chart_suggestions_for_report_type(report_type)
+    valid_charts = []
+    for suggestion in chart_suggestions:
+        if suggestion.get("type") == "comparison":
+            cd = _build_comparison_chart_data(payload.report_rows, suggestion, mapping)
+        else:
+            cd = _build_chart_data_for_suggestion(payload.report_rows, suggestion, mapping)
+        if cd:
+            valid_charts.append(cd)
+
+    if valid_charts:
+        chart_data["primary"] = valid_charts[0]
+        chart_data["secondary"] = valid_charts[1:]
+    # --- End chart_data ---
+
+
+    # --- ENRICHMENT: Summary + Trends + Top/Bottom + Anomalies ---
+    enrichment: dict[str, Any] = {}
+
+    # 1. AI-driven summary (3-4 key sentences from data)
+    try:
+        summary_parts = []
+        if computed_kpis.get("revenue") or computed_kpis.get("total_revenue"):
+            rev = float(computed_kpis.get("revenue", computed_kpis.get("total_revenue", 0)))
+            if rev > 0:
+                summary_parts.append(f"Tổng doanh thu đạt {rev/1_000_000:.1f}M VNĐ.")
+        if computed_kpis.get("total_cost"):
+            cost = float(computed_kpis.get("total_cost", 0))
+            if cost > 0:
+                summary_parts.append(f"Tổng chi phí {cost/1_000_000:.1f}M VNĐ.")
+        if computed_kpis.get("profit_margin"):
+            margin = float(computed_kpis.get("profit_margin", 0))
+            if margin != 0:
+                summary_parts.append(f"Biên lợi nhuận {margin*100:.1f}%.")
+        if computed_kpis.get("headcount") and computed_kpis.get("total_payroll"):
+            hc = float(computed_kpis.get("headcount", 0))
+            pay = float(computed_kpis.get("total_payroll", 0))
+            if hc > 0 and pay > 0:
+                summary_parts.append(f"Tổng {int(hc)} nhân viên, quỹ lương {pay/1_000_000:.1f}M VNĐ.")
+        enrichment["summary"] = " ".join(summary_parts) if summary_parts else None
+    except Exception:
+        enrichment["summary"] = None
+
+    # 2. Trend data (growth rate, direction)
+    try:
+        trend_data: dict[str, Any] = {}
+        if computed_kpis.get("revenue") and computed_kpis.get("avg_revenue"):
+            total_rev = float(computed_kpis.get("revenue", 0))
+            avg_rev = float(computed_kpis.get("avg_revenue", 0))
+            if avg_rev > 0:
+                trend_data["revenue_growth_label"] = (
+                    "Tăng trưởng" if total_rev > avg_rev * 1.1
+                    else "Ổn định" if total_rev > avg_rev * 0.9
+                    else "Cần cải thiện"
+                )
+                trend_data["revenue_vs_avg"] = round(total_rev / avg_rev, 2) if avg_rev else 0
+        if computed_kpis.get("roas"):
+            roas = float(computed_kpis.get("roas", 0))
+            trend_data["roas_label"] = "Xuất sắc" if roas >= 3 else "Tốt" if roas >= 1.5 else "Cần cải thiện" if roas > 0 else "Chưa có dữ liệu"
+        if computed_kpis.get("profit_margin"):
+            pm = float(computed_kpis.get("profit_margin", 0))
+            trend_data["profit_label"] = "Lãi" if pm > 0 else "Lỗ" if pm < 0 else "Hòa vốn"
+        if computed_kpis.get("budget_utilization"):
+            bu = float(computed_kpis.get("budget_utilization", 0))
+            trend_data["budget_label"] = (
+                "Vượt ngân sách" if bu > 1.0
+                else "Trong ngân sách" if bu > 0.8
+                else "Ngân sách thấp"
+            )
+        enrichment["trend_data"] = trend_data if trend_data else None
+    except Exception:
+        enrichment["trend_data"] = None
+
+    # 3. Top performers (highest values by key metric)
+    try:
+        top_metric_keys = [
+            ("revenue", "doanh_thu"),
+            ("total_cost", "chi_phi"),
+            ("total_payroll", "luong"),
+            ("avg_salary", "luong"),
+            ("avg_ltv", "gia_tri"),
+        ]
+        top_items: list[dict[str, Any]] = []
+        for metric_key, col_key in top_metric_keys:
+            mapped_col = mapping.get(col_key, "")
+            if not mapped_col:
+                mapped_col = mapping.get(metric_key, "")
+            if mapped_col:
+                # Find rows with this column
+                vals: list[tuple[str, float]] = []
+                for row in payload.report_rows:
+                    v = row.get(mapped_col, 0)
+                    if isinstance(v, (int, float)) and v == v:
+                        label = str(row.get(list({k: v for k in row if k != mapped_col}.keys())[0] if len(row) > 1 else mapped_col, str(v)))
+                        vals.append((label, float(v)))
+                if vals:
+                    top5 = sorted(vals, key=lambda x: x[1], reverse=True)[:5]
+                    label_key = _report_type_vi(report_type)
+                    for rank, (name, val) in enumerate(top5, 1):
+                        top_items.append({
+                            "rank": rank,
+                            "name": name,
+                            "value": _round_metric(val, "currency"),
+                            "metric": metric_key,
+                            "metric_label": label_key,
+                        })
+                    break  # Only use first matched metric
+        enrichment["top_items"] = top_items if top_items else None
+    except Exception:
+        enrichment["top_items"] = None
+
+    # 4. Bottom performers
+    try:
+        bottom_metric_keys = [
+            ("revenue", "doanh_thu"),
+            ("total_cost", "chi_phi"),
+            ("total_payroll", "luong"),
+        ]
+        bottom_items: list[dict[str, Any]] = []
+        for metric_key, col_key in bottom_metric_keys:
+            mapped_col = mapping.get(col_key, "")
+            if not mapped_col:
+                mapped_col = mapping.get(metric_key, "")
+            if mapped_col:
+                vals: list[tuple[str, float]] = []
+                for row in payload.report_rows:
+                    v = row.get(mapped_col, 0)
+                    if isinstance(v, (int, float)) and v == v and float(v) > 0:
+                        name_val = [vv for kk, vv in row.items() if kk != mapped_col]
+                        name = str(name_val[0]) if name_val else str(v)
+                        vals.append((name, float(v)))
+                if vals:
+                    bot5 = sorted(vals, key=lambda x: x[1])[:5]
+                    for rank, (name, val) in enumerate(bot5, 1):
+                        bottom_items.append({
+                            "rank": rank,
+                            "name": name,
+                            "value": _round_metric(val, "currency"),
+                            "metric": metric_key,
+                        })
+                    break
+        enrichment["bottom_items"] = bottom_items if bottom_items else None
+    except Exception:
+        enrichment["bottom_items"] = None
+
+    # 5. Segment breakdown
+    try:
+        segment_col_keys = ["danh_muc", "bo_phan", "phan_loai", "kenh", "trang_thai", "segment", "loai"]
+        seg_col = ""
+        for sk in segment_col_keys:
+            if mapping.get(sk):
+                seg_col = mapping[sk]
+                break
+        if not seg_col:
+            for col in payload.report_rows[0].keys():
+                low = col.lower()
+                if any(k in low for k in ["danh_muc", "bo_phan", "phan_loai", "kenh", "trang_thai", "segment", "loai"]):
+                    seg_col = col
+                    break
+
+        if seg_col:
+            seg_values: dict[str, float] = {}
+            seg_counts: dict[str, int] = {}
+            for row in payload.report_rows:
+                seg = str(row.get(seg_col, "Khác"))
+                seg_counts[seg] = seg_counts.get(seg, 0) + 1
+                for v in row.values():
+                    if isinstance(v, (int, float)) and v == v:
+                        seg_values[seg] = seg_values.get(seg, 0.0) + float(v)
+                        break
+
+            if seg_values:
+                total_seg = sum(seg_values.values())
+                segments: list[dict[str, Any]] = []
+                for seg_name in sorted(seg_values, key=lambda x: seg_values[x], reverse=True)[:8]:
+                    val = seg_values[seg_name]
+                    pct = round(val / total_seg * 100, 1) if total_seg else 0
+                    segments.append({
+                        "name": seg_name,
+                        "value": _round_metric(val, "currency"),
+                        "count": seg_counts.get(seg_name, 0),
+                        "percentage": pct,
+                    })
+                enrichment["segment_breakdown"] = segments
+            else:
+                enrichment["segment_breakdown"] = None
+        else:
+            enrichment["segment_breakdown"] = None
+    except Exception:
+        enrichment["segment_breakdown"] = None
+
+    # 6. Statistical anomalies
+    try:
+        numeric_cols: list[str] = []
+        for col, mapped in mapping.items():
+            vals = [row.get(mapped, 0) for row in payload.report_rows]
+            numeric_vals = [float(v) for v in vals if isinstance(v, (int, float)) and v == v and float(v) != 0]
+            if len(numeric_vals) >= 5:
+                numeric_cols.append(mapped)
+
+        anomalies: list[dict[str, Any]] = []
+        for col in numeric_cols[:5]:  # max 5 columns
+            vals = [float(row.get(col, 0)) for row in payload.report_rows if isinstance(row.get(col, 0), (int, float)) and row.get(col, 0) == row.get(col, 0)]
+            if len(vals) < 5:
+                continue
+            mean_val = sum(vals) / len(vals)
+            variance = sum((v - mean_val) ** 2 for v in vals) / len(vals)
+            std = variance ** 0.5
+            if std == 0:
+                continue
+            # Z-score outliers (|z| > 2)
+            outlier_count = 0
+            outlier_examples: list[str] = []
+            for row in payload.report_rows:
+                v = row.get(col, 0)
+                if isinstance(v, (int, float)) and v == v:
+                    z = abs((float(v) - mean_val) / std)
+                    if z > 2:
+                        outlier_count += 1
+                        if len(outlier_examples) < 3:
+                            row_label = str(list(row.values())[0]) if row else str(v)
+                            outlier_examples.append(f"{row_label}: {v:,.0f}")
+            if outlier_count > 0:
+                anomalies.append({
+                    "column": col,
+                    "outlier_count": outlier_count,
+                    "total_count": len(vals),
+                    "outlier_pct": round(outlier_count / len(vals) * 100, 1),
+                    "examples": outlier_examples,
+                    "direction": "cao bất thường" if outlier_count > 0 else "thấp bất thường",
+                })
+
+        enrichment["anomalies"] = anomalies if anomalies else None
+    except Exception:
+        enrichment["anomalies"] = None
+
+    # 7. Key numbers (3-4 highlight KPIs)
+    try:
+        key_numbers: list[dict[str, Any]] = []
+        highlight_keys = [
+            ("revenue", "total_revenue", "Tổng doanh thu", "currency"),
+            ("total_cost", "total_cost", "Tổng chi phí", "currency"),
+            ("total_payroll", "total_payroll", "Tổng quỹ lương", "currency"),
+            ("total_customers", "total_customers", "Tổng khách hàng", "number"),
+            ("total_orders", "total_orders", "Tổng đơn hàng", "number"),
+            ("headcount", "headcount", "Số nhân viên", "number"),
+            ("profit_margin", "profit_margin", "Biên lợi nhuận", "percent"),
+            ("roas", "roas", "ROAS", "ratio"),
+            ("budget_utilization", "budget_utilization", "Sử dụng ngân sách", "percent"),
+            ("churn_rate", "churn_rate", "Tỷ lệ mất khách", "percent"),
+            ("completion_rate", "completion_rate", "Tỷ lệ hoàn thành", "percent"),
+        ]
+        shown: set[str] = set()
+        for _, key, label, fmt in highlight_keys:
+            if key in shown:
+                continue
+            val = computed_kpis.get(key)
+            if isinstance(val, (int, float)) and val == val and val != 0:
+                key_numbers.append({
+                    "key": key,
+                    "label": label,
+                    "value": _format_safe(val, fmt),
+                    "format": fmt,
+                })
+                shown.add(key)
+            if len(key_numbers) >= 4:
+                break
+        enrichment["key_numbers"] = key_numbers if key_numbers else None
+    except Exception:
+        enrichment["key_numbers"] = None
+    # --- End enrichment ---
+
+
+
     if len(payload.report_rows) < 5:
         data_warnings.append(f"Số dòng dữ liệu rất ít ({len(payload.report_rows)}) — kết quả chỉ mang tính tham khảo.")
     if mapping and all(v == 0.0 for v in mapping_confidence.values()):
@@ -1582,6 +2113,7 @@ async def _run_deep_analysis_gen(
             "aov": aov,
         },
         "computed_kpis": computed_kpis,
+        "chart_data": chart_data,
         "kpi_availability": kpi_availability,
         "issues": issues,
         "business_name": payload.business_name,
@@ -1897,6 +2429,8 @@ async def _run_deep_analysis_gen(
         },
         "computed_kpis": computed_kpis,
         "report_description": _report_description(report_type),
+        "chart_data": chart_data,
+        "enrichment": enrichment,
         "schema_mapping": mapping,
         "mapping_confidence": mapping_confidence,
         "insights": insights,
