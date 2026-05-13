@@ -487,7 +487,7 @@ export default function StepPreview({
                 type="url"
                 value={linkForm.destination_url}
                 onChange={(e) => setLinkForm({ ...linkForm, destination_url: e.target.value })}
-                placeholder="https://..."
+                placeholder="https://captone2.site"
                 className="input text-[11px] flex-[2]"
               />
               <button
