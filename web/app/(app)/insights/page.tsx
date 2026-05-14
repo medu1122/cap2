@@ -271,9 +271,11 @@ function formatMetricValue(value: number, fmt: string): string {
   if (fmt === "percent") return `${(value * 100).toFixed(2)}%`;
   if (fmt === "ratio") return value.toFixed(2);
 
-  // Currency + generic number: unified B/M/K abbreviation, always 2 decimal
+  // Currency + generic number: unified B/M/K abbreviation
+  // Thresholds raised to avoid "small millions" being shown as billions
+  // 1B = 1,000M, 1M = 1,000K — only abbreviate when truly large
   if (Math.abs(value) >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
-  if (Math.abs(value) >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
+  if (Math.abs(value) >= 100_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
   if (Math.abs(value) >= 1_000) return `${(value / 1_000).toFixed(2)}K`;
   if (Math.abs(value) < 1) return value.toFixed(2);
   return Math.round(value).toLocaleString("vi-VN");

@@ -1228,7 +1228,16 @@ def _to_float(value: object) -> float:
         return 0.0
     if isinstance(value, (int, float)):
         return float(value)
-    raw = str(value).strip().replace(" ", "").replace(".", "").replace(",", ".")
+    raw = str(value).strip().replace(" ", "")
+    # Neu co dau phay -> dinh dang VN (123.456,78) -> thay phay = cham
+    if "," in raw:
+        raw = raw.replace(",", ".")
+    # Neu khong co phay nhung co nhieu hon 1 cham -> co the co thousand separator (1.234.567)
+    # Chi giu cham cuoi cung lam thap phan, xoa cac cham khac
+    dot_count = raw.count(".")
+    if dot_count > 1:
+        last_dot = raw.rfind(".")
+        raw = raw[:last_dot].replace(".", "") + raw[last_dot:]
     try:
         return float(raw)
     except ValueError:
