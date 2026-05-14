@@ -153,6 +153,16 @@ async def _call_openai(messages: list[dict]) -> str:
     return resp.choices[0].message.content.strip()
 
 
+async def _call_openai_primary(messages: list[dict]) -> str:
+    """OpenAI GPT-4o — model mạnh nhất cho video script chất lượng cao."""
+    resp = await _openai.chat.completions.create(
+        model="gpt-4o",
+        messages=messages,
+        temperature=0.85,
+    )
+    return resp.choices[0].message.content.strip()
+
+
 async def _call_ai_safe(messages: list[dict], timeout: int | None = None) -> str:
     try:
         return await _call_qwen(messages, timeout)
@@ -704,6 +714,10 @@ async def build_video_script(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Generate video script using GPT-4o (OpenAI) for maximum quality."""
+    if not os.getenv("OPENAI_API_KEY"):
+        raise HTTPException(503, "Chưa cấu hình OPENAI_API_KEY")
+
     result = await db.execute(
         select(CampaignIdea).where(
             CampaignIdea.id == idea_id,
@@ -716,39 +730,154 @@ async def build_video_script(
 
     brand_ctx = await _get_brand_context(db, idea)
 
-    prompt = f"""Bạn là chuyên gia sản xuất video ngắn cho TikTok/短视频 Việt Nam.
-Viết kịch bản video TikTok viral cho chiến dịch sau:
+    system_prompt = """Bạn là chuyên gia sản xuất video ngắn (TikTok/Reels/YouTube Shorts) hàng đầu Việt Nam.
+Bạn hiểu sâu về xu hướng viral, tâm lý khán giả Gen Z/Millennial, cơ chế thuật toán và các format video phổ biến.
+Nhiệm vụ của bạn: viết kịch bản video KHỦNG, có sức lan tỏa cao, phù hợp 100% với thương hiệu."""
 
+    user_prompt = f"""Viết kịch bản video ngắn (TikTok/Reels) CHẤT LƯỢNG CAO cho chiến dịch dưới đây.
+
+═ ĐỊNH HƯỚNG CHIẾN DỊCH ═
 Thương hiệu:
 {brand_ctx}
 
 Chiến dịch:
 - Tên: {idea.title}
 - Mục tiêu: {idea.objective or ''}
-- Hook/Ưu đãi: {idea.hook or ''}
+- Hook/Ưu đãi chính: {idea.hook or ''}
 
-YÊU CẦU NGHIÊM NGẶT:
-1. Hook (3-5 giây đầu): PHẢI gây chú ý ngay - dùng shock, câu hỏi, số liệu bất ngờ
-2. Body video: Mỗi scene 5-10 giây, có hành động rõ ràng
-3. Text overlay: Ngắn gọn, dễ đọc trên mobile
-4. CTA cuối video: Rõ ràng, kèm urgency
-5. Thời lượng: 30-60 giây (hoặc 15 giây nếu là hook ads)
-6. Giọng văn/format: Tự nhiên như người thật nói, KHÔNG đọc script
+═ YÊU CẦU NGHIÊM NGẶT ═
 
-Trả về JSON hợp lệ (KHÔNG thêm text khác ngoài JSON):
+1. HOOK (0-5 giây) — ĐÂY LÀ YẾU TỐ QUYẾT ĐỊNH VIRAL
+   Viết 3 hook khác nhau (để người dùng chọn):
+   - Hook A (Sốc/Tò mò): Dùng số liệu gây sốc, câu hỏi để người xem tò mò, hoặc thị phạm trực tiếp
+   - Hook B (Cảm xúc): Kể câu chuyện cá nhân, trải nghiệm thật, khiến người xem đồng cảm
+   - Hook C (Giá trị/Giáo dục): Chia sẻ mẹo hữu ích, giải đáp thắc mắc phổ biến
+
+2. CẤU TRÚC SCENE-BY-SCENE
+   Mỗi scene phải có đủ:
+   - Thời lượng (giây)
+   - Mô tả hình ảnh trên màn hình (visual)
+   - Lời thoại/dialogue chính
+   - Text overlay (dòng chữ hiển thị trên video)
+   - Gợi ý B-roll (hình ảnh/video bổ sung)
+   - Âm thanh/nhạc nền gợi ý
+   - Mục đích của scene này (tạo tò mò / tạo tin tưởng / tạo urgency / chuyển đổi)
+
+   Cấu trúc khuyến nghị:
+   - Scene 1 (0-5s): HOOK — gây sốc hoặc tò mò
+   - Scene 2 (5-15s): VẤN ĐỀ — đặt câu hỏi, tạo đau đầu
+   - Scene 3 (15-30s): GIẢI PHÁP — giới thiệu sản phẩm/dịch vụ một cách tự nhiên
+   - Scene 4 (30-45s): CHỨNG MINH — testimonial, kết quả thực, số liệu
+   - Scene 5 (45-55s): CTA — kêu gọi hành động kèm urgency
+
+3. TRENDING TACTICS
+   Áp dụng ít nhất 2 trong số các format đang viral:
+   - "POV" (điểm nhìn ngôi thứ nhất)
+   - "Day in my life" / "Quay ra trước + sau"
+   - "Thử thách" (challenge)
+   - "So sánh before/after"
+   - "Giải thích ngắn gọn" (explainer)
+   - "Storytime" (kể chuyện có plot twist)
+   - "Unboxing/review"
+
+4. TEXT OVERLAY STRATEGY
+   - Tối đa 6-8 từ mỗi dòng
+   - Font lớn, dễ đọc trên mobile
+   - Dùng emoji để tăng engagement
+   - Highlight từ khóa quan trọng
+
+5. CTA (CALL-TO-ACTION)
+   Viết 2 phiên bản:
+   - Soft CTA: Gợi ý, không ép buộc (VD: "Nếu bạn thấy hữu ích, hãy...")
+   - Hard CTA: Rõ ràng, kèm urgency (VD: "Đừng bỏ lỡ — ưu đãi chỉ còn...")
+
+6. HASHTAG STRATEGY
+   Gợi ý 10 hashtag phân theo tier:
+   - 2 hashtag thương hiệu (brand)
+   - 3 hashtag ngành/lĩnh vực
+   - 3 hashtag trending (có thể không liên quan trực tiếp nhưng đang hot)
+   - 2 hashtag niche/community
+
+7. MUSIC/SOUND SUGGESTION
+   - Gợi ý mood nhạc (happy, dramatic, mystery, upbeat...)
+   - Gợi ý loại âm thanh phù hợp với từng scene
+
+8. CAPTION (CHÚ THÍCH)
+   Viết caption hoàn chỉnh để đăng kèm video:
+   - Dòng 1: Hook caption (gây tò mò, dẫn dắt)
+   - Dòng 2-3: Mô tả ngắn nội dung
+   - Dòng cuối: CTA nhẹ + hashtag
+
+═ ĐỊNH DẠNG TRẢ VỀ ═
+CHỈ trả về JSON hợp lệ, KHÔNG thêm text giải thích:
+
 {{
   "duration": "30-60 giây",
-  "hook": "Dòng/câu mở đầu video - gây CHÚ Ý NGAY trong 3-5 giây đầu tiên",
-  "hook_text_overlay": "Text hiển thị trên màn hình trong hook (ngắn gọn, dễ đọc)",
-  "body": "Tóm tắt nội dung chính video bằng 1-2 đoạn văn ngắn. Mô tả những gì xảy ra trong video.",
-  "cta": "Lời kêu gọi hành động cuối video (1-2 câu)",
-  "cta_text_overlay": "Text overlay cho CTA (ngắn, rõ ràng)"
+  "recommended_format": "TikTok|Reels|YouTube Shorts hoặc kết hợp",
+  "trending_format_used": "Tên format trending được áp dụng (VD: POV, Before/After...)",
+
+  "hooks": {{
+    "A_type": "Sốc/Tò mò",
+    "A_text": "...",
+    "A_text_overlay": "...",
+    "A_why_viral": "Giải thích ngắn tại sao hook này hiệu quả",
+    "B_type": "Cảm xúc",
+    "B_text": "...",
+    "B_text_overlay": "...",
+    "B_why_viral": "...",
+    "C_type": "Giá trị/Giáo dục",
+    "C_text": "...",
+    "C_text_overlay": "...",
+    "C_why_viral": "..."
+  }},
+
+  "scenes": [
+    {{
+      "scene_number": 1,
+      "time_range": "0-5 giây",
+      "visual": "Mô tả hình ảnh trên màn hình (camera angle, đối tượng, bối cảnh)",
+      "dialogue": "Lời thoại/dialogue chính (nếu có)",
+      "text_overlay": "Dòng chữ hiển thị trên video",
+      "broll_suggestion": "Gợi ý B-roll cần quay hoặc lấy",
+      "sound": "Âm thanh/nhạc cho scene này",
+      "purpose": "hook|tạo đau đầu|giới thiệu|chứng minh|cta",
+      "transition": "Cách chuyển sang scene tiếp theo"
+    }}
+  ],
+
+  "cta": {{
+    "soft": "...",
+    "soft_text_overlay": "...",
+    "hard": "...",
+    "hard_text_overlay": "..."
+  }},
+
+  "caption": "Caption hoàn chỉnh để đăng kèm video",
+
+  "hashtags": {{
+    "brand": ["#...", "#..."],
+    "industry": ["#...", "#...", "#..."],
+    "trending": ["#...", "#...", "#..."],
+    "niche": ["#...", "#..."]
+  }},
+
+  "music_mood": "Mô tả mood nhạc phù hợp (VD: upbeat, dramatic, calming...)",
+  "music_suggestion": "Loại âm thanh/nhạc gợi ý",
+  "production_tips": "2-3 mẹo quay để video đẹp và chuyên nghiệp hơn"
 }}
 
-CHỈ trả về JSON, không thêm text khác."""
+CHỉ trả về JSON. Không thêm ```markdown, không thêm dòng giải thích."""
 
-    messages = [{"role": "user", "content": prompt}]
-    raw = await _call_ai_safe(messages, timeout=240)
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    try:
+        raw = await _call_openai_primary(messages)
+    except Exception as exc:
+        raise HTTPException(503, f"Không thể gọi OpenAI: {exc}")
+
     try:
         data = _parse_json_flexible(raw)
     except Exception:

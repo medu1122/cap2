@@ -17,7 +17,7 @@ import {
 import Link from "next/link";
 import { api } from "@/lib/api-client";
 import { STATUS_COLORS, STATUS_LABELS, CHANNEL_LABELS, cn, formatDate } from "@/lib/utils";
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, isToday, parseISO, isWithinInterval, differenceInDays } from "date-fns";
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, isToday, parseISO } from "date-fns";
 import { vi } from "date-fns/locale";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
 
@@ -391,37 +391,8 @@ export default function CalendarPage() {
     return m;
   }, [items]);
 
-  // ── Campaign timeline bars ──────────────────────────────────────────
-  // Group items by campaign, get date range
-  const campaignGroups = useMemo(() => {
-    const map: Record<string, { campaign_id: string; items: CalendarItem[]; start: string; end: string; name: string; deadline?: string }> = {};
-    for (const it of items) {
-      if (!map[it.campaign_id]) {
-        map[it.campaign_id] = {
-          campaign_id: it.campaign_id,
-          items: [],
-          start: it.scheduled_date,
-          end: it.scheduled_date,
-          name: it.campaign_name,
-          deadline: it.campaign_deadline,
-        };
-      }
-      if (it.scheduled_date < map[it.campaign_id].start) map[it.campaign_id].start = it.scheduled_date;
-      if (it.scheduled_date > map[it.campaign_id].end) map[it.campaign_id].end = it.scheduled_date;
-      map[it.campaign_id].items.push(it);
-    }
-    return Object.values(map);
-  }, [items]);
-
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
-
-  function dateToPercent(dateStr: string): number {
-    const d = parseISO(dateStr);
-    const total = differenceInDays(monthEnd, monthStart) + 1;
-    const offset = differenceInDays(d, monthStart);
-    return Math.max(0, Math.min(100, (offset / total) * 100));
-  }
 
   function prevMonth() {
     if (viewMode === "month") {
@@ -440,24 +411,11 @@ export default function CalendarPage() {
 
   const WEEKDAYS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 
-  // ── Status filter options ───────────────────────────────────────────
-  const STATUS_OPTIONS = [
-    { value: "approved", label: "Đã duyệt" },
-    { value: "pending_approval", label: "Chờ duyệt" },
-    { value: "rejected", label: "Bị từ chối" },
-    { value: "all", label: "Tất cả" },
-  ];
-
   const CHANNEL_OPTIONS = [
-    { value: "all", label: "Tất cả kênh" },
+    { value: "all", label: "Tất cả" },
     { value: "facebook_post", label: "Facebook" },
     { value: "email", label: "Email" },
     { value: "video_script", label: "Video" },
-  ];
-
-  const STATUS_SHORT_OPTIONS = [
-    { value: "approved", label: "Đã duyệt" },
-    { value: "all", label: "Tất cả" },
   ];
 
   return (
@@ -531,24 +489,46 @@ export default function CalendarPage() {
                 Tuần
               </button>
             </div>
-            <select
-              className="input text-sm"
-              value={channelFilter}
-              onChange={(e) => setChannelFilter(e.target.value)}
-            >
+            {/* Compact channel + status filter */}
+            <div className="flex items-center gap-1 border border-gray-200 rounded-lg p-0.5 bg-gray-50 flex-wrap">
               {CHANNEL_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
+                <button
+                  key={o.value}
+                  onClick={() => setChannelFilter(o.value)}
+                  className={cn(
+                    "px-2.5 py-1 text-xs rounded-md transition-colors whitespace-nowrap",
+                    channelFilter === o.value
+                      ? "bg-white shadow-sm font-semibold text-gray-800"
+                      : "text-gray-500 hover:text-gray-700"
+                  )}
+                >
+                  {o.label}
+                </button>
               ))}
-            </select>
-            <select
-              className="input text-sm"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-            >
-              {STATUS_SHORT_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
+              <div className="w-px h-4 bg-gray-300 mx-1 shrink-0" />
+              <button
+                onClick={() => setStatusFilter("approved")}
+                className={cn(
+                  "px-2.5 py-1 text-xs rounded-md transition-colors whitespace-nowrap",
+                  statusFilter === "approved"
+                    ? "bg-white shadow-sm font-semibold text-[#377D73]"
+                    : "text-gray-400 hover:text-gray-700"
+                )}
+              >
+                Đã duyệt
+              </button>
+              <button
+                onClick={() => setStatusFilter("all")}
+                className={cn(
+                  "px-2.5 py-1 text-xs rounded-md transition-colors whitespace-nowrap",
+                  statusFilter === "all"
+                    ? "bg-white shadow-sm font-semibold text-gray-800"
+                    : "text-gray-400 hover:text-gray-700"
+                )}
+              >
+                Tất cả
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -567,64 +547,6 @@ export default function CalendarPage() {
         {/* Timeline view */}
         {items.length > 0 && (
           <div className="space-y-3">
-            {/* Campaign timeline strip */}
-            {campaignGroups.length > 0 && (
-              <div className="relative bg-white rounded-xl border border-gray-200 px-4 pt-3 pb-4">
-                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Chiến dịch trong tháng</p>
-                <div
-                  className="relative h-7 rounded overflow-hidden"
-                  style={{ background: "linear-gradient(to right, #f9fafb, #f3f4f6)" }}
-                >
-                  {campaignGroups.map((cg) => {
-                    const color = getCampaignColor(campaignColorMap[cg.campaign_id] ?? 0);
-                    const left = dateToPercent(cg.start);
-                    const right = dateToPercent(cg.end);
-                    const width = Math.max(2, right - left);
-                    return (
-                      <div
-                        key={cg.campaign_id}
-                        className="absolute top-1 bottom-1 rounded-full flex items-center px-2 overflow-hidden cursor-pointer group"
-                        style={{
-                          backgroundColor: color.bar + "25",
-                          borderLeft: `3px solid ${color.bar}`,
-                          left: `${left}%`,
-                          width: `${width}%`,
-                          minWidth: "6px",
-                        }}
-                        title={`${cg.name}: ${formatDate(cg.start)} → ${formatDate(cg.end)}${cg.deadline ? ` · Deadline ${formatDate(cg.deadline)}` : ""}`}
-                      >
-                        <span
-                          className="text-[9px] font-semibold truncate group-hover:underline"
-                          style={{ color: color.bar }}
-                        >
-                          {cg.name}
-                        </span>
-                      </div>
-                    );
-                  })}
-                  {/* Today marker */}
-                  {(() => {
-                    const todayStr = format(new Date(), "yyyy-MM-dd");
-                    if (todayStr < format(monthStart, "yyyy-MM-dd") || todayStr > format(monthEnd, "yyyy-MM-dd")) return null;
-                    const todayPct = dateToPercent(todayStr);
-                    return (
-                      <div
-                        className="absolute top-0 bottom-0 w-0.5 bg-red-400 z-10 pointer-events-none"
-                        style={{ left: `${todayPct}%` }}
-                      />
-                    );
-                  })()}
-                </div>
-                {/* Date labels */}
-                <div className="relative mt-1.5">
-                  <div className="flex justify-between text-[9px] text-gray-400">
-                    <span>{format(monthStart, "d MMM", { locale: vi })}</span>
-                    <span>{format(monthEnd, "d MMM yyyy", { locale: vi })}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {/* Calendar grid */}
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               {/* Day headers */}
@@ -643,6 +565,8 @@ export default function CalendarPage() {
                   const dayItems = itemsByDate[dateKey] || [];
                   const sameMonth = isSameMonth(day, currentDate);
                   const today = isToday(day);
+                  const hasItems = dayItems.length > 0;
+                  const primaryColor = hasItems ? getCampaignColor(campaignColorMap[dayItems[0].campaign_id] ?? 0) : null;
 
                   return (
                     <div
@@ -650,8 +574,12 @@ export default function CalendarPage() {
                       className={cn(
                         "relative border-r border-b border-gray-200 min-h-20 p-1.5",
                         !sameMonth && "bg-gray-50/60",
-                        today && "bg-[#377D73]/4"
+                        today && "bg-[#377D73]/4",
+                        hasItems && sameMonth && "bg-[#377D73]/5"
                       )}
+                      style={hasItems && sameMonth && primaryColor ? {
+                        backgroundColor: `${primaryColor.bar}14`,
+                      } : undefined}
                     >
                       {/* Day number */}
                       <p className={cn(

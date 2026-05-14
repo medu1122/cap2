@@ -329,13 +329,30 @@ def _build_chart_data_for_suggestion(
                     norm_key = k.lower().replace(" ", "_").replace("(", "").replace(")", "").replace("-", "_")
                     if norm_actual == norm_key or norm_key in norm_actual:
                         return actual
+            # 3. Computed metric fallback — avg_salary, avg_revenue, etc. → underlying raw col
+            computed_fallbacks = {
+                "avg_salary": "base_salary",
+                "avg_revenue": "revenue",
+                "avg_cost": "cost",
+                "avg_price": "price",
+            }
+            for k in keys:
+                if k in computed_fallbacks:
+                    raw_key = computed_fallbacks[k]
+                    raw_mapped = column_mapping.get(raw_key, "")
+                    if raw_mapped:
+                        return raw_mapped
+                    for actual in (rows[0].keys() if rows else []):
+                        if actual.lower().replace(" ", "_") == raw_key.replace("_", ""):
+                            return actual
             return ""
 
         # ── Helper: find any available category column in the data ──
         def _find_category_col() -> str:
-            candidates = ["category", "danh_muc", "kenh", "bo_phan", "department",
+            candidates = ["category", "danh_muc", "kenh", "bo_phan", "phong_ban", "phong",
                           "product", "san_pham", "customer", "khach_hang", "item",
-                          "loai", "phan_loai", "status", "trang_thai", "segment"]
+                          "loai", "phan_loai", "status", "trang_thai", "segment",
+                          "nhan_vien", "employee", "ho_ten", "ten_nv"]
             for cand in candidates:
                 col = _find_col([cand])
                 if col:
@@ -872,6 +889,7 @@ _REPORT_TYPE_COLUMN_HINTS: dict[str, dict[str, list[str]]] = {
         "deduction": ["khau_tru", "deduction", "扣款"],
         "net_salary": ["luong_rong", "net_salary", "take_home"],
         "department": ["bo_phan", "phong_ban", "department", "dept"],
+        "avg_salary": ["luong_co_ban", "luong", "basic_salary", "salary"],
     },
     "budget_report": {
         "budget_item": ["hang_muc", "muc", "item", "budget_item"],
@@ -1435,10 +1453,197 @@ def _build_situations_and_actions(
     kpi_availability: dict[str, Any],
     kpis: dict[str, float],
     issues: list[str],
+    report_type: str = "generic_report",
+    computed_kpis: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     situations: list[dict[str, Any]] = []
     suggested_actions: list[dict[str, Any]] = []
 
+    # ── PAYROLL REPORT: phan tich luong & nhan su ──
+    if report_type == "payroll_report":
+        comp = computed_kpis or {}
+        total_payroll = float(comp.get("total_payroll", 0))
+        avg_salary = float(comp.get("avg_salary", 0))
+        total_bonus = float(comp.get("total_bonus", 0))
+        total_deduction = float(comp.get("total_deduction", 0))
+        headcount = int(comp.get("headcount", 0))
+
+        if total_payroll > 0:
+            bonus_ratio = total_bonus / total_payroll if total_payroll > 0 else 0
+            deduction_ratio = total_deduction / total_payroll if total_payroll > 0 else 0
+
+            situations.append({
+                "id": "payroll_summary",
+                "title": f"Tong quy luong: {int(total_payroll / 1_000_000)}M — {headcount} nhan vien",
+                "severity": "thap",
+                "reason": f"Luong TB {int(avg_salary / 1_000_000)}M/thang cho {headcount} nguoi",
+                "evidence": {"total_payroll": round(total_payroll, -3), "avg_salary": round(avg_salary, -3)},
+            })
+
+            if bonus_ratio > 0.15:
+                situations.append({
+                    "id": "high_bonus_ratio",
+                    "title": "Ty le thuong cao",
+                    "severity": "vua",
+                    "reason": f"Thuong chiem {bonus_ratio*100:.0f}% tong quy luong",
+                    "evidence": {"bonus_ratio": round(bonus_ratio, 4)},
+                })
+                suggested_actions.append({
+                    "id": "review_bonus_structure",
+                    "title": "Rà soat lai co cau thuong - phu cap",
+                    "priority": "medium",
+                    "target_segment": "all",
+                    "reason": "Dam bao co cau thuong hop ly va ben vung tai chinh",
+                    "expected_impact": "Can bang chi phi nhan su",
+                })
+
+            if deduction_ratio > 0.1:
+                situations.append({
+                    "id": "high_deduction",
+                    "title": "Khau tru cao",
+                    "severity": "vua",
+                    "reason": f"Khau tru chiem {deduction_ratio*100:.0f}% tong quy luong",
+                    "evidence": {"deduction_ratio": round(deduction_ratio, 4)},
+                })
+                suggested_actions.append({
+                    "id": "review_deductions",
+                    "title": "Kiem tra cac khoan khau tru hop phap",
+                    "priority": "medium",
+                    "target_segment": "all",
+                    "reason": "Dam bao cac khoan khau tru tu thue va bao hiem chinh xac",
+                    "expected_impact": "Tang minh bach trong chi phi nhan su",
+                })
+
+            if avg_salary < 5_000_000:
+                situations.append({
+                    "id": "low_avg_salary",
+                    "title": "Luong TB thap",
+                    "severity": "cao",
+                    "reason": f"Luong TB {int(avg_salary/1_000_000)}M/thang duoi muc trung binh",
+                    "evidence": {"avg_salary": round(avg_salary, -3)},
+                })
+                suggested_actions.append({
+                    "id": "adjust_salary_benchmark",
+                    "title": "Dieu chinh muc luong theo khu vuc",
+                    "priority": "high",
+                    "target_segment": "all",
+                    "reason": "Dam bao muc luong canh tranh tren thi truong lao dong",
+                    "expected_impact": "Giu chan nhan su va giam chi phi tuyen dung",
+                })
+
+        if not situations:
+            situations.append({
+                "id": "payroll_neutral",
+                "title": "Chi phi nhan su on dinh",
+                "severity": "thap",
+                "reason": "Khong co bat thuong ve quy luong",
+                "evidence": {},
+            })
+        suggested_actions.append({
+            "id": "review_payroll_structure",
+            "title": "Danh gia cau truc luong 3-6 thang",
+            "priority": "low",
+            "target_segment": "all",
+            "reason": "De xu huong chi phi nhan su va ke hoach tang luong",
+            "expected_impact": "Ke hoach ngan sach nhan su dai han",
+        })
+        return situations, suggested_actions
+
+    # ── EXPENSE REPORT ──
+    if report_type == "expense_report":
+        comp = computed_kpis or {}
+        total_cost = float(comp.get("total_cost", 0))
+        cost_by_cat = comp.get("cost_by_category", {})
+        cost_by_dept = comp.get("cost_by_department", {})
+
+        if total_cost > 0:
+            situations.append({
+                "id": "expense_summary",
+                "title": f"Tong chi phi: {int(total_cost / 1_000_000)}M",
+                "severity": "thap",
+                "reason": f"Chi phi phan bo tren {len(cost_by_cat)} danh muc",
+                "evidence": {"total_cost": round(total_cost, -3)},
+            })
+
+            top_cat = max(cost_by_cat.items(), key=lambda x: x[1]) if cost_by_cat else None
+            if top_cat:
+                situations.append({
+                    "id": "top_expense_category",
+                    "title": f"Chi phi lon nhat: {top_cat[0]}",
+                    "severity": "vua",
+                    "reason": f"Danh muc nay chiem {top_cat[1]/total_cost*100:.0f}% tong chi phi",
+                    "evidence": {"top_category": round(top_cat[1], -3)},
+                })
+                suggested_actions.append({
+                    "id": "optimize_top_expense",
+                    "title": f"Tim giai phap giam chi phi {top_cat[0]}",
+                    "priority": "medium",
+                    "target_segment": str(top_cat[0]),
+                    "reason": "Toi uu chi phi lon nhat se co impact nhieu nhat",
+                    "expected_impact": f"Giam 10-20% chi phi {top_cat[0]}",
+                })
+
+            if not suggested_actions:
+                suggested_actions.append({
+                    "id": "expense_review",
+                    "title": "Danh gia lai cac chi phi chua can thiet",
+                    "priority": "low",
+                    "target_segment": "all",
+                    "reason": "Xem xet giam chi phi chung trong 3-6 thang toi",
+                    "expected_impact": "Giam 5-15% chi phi van hanh",
+                })
+        return situations, suggested_actions
+
+    # ── BUDGET REPORT ──
+    if report_type == "budget_report":
+        comp = computed_kpis or {}
+        util = float(comp.get("budget_utilization", 0))
+
+        if util > 0:
+            situations.append({
+                "id": "budget_summary",
+                "title": f"Ty le su dung ngan sach: {util*100:.0f}%",
+                "severity": "thap",
+                "reason": "Tong quan ngan sach",
+                "evidence": {"budget_utilization": round(util, 4)},
+            })
+
+            if util > 0.95:
+                situations.append({
+                    "id": "budget_near_limit",
+                    "title": "Ngan sach gan dat gioi han",
+                    "severity": "cao",
+                    "reason": f"Da su dung {util*100:.0f}% ngan sach",
+                    "evidence": {"budget_utilization": round(util, 4)},
+                })
+                suggested_actions.append({
+                    "id": "request_budget_increase",
+                    "title": "Xin diem ngan sach bo sung",
+                    "priority": "high",
+                    "target_segment": "all",
+                    "reason": "Tranh tinh trang thieu ngan sach giua chu ky",
+                    "expected_impact": "Dam bao nguon luc cho cac hoat dong quan trong",
+                })
+
+            if util < 0.5:
+                situations.append({
+                    "id": "budget_underutilized",
+                    "title": "Ngan sach chua duoc su dung nhieu",
+                    "severity": "thap",
+                    "reason": f"Chi su dung {util*100:.0f}% ngan sach",
+                    "evidence": {"budget_utilization": round(util, 4)},
+                })
+                suggested_actions.append({
+                    "id": "deploy_remaining_budget",
+                    "title": "Diem ngan sach con lai vao cac muc uu tien",
+                    "priority": "medium",
+                    "target_segment": "all",
+                    "reason": "Dam bao su dung hieu qua nguon luc tai chinh",
+                    "expected_impact": "Toi uu hieu suat ngan sach nam nay",
+                })
+        return situations, suggested_actions
+
+    # ── SALES / GENERIC REPORT: phan tich KPIs cu ──
     roas_ok = bool((kpi_availability.get("roas") or {}).get("computable"))
     conv_ok = bool((kpi_availability.get("conversion_rate") or {}).get("computable"))
     repeat_ok = bool((kpi_availability.get("repeat_rate") or {}).get("computable"))
@@ -2548,6 +2753,8 @@ async def _run_deep_analysis_gen(
             "repeat_rate": repeat_rate,
         },
         issues=issues,
+        report_type=report_type,
+        computed_kpis=computed_kpis,
     )
     insights: list[dict[str, Any]] = []
     action_plan: dict[str, list[str]] = {"day_30": [], "day_60": [], "day_90": []}

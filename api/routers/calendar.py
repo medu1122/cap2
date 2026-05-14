@@ -48,6 +48,7 @@ async def get_calendar(
             ContentItem.channel.label("channel"),
             func.max(ContentItem.version).label("max_version"),
         )
+        .where(ContentItem.scheduled_date >= month_start, ContentItem.scheduled_date <= month_end)
         .group_by(ContentItem.campaign_id, ContentItem.channel)
         .subquery()
     )

@@ -89,12 +89,12 @@ interface ComputedKPI {
 }
 
 interface DeepAnalysisResult {
-  run_id: string;
-  business_name: string;
-  report_type: string;
+  run_id?: string;
+  business_name?: string;
+  report_type?: string;
   report_type_label?: string;
   report_description?: string;
-  kpis: {
+  kpis?: {
     revenue: number;
     ad_spend: number;
     orders: number;
@@ -146,7 +146,7 @@ interface DeepAnalysisResult {
       format: string;
     }>;
   };
-  insights: Array<{
+  insights?: Array<{
     title: string;
     severity: string;
     evidence: Record<string, number>;
@@ -159,7 +159,7 @@ interface DeepAnalysisResult {
     target_segment: string;
     reason: string;
   }>;
-  data_quality_score: number;
+  data_quality_score?: number;
 }
 
 
@@ -1291,18 +1291,18 @@ function MetricsPanel({ computedKpis }: { computedKpis?: ComputedKPI }) {
 }
 
 // Charts Panel
-function ChartsPanel({ chartData }: { chartData?: { primary: ChartData | null; secondary: ChartData[] } }) {
+function ChartsPanel({ chartData }: { chartData?: { primary: ChartData | null; secondary?: ChartData[] } }) {
   if (!chartData) return null;
-  if (!chartData.primary && chartData.secondary.length === 0) return null;
+  if (!chartData.primary && (chartData.secondary?.length ?? 0) === 0) return null;
 
   return (
     <div className="space-y-4">
       {chartData.primary && (
         <SmartChart chart={chartData.primary} />
       )}
-      {chartData.secondary.length > 0 && (
+      {(chartData.secondary?.length ?? 0) > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {chartData.secondary.map((chart, i) => (
+          {(chartData.secondary ?? []).map((chart, i) => (
             <SmartChart key={i} chart={chart} compact />
           ))}
         </div>
@@ -1714,7 +1714,7 @@ function CollapsibleResultsPanel({
   const [expanded, setExpanded] = useState(true);
   const [activeSection, setActiveSection] = useState<"overview" | "insights" | "chat">("overview");
 
-  const qualityPct = Math.round(analysisResult.data_quality_score * 100);
+  const qualityPct = Math.round((analysisResult.data_quality_score ?? 0) * 100);
   const qualityColor = qualityPct >= 80 ? "green" : qualityPct >= 50 ? "amber" : "red";
 
   return (
@@ -1794,9 +1794,9 @@ function CollapsibleResultsPanel({
                 }`}
               >
                 {tab.label}
-                {tab.key === "insights" && analysisResult.insights.length > 0 && (
+                {tab.key === "insights" && (analysisResult.insights?.length ?? 0) > 0 && (
                   <span className="ml-1.5 px-1.5 py-0.5 bg-indigo-100 text-indigo-700 text-xs rounded-full">
-                    {analysisResult.insights.length}
+                    {analysisResult.insights?.length ?? 0}
                   </span>
                 )}
               </button>
@@ -1826,17 +1826,17 @@ function CollapsibleResultsPanel({
               {/* Fallback KPI cards */}
               {!analysisResult.computed_kpis && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {analysisResult.kpis.revenue > 0 && (
-                    <KpiCard label="Doanh thu" value={analysisResult.kpis.revenue} format="currency" icon={<TrendingUp className="w-4 h-4" />} />
+                  {(analysisResult.kpis?.revenue ?? 0) > 0 && (
+                    <KpiCard label="Doanh thu" value={analysisResult.kpis!.revenue} format="currency" icon={<TrendingUp className="w-4 h-4" />} />
                   )}
-                  {analysisResult.kpis.orders > 0 && (
-                    <KpiCard label="Đơn hàng" value={analysisResult.kpis.orders} format="number" icon={<FileSpreadsheet className="w-4 h-4" />} />
+                  {(analysisResult.kpis?.orders ?? 0) > 0 && (
+                    <KpiCard label="Đơn hàng" value={analysisResult.kpis!.orders} format="number" icon={<FileSpreadsheet className="w-4 h-4" />} />
                   )}
-                  {analysisResult.kpis.roas > 0 && (
-                    <KpiCard label="Chỉ số ROAS" value={analysisResult.kpis.roas} format="number" icon={<BarChart3 className="w-4 h-4" />} />
+                  {(analysisResult.kpis?.roas ?? 0) > 0 && (
+                    <KpiCard label="Chỉ số ROAS" value={analysisResult.kpis!.roas} format="number" icon={<BarChart3 className="w-4 h-4" />} />
                   )}
-                  {analysisResult.kpis.aov > 0 && (
-                    <KpiCard label="Giá trị đơn TB" value={analysisResult.kpis.aov} format="currency" icon={<TrendingUp className="w-4 h-4" />} />
+                  {(analysisResult.kpis?.aov ?? 0) > 0 && (
+                    <KpiCard label="Giá trị đơn TB" value={analysisResult.kpis!.aov} format="currency" icon={<TrendingUp className="w-4 h-4" />} />
                   )}
                 </div>
               )}
@@ -1846,25 +1846,25 @@ function CollapsibleResultsPanel({
           {/* Insights Tab */}
           {activeSection === "insights" && (
             <div className="p-5 space-y-5">
-              {analysisResult.insights.length > 0 && (
+              {(analysisResult.insights?.length ?? 0) > 0 && (
                 <div className="space-y-3">
-                  {analysisResult.insights.map((insight, idx) => (
+                  {(analysisResult.insights ?? []).map((insight, idx) => (
                     <InsightCard key={idx} insight={insight} />
                   ))}
                 </div>
               )}
-              {analysisResult.suggested_actions && analysisResult.suggested_actions.length > 0 && (
+              {(analysisResult.suggested_actions?.length ?? 0) > 0 && (
                 <div>
                   <h3 className="text-sm font-semibold text-gray-700 mb-3">Hành động gợi ý</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {analysisResult.suggested_actions.map((action) => (
+                    {(analysisResult.suggested_actions ?? []).map((action) => (
                       <ActionCard key={action.id} action={action} />
                     ))}
                   </div>
                 </div>
               )}
-              {analysisResult.insights.length === 0 && (!analysisResult.suggested_actions || analysisResult.suggested_actions.length === 0) && (
-                <p className="text-sm text-gray-400 text-center py-8">Chưa có nhận định nào được tạo.</p>
+              {(analysisResult.insights?.length ?? 0) === 0 && (analysisResult.suggested_actions?.length ?? 0) === 0 && (
+                <p className="text-sm text-gray-400 text-center py-8">Đang phân tích...</p>
               )}
             </div>
           )}
@@ -2304,7 +2304,7 @@ const [partialResult, setPartialResult] = useState<Partial<DeepAnalysisResult> |
 
       // Create a chat session linked to this analysis result.
       const chat = await api.post<{ id: string }>("/insights/chats", null, {
-        params: { data_source_id: sourceId, insight_run_id: result.run_id },
+        params: { data_source_id: sourceId, insight_run_id: result.run_id ?? "" },
       });
 
       await loadChatSession(chat.id);
