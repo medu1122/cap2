@@ -485,6 +485,16 @@ function ContentCard({ item, onAction }: { item: ContentItem; onAction: () => vo
                   placeholder="https://..."
                 />
               </div>
+              <div className="mt-2">
+                <p className="text-[9px] text-gray-400 uppercase mb-1">Link bài đăng Facebook (fb_post_url)</p>
+                <input
+                  type="url"
+                  className="w-full text-xs text-gray-600 border border-blue-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#377D73]/30 bg-blue-50/30"
+                  value={(d.fb_post_url as string) || ""}
+                  onChange={(e) => setDraft({ ...draft, fb_post_url: e.target.value })}
+                  placeholder="https://www.facebook.com/.../posts/..."
+                />
+              </div>
             </div>
           ) : (
             <>
@@ -493,9 +503,26 @@ function ContentCard({ item, onAction }: { item: ContentItem; onAction: () => vo
                   <span key={h} className="text-[10px] text-[#377D73]">#{h.replace("#", "")}</span>
                 ))}
               </div>
+              {/* fb_post_url — link bài đăng thực tế */}
+              {(c.fb_post_url as string) ? (
+                <div className="mt-2 pt-2 border-t border-indigo-100 flex items-center gap-2 bg-indigo-50/50 rounded px-2 py-1.5">
+                  <span className="text-[9px] text-indigo-600 uppercase tracking-wide font-semibold shrink-0">🔗 Facebook Post</span>
+                  <a
+                    href={(c.fb_post_url as string)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] text-indigo-600 hover:underline truncate max-w-[200px]"
+                  >
+                    {(c.fb_post_url as string)}
+                  </a>
+                  <span className="ml-auto text-[9px] text-gray-400 shrink-0">↗</span>
+                </div>
+              ) : null}
+
+              {/* cta_url — link đích */}
               {(c.cta_url as string) ? (
                 <div className="mt-2 pt-2 border-t border-gray-100 flex items-center gap-2">
-                  <span className="text-[9px] text-gray-400 uppercase tracking-wide font-medium">Link</span>
+                  <span className="text-[9px] text-gray-400 uppercase tracking-wide font-medium shrink-0">Link</span>
                   <a
                     href={(c.cta_url as string)}
                     target="_blank"

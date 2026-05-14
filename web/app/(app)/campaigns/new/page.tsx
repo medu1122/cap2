@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api-client";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
+import TrackingLinksModal from "@/components/campaign/TrackingLinksModal";
 
 const CHANNELS = [
   { value: "facebook_post", label: "Bài đăng Facebook" },
@@ -16,6 +17,11 @@ const today = new Date().toISOString().split("T")[0];
 interface BrandOption {
   id: string;
   brand_name: string;
+}
+
+interface TrackingLinkInput {
+  name: string;
+  destination_url: string;
 }
 
 export default function NewCampaignPage() {
@@ -40,6 +46,8 @@ export default function NewCampaignPage() {
   const [loading, setLoading] = useState(false);
   const [loadingBrands, setLoadingBrands] = useState(true);
   const [suggesting, setSuggesting] = useState(false);
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [trackingLinks, setTrackingLinks] = useState<TrackingLinkInput[]>([]);
 
   useEffect(() => {
     api.get<BrandOption[]>("/brands")
@@ -121,19 +129,12 @@ export default function NewCampaignPage() {
     }));
   }
 
-  function toggleImageRequired() {
-    setForm((f) => ({ ...f, image_required: !f.image_required }));
+  function confirmCreateLinks(links: TrackingLinkInput[]) {
+    setTrackingLinks(links);
+    executeCreateCampaign(links);
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!form.brand_id) { setError("Vui lòng chọn thương hiệu."); return; }
-    if (!form.campaign_name.trim()) { setError("Vui lòng nhập tên chiến dịch."); return; }
-    if (!form.objective.trim()) { setError("Vui lòng nhập mục tiêu chiến dịch."); return; }
-    if (!form.product_or_service.trim()) { setError("Vui lòng nhập sản phẩm / dịch vụ."); return; }
-    if (!form.deadline) { setError("Vui lòng chọn ngày kết thúc (deadline)."); return; }
-    if (form.channels.length === 0) { setError("Vui lòng chọn ít nhất 1 kênh."); return; }
-    setError("");
+  async function executeCreateCampaign(links: TrackingLinkInput[]) {
     setLoading(true);
     try {
       const normalizedSegment = form.source_customer_segment.trim().toLowerCase();
@@ -150,13 +151,37 @@ export default function NewCampaignPage() {
           .join("\n"),
       };
       const res = await api.post<{ id: string }>("/campaigns", payload);
+
+      // Tạo tracking links nếu có
+      for (const link of links) {
+        await api.post(`/campaigns/${res.id}/tracking-links`, {
+          name: link.name,
+          destination_url: link.destination_url,
+        });
+      }
+
       await api.post(`/campaigns/${res.id}/run`);
       router.push(`/campaigns/${res.id}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Có lỗi xảy ra");
-    } finally {
       setLoading(false);
     }
+  }
+
+  function toggleImageRequired() {
+    setForm((f) => ({ ...f, image_required: !f.image_required }));
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.brand_id) { setError("Vui lòng chọn thương hiệu."); return; }
+    if (!form.campaign_name.trim()) { setError("Vui lòng nhập tên chiến dịch."); return; }
+    if (!form.objective.trim()) { setError("Vui lòng nhập mục tiêu chiến dịch."); return; }
+    if (!form.product_or_service.trim()) { setError("Vui lòng nhập sản phẩm / dịch vụ."); return; }
+    if (!form.deadline) { setError("Vui lòng chọn ngày kết thúc (deadline)."); return; }
+    if (form.channels.length === 0) { setError("Vui lòng chọn ít nhất 1 kênh."); return; }
+    setError("");
+    setShowLinkModal(true);
   }
 
   return (
@@ -312,6 +337,14 @@ export default function NewCampaignPage() {
           </button>
         </div>
       </form>
+
+      <TrackingLinksModal
+        isOpen={showLinkModal}
+        onClose={() => setShowLinkModal(false)}
+        onConfirm={confirmCreateLinks}
+        onSkip={() => confirmCreateLinks([])}
+        existingLinks={trackingLinks}
+      />
     </div>
   );
 }

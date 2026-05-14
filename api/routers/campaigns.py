@@ -282,13 +282,22 @@ async def get_campaign(
         raise HTTPException(status_code=404, detail="Campaign not found")
 
     content_result = await db.execute(
-        select(ContentItem).where(ContentItem.campaign_id == campaign_id).order_by(ContentItem.channel, ContentItem.version.desc())
+        select(ContentItem)
+        .where(ContentItem.campaign_id == campaign_id)
+        .order_by(ContentItem.channel, ContentItem.version.desc())
     )
+    raw_content = content_result.scalars().all()
+    seen_channels = set()
+    content_items = []
+    for ci in raw_content:
+        if ci.channel not in seen_channels:
+            seen_channels.add(ci.channel)
+            content_items.append(ContentItemOut.model_validate(ci))
+
     log_result = await db.execute(
         select(AgentRunLog).where(AgentRunLog.campaign_id == campaign_id).order_by(AgentRunLog.step_order)
     )
-
-    content_items = [ContentItemOut.model_validate(ci) for ci in content_result.scalars().all()]
+    agent_logs = [AgentLogOut.model_validate(log) for log in log_result.scalars().all()]
     agent_logs = [AgentLogOut.model_validate(log) for log in log_result.scalars().all()]
 
     detail = CampaignDetail.model_validate({
