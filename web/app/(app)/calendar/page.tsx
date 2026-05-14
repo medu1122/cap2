@@ -46,19 +46,19 @@ interface SuggestDatesResponse {
   channel: string;
 }
 
-/* ── Campaign colors — 10 distinct brand-safe colors ──────────────────────── */
+/* ── Campaign colors — pastel / light versions ─────────────────────────── */
 
 const CAMPAIGN_COLORS = [
-  { bar: "#377D73", bg: "#377D73/10", border: "#377D73/20" },
-  { bar: "#6366F1", bg: "#6366F1/10", border: "#6366F1/20" },
-  { bar: "#F59E0B", bg: "#F59E0B/10", border: "#F59E0B/20" },
-  { bar: "#EF4444", bg: "#EF4444/10", border: "#EF4444/20" },
-  { bar: "#10B981", bg: "#10B981/10", border: "#10B981/20" },
-  { bar: "#8B5CF6", bg: "#8B5CF6/10", border: "#8B5CF6/20" },
-  { bar: "#EC4899", bg: "#EC4899/10", border: "#EC4899/20" },
-  { bar: "#0EA5E9", bg: "#0EA5E9/10", border: "#0EA5E9/20" },
-  { bar: "#F97316", bg: "#F97316/10", border: "#F97316/20" },
-  { bar: "#14B8A6", bg: "#14B8A6/10", border: "#14B8A6/20" },
+  { bar: "#5EADA6", bg: "#5EADA6/15", dot: "#5EADA6" },
+  { bar: "#818CF8", bg: "#818CF8/15", dot: "#818CF8" },
+  { bar: "#FCD34D", bg: "#FCD34D/20", dot: "#F59E0B" },
+  { bar: "#FCA5A5", bg: "#FCA5A5/20", dot: "#EF4444" },
+  { bar: "#6EE7B7", bg: "#6EE7B7/20", dot: "#10B981" },
+  { bar: "#C4B5FD", bg: "#C4B5FD/20", dot: "#8B5CF6" },
+  { bar: "#F9A8D4", bg: "#F9A8D4/20", dot: "#EC4899" },
+  { bar: "#7DD3FC", bg: "#7DD3FC/20", dot: "#0EA5E9" },
+  { bar: "#FDBA74", bg: "#FDBA74/20", dot: "#F97316" },
+  { bar: "#5EEAD4", bg: "#5EEAD4/20", dot: "#14B8A6" },
 ];
 
 function getCampaignColor(index: number) {
@@ -366,7 +366,7 @@ export default function CalendarPage() {
 
   // ── Campaign color map (stable per campaign_id) ──────────────────────
   const campaignColorMap = useMemo(() => {
-    const ids = [...new Set(items.map((i) => i.campaign_id))];
+    const ids = Array.from(new Set(items.map((i) => i.campaign_id)));
     const map: Record<string, number> = {};
     ids.forEach((id, idx) => { map[id] = idx; });
     return map;
@@ -394,10 +394,11 @@ export default function CalendarPage() {
   // ── Campaign timeline bars ──────────────────────────────────────────
   // Group items by campaign, get date range
   const campaignGroups = useMemo(() => {
-    const map: Record<string, { items: CalendarItem[]; start: string; end: string; name: string; deadline?: string }> = {};
+    const map: Record<string, { campaign_id: string; items: CalendarItem[]; start: string; end: string; name: string; deadline?: string }> = {};
     for (const it of items) {
       if (!map[it.campaign_id]) {
         map[it.campaign_id] = {
+          campaign_id: it.campaign_id,
           items: [],
           start: it.scheduled_date,
           end: it.scheduled_date,
@@ -452,6 +453,11 @@ export default function CalendarPage() {
     { value: "facebook_post", label: "Facebook" },
     { value: "email", label: "Email" },
     { value: "video_script", label: "Video" },
+  ];
+
+  const STATUS_SHORT_OPTIONS = [
+    { value: "approved", label: "Đã duyệt" },
+    { value: "all", label: "Tất cả" },
   ];
 
   return (
@@ -539,7 +545,7 @@ export default function CalendarPage() {
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
             >
-              {STATUS_OPTIONS.map((o) => (
+              {STATUS_SHORT_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
@@ -560,27 +566,71 @@ export default function CalendarPage() {
 
         {/* Timeline view */}
         {items.length > 0 && (
-          <div className="space-y-4">
-            {/* Legend */}
-            <div className="flex items-center gap-4 text-xs text-gray-500 flex-wrap">
-              <span className="font-semibold text-gray-600">Chiến dịch:</span>
-              {campaignGroups.map((cg) => {
-                const color = getCampaignColor(campaignColorMap[cg.campaign_id]);
-                return (
-                  <div key={cg.campaign_id} className="flex items-center gap-1.5">
-                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: color.bar }} />
-                    <span className="text-gray-600">{cg.name}</span>
+          <div className="space-y-3">
+            {/* Campaign timeline strip */}
+            {campaignGroups.length > 0 && (
+              <div className="relative bg-white rounded-xl border border-gray-200 px-4 pt-3 pb-4">
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Chiến dịch trong tháng</p>
+                <div
+                  className="relative h-7 rounded overflow-hidden"
+                  style={{ background: "linear-gradient(to right, #f9fafb, #f3f4f6)" }}
+                >
+                  {campaignGroups.map((cg) => {
+                    const color = getCampaignColor(campaignColorMap[cg.campaign_id] ?? 0);
+                    const left = dateToPercent(cg.start);
+                    const right = dateToPercent(cg.end);
+                    const width = Math.max(2, right - left);
+                    return (
+                      <div
+                        key={cg.campaign_id}
+                        className="absolute top-1 bottom-1 rounded-full flex items-center px-2 overflow-hidden cursor-pointer group"
+                        style={{
+                          backgroundColor: color.bar + "25",
+                          borderLeft: `3px solid ${color.bar}`,
+                          left: `${left}%`,
+                          width: `${width}%`,
+                          minWidth: "6px",
+                        }}
+                        title={`${cg.name}: ${formatDate(cg.start)} → ${formatDate(cg.end)}${cg.deadline ? ` · Deadline ${formatDate(cg.deadline)}` : ""}`}
+                      >
+                        <span
+                          className="text-[9px] font-semibold truncate group-hover:underline"
+                          style={{ color: color.bar }}
+                        >
+                          {cg.name}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {/* Today marker */}
+                  {(() => {
+                    const todayStr = format(new Date(), "yyyy-MM-dd");
+                    if (todayStr < format(monthStart, "yyyy-MM-dd") || todayStr > format(monthEnd, "yyyy-MM-dd")) return null;
+                    const todayPct = dateToPercent(todayStr);
+                    return (
+                      <div
+                        className="absolute top-0 bottom-0 w-0.5 bg-red-400 z-10 pointer-events-none"
+                        style={{ left: `${todayPct}%` }}
+                      />
+                    );
+                  })()}
+                </div>
+                {/* Date labels */}
+                <div className="relative mt-1.5">
+                  <div className="flex justify-between text-[9px] text-gray-400">
+                    <span>{format(monthStart, "d MMM", { locale: vi })}</span>
+                    <span>{format(monthEnd, "d MMM yyyy", { locale: vi })}</span>
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              </div>
+            )}
 
-            {/* Calendar grid with timeline bars */}
+            {/* Calendar grid */}
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               {/* Day headers */}
-              <div className="grid border-b border-gray-100" style={{ gridTemplateColumns: "repeat(7, 1fr)" }}>
+              <div className="grid border-b border-gray-200" style={{ gridTemplateColumns: "repeat(7, 1fr)" }}>
                 {WEEKDAYS.map((d) => (
-                  <div key={d} className="text-center py-2 text-xs font-semibold text-gray-400 bg-gray-50 border-r border-gray-100 last:border-r-0">
+                  <div key={d} className="text-center py-2 text-xs font-semibold text-gray-400 bg-gray-50 border-r border-gray-200 last:border-r-0">
                     {d}
                   </div>
                 ))}
@@ -594,22 +644,14 @@ export default function CalendarPage() {
                   const sameMonth = isSameMonth(day, currentDate);
                   const today = isToday(day);
 
-                  // Which campaigns have bars passing through this day?
-                  const activeCampaigns = campaignGroups.filter((cg) => {
-                    const startD = parseISO(cg.start);
-                    const endD = parseISO(cg.end);
-                    return day >= startD && day <= endD;
-                  });
-
                   return (
                     <div
                       key={dateKey}
                       className={cn(
-                        "relative border-r border-b border-gray-100 min-h-20 p-1.5",
-                        !sameMonth && "bg-gray-50/50",
-                        today && "bg-[#377D73]/3"
+                        "relative border-r border-b border-gray-200 min-h-20 p-1.5",
+                        !sameMonth && "bg-gray-50/60",
+                        today && "bg-[#377D73]/4"
                       )}
-                      style={{ borderRightWidth: dayIdx % 7 === 6 ? 0 : 1 }}
                     >
                       {/* Day number */}
                       <p className={cn(
@@ -620,54 +662,20 @@ export default function CalendarPage() {
                         {format(day, "d")}
                       </p>
 
-                      {/* Timeline bar segment (if this day is start of a campaign) */}
-                      {activeCampaigns.slice(0, 3).map((cg) => {
-                        const color = getCampaignColor(campaignColorMap[cg.campaign_id]);
-                        const isStart = cg.start === dateKey;
-                        const isEnd = cg.end === dateKey;
-                        return (
-                          <div
-                            key={cg.campaign_id}
-                            onClick={() => openModal(cg.items[0], campaignColorMap[cg.campaign_id])}
-                            className="mb-0.5 cursor-pointer group"
-                          >
-                            <div
-                              className="h-2.5 rounded-full relative group-hover:opacity-80 transition-opacity"
-                              style={{ backgroundColor: color.bar }}
-                            >
-                              {/* Campaign name tooltip on hover */}
-                              <div className="absolute left-0 bottom-full mb-1 hidden group-hover:block z-20 pointer-events-none">
-                                <div className="bg-gray-900 text-white text-[10px] rounded px-2 py-1 whitespace-nowrap shadow-lg">
-                                  {cg.name}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-
-                      {/* Content pills */}
-                      <div className="space-y-0.5 mt-1">
+                      {/* Content dots */}
+                      <div className="flex flex-wrap gap-1">
                         {dayItems.map((item) => {
-                          const color = getCampaignColor(campaignColorMap[item.campaign_id]);
+                          const color = getCampaignColor(campaignColorMap[item.campaign_id] ?? 0);
                           return (
                             <button
                               key={item.id}
-                              onClick={() => openModal(item, campaignColorMap[item.campaign_id])}
-                              className="w-full flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-left hover:opacity-80 transition-opacity"
-                              style={{ backgroundColor: color.bg, borderLeft: `2px solid ${color.bar}` }}
+                              onClick={() => openModal(item, campaignColorMap[item.campaign_id] ?? 0)}
                               title={item.campaign_name}
-                            >
-                              <ChannelIcon channel={item.channel} size={9} />
-                              <span className="truncate font-medium" style={{ color: color.bar }}>
-                                {item.content_preview || item.campaign_name}
-                              </span>
-                            </button>
+                              className="w-4 h-4 rounded-full cursor-pointer hover:scale-125 transition-transform shrink-0"
+                              style={{ backgroundColor: color.dot }}
+                            />
                           );
                         })}
-                        {dayItems.length > 2 && (
-                          <p className="text-[9px] text-gray-400 text-center">+{dayItems.length - 2}</p>
-                        )}
                       </div>
                     </div>
                   );
@@ -681,7 +689,10 @@ export default function CalendarPage() {
                 <span className="w-3 h-3 rounded-full bg-[#377D73]" />
                 Hôm nay
               </span>
-              <span className="italic">Click vào thanh/tin để xem chi tiết và dời lịch</span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full bg-[#818CF8]" />
+                Chiến dịch
+              </span>
             </div>
           </div>
         )}

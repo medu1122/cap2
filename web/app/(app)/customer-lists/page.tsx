@@ -34,7 +34,6 @@ import {
   TrendingUp,
   Type,
   UserPlus,
-  Wrench,
   X,
 } from "lucide-react";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
@@ -575,6 +574,9 @@ export default function CustomerListsPage() {
   const [selectedRowIndexes, setSelectedRowIndexes] = useState<number[]>([]);
   const [analysisModalOpen, setAnalysisModalOpen] = useState(false);
   const [analysisByList, setAnalysisByList] = useState<Record<string, CustomerAnalysisResponse>>({});
+  /** Ref để openTable luôn đọc được giá trị analysisByList mới nhất (tránh capture closure cũ sau khi localStorage load). */
+  const analysisByListRef = useRef(analysisByList);
+  analysisByListRef.current = analysisByList;
   const [autoSaving, setAutoSaving] = useState(false);
   const [rowsDirty, setRowsDirty] = useState(false);
   const isHydratingRowsRef = useRef(false);
@@ -584,7 +586,6 @@ export default function CustomerListsPage() {
   const [importedRowsPending, setImportedRowsPending] = useState<Record<string, string>[]>([]);
   const [importedHeadersPending, setImportedHeadersPending] = useState<string[]>([]);
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
-  const [quickToolsOpen, setQuickToolsOpen] = useState(false);
   const [applyingChurnPriority, setApplyingChurnPriority] = useState(false);
   /** Ô đang mở trong modal phân tích (panel chi tiết). */
   const [segmentHubPanel, setSegmentHubPanel] = useState<AnalysisSegmentId | null>(null);
@@ -885,7 +886,7 @@ export default function CustomerListsPage() {
       setActiveListId(res.table.id);
       setActiveListName(res.table.name);
       setRows(normalizeRows(res.rows as Record<string, unknown>[]));
-      setAnalysisResult(analysisByList[res.table.id] || null);
+      setAnalysisResult(analysisByListRef.current[res.table.id] || null);
       setShowTableEditor(true);
       setExpandedRowIndex(null);
       setOnlyPriorityTableView(false);
@@ -2727,197 +2728,6 @@ export default function CustomerListsPage() {
         </div>
       ) : null}
 
-      {showTableEditor && activeListId ? (
-        <>
-          <div className="fixed right-4 top-28 z-[45] flex flex-col items-end gap-2 sm:right-5">
-            {!quickToolsOpen ? (
-              <button
-                type="button"
-                aria-label="Mở công cụ nhanh"
-                aria-expanded={quickToolsOpen}
-                onClick={() => setQuickToolsOpen(true)}
-                className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-gray-500 bg-gradient-to-b from-[#f5f5f5] to-[#d4d0c8] text-gray-800 shadow-lg hover:brightness-105 active:brightness-95 sm:h-12 sm:w-12"
-              >
-                <Wrench size={22} strokeWidth={2} />
-              </button>
-            ) : null}
-
-            {quickToolsOpen ? (
-            <div
-              className="flex w-[min(92vw,300px)] max-h-[min(72vh,420px)] flex-col overflow-hidden rounded-sm border border-gray-500 bg-[#ece9d8] shadow-[2px_2px_8px_rgba(0,0,0,0.35)]"
-              role="dialog"
-              aria-label="Công cụ nhanh"
-            >
-              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-gray-500 bg-gradient-to-b from-[#ffffff] via-[#ece9d8] to-[#d4d0c8] px-2 py-1.5 text-[11px] font-bold text-gray-900 select-none">
-                <span className="flex min-w-0 items-center gap-1.5 truncate">
-                  <Wrench size={14} className="shrink-0" />
-                  Công cụ nhanh
-                </span>
-                <button
-                  type="button"
-                  aria-label="Đóng"
-                  onClick={() => setQuickToolsOpen(false)}
-                  className="flex h-6 w-6 shrink-0 items-center justify-center border border-gray-500 bg-[#ece9d8] text-base font-bold leading-none text-gray-800 hover:bg-red-100"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-              <div className="min-h-0 flex-1 overflow-y-auto border-x border-gray-400 bg-white p-2.5 text-xs">
-                <p className="mb-2 truncate text-[10px] font-semibold uppercase tracking-wide text-gray-500">Danh sách đang mở</p>
-                <p className="mb-3 truncate font-medium text-gray-900">{activeListName}</p>
-
-                <div className="mb-3 space-y-2 border border-gray-300 bg-white p-2">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-gray-600">Khách đã chọn</p>
-                  {selectedRowIndexes.length > 0 ? (
-                    <>
-                      <p className="text-[11px] text-gray-800">
-                        <span className="tabular-nums font-semibold">{selectedRowIndexes.length}</span> khách →
-                      </p>
-                      <div className="flex flex-col gap-1.5">
-                        <button
-                          type="button"
-                          className="btn-primary w-full text-[11px]"
-                          onClick={() => {
-                            openQuickOutreach(recipientsFromSelectedRows());
-                            setQuickToolsOpen(false);
-                          }}
-                        >
-                          Gửi email
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-secondary w-full text-[11px]"
-                          onClick={() => setMessage("Gửi SMS chưa được hỗ trợ.")}
-                        >
-                          Gửi SMS (chưa hỗ trợ)
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-secondary w-full text-[11px]"
-                          onClick={() => void bulkTogglePriority(true)}
-                        >
-                          Chọn thành ưu tiên
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <p className="text-[11px] leading-snug text-gray-600">Tick dòng trên bảng để gửi email hoặc đặt ưu tiên.</p>
-                  )}
-                </div>
-
-                <div className="mb-3 space-y-2 border border-gray-300 bg-[#f8f8f8] p-2">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-gray-600">Theo phân tích</p>
-                  {!analysisResult ? (
-                    <p className="leading-snug text-gray-700">
-                      Chưa có kết quả phân tích. Chạy phân tích để nhận gợi ý riêng cho danh sách này.
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {showPrioritySuggestion ? (
-                        <p className="border-l-4 border-amber-500 pl-2 leading-snug text-amber-950">
-                          Tỷ lệ nhóm có khả năng rời bỏ đang cao. Có thể{" "}
-                          <strong>đánh dấu ưu tiên tự động</strong> theo kết quả phân tích (rule), rồi lọc bảng.
-                        </p>
-                      ) : (analysisResult.analysis.segmentation.summary.churn_risk ?? 0) > 0 ? (
-                        <p className="leading-snug text-gray-700">
-                          Có {analysisResult.analysis.segmentation.summary.churn_risk} khách thuộc nhóm có khả năng rời bỏ trong
-                          phân tích — bạn có thể đánh dấu ưu tiên tự động khớp họ tên trên bảng.
-                        </p>
-                      ) : (
-                        <p className="leading-snug text-gray-700">
-                          Tỷ lệ nhóm có khả năng rời bỏ trong danh sách đang ở mức chưa đáng lo.
-                        </p>
-                      )}
-                      {(analysisResult.analysis.segmentation.summary.churn_risk ?? 0) > 0 ? (
-                        <>
-                          <button
-                            type="button"
-                            className="btn-primary flex w-full items-center justify-center gap-1.5 text-[11px]"
-                            disabled={applyingChurnPriority || analyzing}
-                            onClick={() => void applyChurnRiskFromAnalysisAndFilter()}
-                          >
-                            {applyingChurnPriority ? (
-                              <Loader2 size={14} className="animate-spin shrink-0" />
-                            ) : null}
-                            {applyingChurnPriority ? "Đang áp dụng…" : "Đánh dấu nhóm có khả năng & bật lọc"}
-                          </button>
-                          <p className="text-[10px] leading-snug text-gray-500">
-                            Dựa trên phân nhóm rule (không dùng LLM). Khớp theo họ tên với bảng đang mở.
-                          </p>
-                          <button
-                            type="button"
-                            className="btn-secondary w-full text-[10px]"
-                            disabled={applyingChurnPriority}
-                            onClick={() => {
-                              setOnlyPriorityTableView(true);
-                              setMessage("Đã bật lọc khách ưu tiên (giữ nguyên đánh dấu hiện có).");
-                            }}
-                          >
-                            Chỉ bật lọc (không đánh dấu thêm)
-                          </button>
-                        </>
-                      ) : null}
-                    </div>
-                  )}
-                </div>
-
-                <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-gray-600">Thao tác</p>
-                <div className="space-y-1.5">
-                  <div className="group relative">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAnalysisModalOpen(true);
-                      }}
-                      className="flex w-full items-center gap-2 border border-gray-300 bg-white p-2 text-left hover:bg-[#eef4ff]"
-                    >
-                      <BarChart3 size={18} className="shrink-0 text-blue-700" />
-                      <span className="font-medium text-gray-900">Tổng quan phân tích</span>
-                    </button>
-                    <div className="pointer-events-none absolute right-full top-1/2 z-10 mr-1 hidden w-48 -translate-y-1/2 rounded border border-gray-800 bg-gray-900 px-2 py-1.5 text-[10px] leading-snug text-white shadow-md group-hover:block">
-                      Mở cửa sổ biểu đồ, phân nhóm và gợi ý chiến dịch cho danh sách này.
-                    </div>
-                  </div>
-
-                  <div className="group relative">
-                    <button
-                      type="button"
-                      disabled={analyzing}
-                      onClick={() => void analyzeCurrentTable()}
-                      className="flex w-full items-center gap-2 border border-gray-300 bg-white p-2 text-left hover:bg-[#eef4ff] disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <RefreshCw size={18} className={`shrink-0 text-emerald-700 ${analyzing ? "animate-spin" : ""}`} />
-                      <span className="font-medium text-gray-900">{analyzing ? "Đang phân tích…" : "Phân tích lại"}</span>
-                    </button>
-                    <div className="pointer-events-none absolute right-full top-1/2 z-10 mr-1 hidden w-48 -translate-y-1/2 rounded border border-gray-800 bg-gray-900 px-2 py-1.5 text-[10px] leading-snug text-white shadow-md group-hover:block">
-                      Chạy lại phân tích trên dữ liệu bảng hiện tại (ghi đè kết quả cũ).
-                    </div>
-                  </div>
-
-                  <div className="group relative">
-                    <button
-                      type="button"
-                      disabled={priorityCustomers.length === 0}
-                      onClick={() => {
-                        setOnlyPriorityTableView(true);
-                        setMessage("Đã bật lọc khách ưu tiên.");
-                      }}
-                      className={`flex w-full items-center gap-2 border border-gray-300 bg-white p-2 text-left hover:bg-[#eef4ff] disabled:cursor-not-allowed disabled:opacity-50 ${showPrioritySuggestion ? "ring-2 ring-amber-400" : ""}`}
-                    >
-                      <Filter size={18} className="shrink-0 text-amber-800" />
-                      <span className="font-medium text-gray-900">Lọc khách ưu tiên</span>
-                    </button>
-                    <div className="pointer-events-none absolute right-full top-1/2 z-10 mr-1 hidden w-52 -translate-y-1/2 rounded border border-gray-800 bg-gray-900 px-2 py-1.5 text-[10px] leading-snug text-white shadow-md group-hover:block">
-                      Chỉ hiện khách đã đánh dấu ưu tiên và đưa lên đầu. Đánh dấu hàng loạt theo phân tích nằm ở mục “Theo phân tích” phía trên.
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            ) : null}
-          </div>
-        </>
-      ) : null}
     </div>
   );
 }

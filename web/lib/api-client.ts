@@ -90,7 +90,8 @@ export const api = {
 export type DeepAnalysisStreamEvent =
   | { type: "progress"; overlay_step: number; status: string; step_key: string }
   | { type: "error"; detail: string }
-  | { type: "result"; data: unknown };
+  | { type: "result"; data: unknown }
+  | { type: "computed"; data: unknown };
 
 /**
  * POST stream NDJSON: moi dong la mot JSON. Goi onEvent cho progress/error; tra ve data cua dong result.

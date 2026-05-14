@@ -300,15 +300,109 @@ const CHART_TYPE_LABELS: Record<string, string> = {
   bar: "Biểu đồ cột",
   horizontal_bar: "Biểu đồ cột ngang",
   pie: "Biểu đồ tròn",
-  donut: "Biểu đồ donut",
+  donut: "Biểu đồ tròn (vòng)",
   line: "Biểu đồ đường",
   area: "Biểu đồ vùng",
-  comparison: "So sánh",
-  gauge: "Đồng hồ",
+  comparison: "So sánh kế hoạch",
+  gauge: "Chỉ số hiệu suất",
   rank: "Xếp hạng",
+  scatter: "Phân tán",
+};
+
+const KPI_LABEL_VI: Record<string, string> = {
+  revenue: "Doanh thu",
+  total_revenue: "Tổng doanh thu",
+  ad_spend: "Chi phí quảng cáo",
+  total_cost: "Tổng chi phí",
+  product_cost: "Chi phí sản phẩm",
+  other_cost: "Chi phí khác",
+  gross_profit: "Lợi nhuận gộp",
+  net_profit: "Lợi nhuận ròng",
+  total_income: "Tổng thu nhập",
+  total_expense: "Tổng chi phí",
+  total_profit: "Tổng lợi nhuận",
+  total_budget: "Tổng ngân sách",
+  total_stock_value: "Giá trị tồn kho",
+  orders: "Số đơn hàng",
+  repeat_orders: "Đơn hàng lặp lại",
+  leads: "Khách tiềm năng",
+  new_customers: "Khách hàng mới",
+  repeat_customers: "Khách quay lại",
+  qty_sold: "Số sản phẩm bán",
+  total_units_sold: "Tổng sản phẩm bán",
+  roas: "ROAS",
+  conversion_rate: "Tỷ lệ chuyển đổi",
+  repeat_rate: "Tỷ lệ quay lại",
+  new_customer_rate: "Tỷ lệ khách mới",
+  profit_margin: "Biên lợi nhuận ròng",
+  gross_margin: "Biên lợi nhuận gộp",
+  budget_utilization: "Sử dụng ngân sách",
+  return_rate: "Tỷ lệ trả hàng",
+  churn_rate: "Tỷ lệ mất khách",
+  completion_rate: "Tỷ lệ hoàn thành",
+  on_time_rate: "Tỷ lệ đúng hạn",
+  active_rate: "Tỷ lệ hoạt động",
+  turnover_rate_hr: "Tỷ lệ nghỉ việc",
+  expense_ratio: "Tỷ lệ chi phí",
+  aov: "Giá trị đơn TB",
+  avg_revenue: "Doanh thu TB",
+  avg_cost: "Chi phí TB",
+  avg_order_value: "Giá trị đơn TB",
+  avg_ltv: "Giá trị vòng đời TB",
+  avg_salary: "Lương TB",
+  avg_kpi: "KPI TB",
+  avg_price: "Giá TB",
+  avg_leads_per_day: "Khách/ngày TB",
+  avg_stock: "Tồn kho TB",
+  avg_progress: "Tiến độ TB",
+  total_payroll: "Tổng quỹ lương",
+  headcount: "Số nhân viên",
+  total_headcount: "Tổng nhân viên",
+  active_headcount: "Nhân viên hoạt động",
+  total_allowance: "Phụ cấp",
+  total_bonus: "Thưởng",
+  total_deduction: "Khấu trừ",
+  min_salary: "Lương thấp nhất",
+  max_salary: "Lương cao nhất",
+  salary_range: "Khoảng lương",
+  new_hires: "Tuyển mới",
+  on_leave_count: "Nghỉ phép",
+  turnover_count: "Nghỉ việc",
+  productivity_score: "Năng suất",
+  total_stock: "Tổng tồn kho",
+  total_stock_in: "Nhập kho",
+  total_stock_out: "Xuất kho",
+  low_stock_count: "Hàng sắp hết",
+  dead_stock_count: "Hàng ứ đọng",
+  total_projects: "Tổng dự án",
+  completed_projects: "Hoàn thành",
+  in_progress_projects: "Đang thực hiện",
+  overdue_projects: "Quá hạn",
+  over_budget_projects: "Vượt ngân sách",
+  variance: "Chênh lệch",
+  variance_pct: "Tỷ lệ chênh",
+  growth_rate: "Tăng trưởng",
+  cagr: "CAGR",
+  data_quality_score: "Chất lượng dữ liệu",
+  data_completeness: "Độ đầy đủ",
+  data_accuracy: "Độ chính xác",
 };
 
 // ============= CONSTANTS =============
+
+const REPORT_TYPE_LABEL_VI: Record<string, string> = {
+  sales_report: "Báo cáo bán hàng",
+  expense_report: "Báo cáo chi phí",
+  payroll_report: "Báo cáo lương",
+  budget_report: "Báo cáo ngân sách",
+  inventory_report: "Báo cáo tồn kho",
+  customer_report: "Báo cáo khách hàng",
+  financial_summary: "Tóm tắt tài chính",
+  project_report: "Báo cáo dự án",
+  hr_report: "Báo cáo nhân sự",
+  product_report: "Báo cáo sản phẩm",
+  generic_report: "Báo cáo tổng hợp",
+};
 
 const STREAM_STEP_LABEL_VI: Record<string, string> = {
   classify_report: "Phân loại báo cáo",
@@ -878,21 +972,20 @@ function SmartChart({ chart, compact = false }: { chart: ChartData; compact?: bo
     }
 
     if (type === "scatter") {
-      // Scatter: two numeric fields plotted as dots
-      const scatterData = data.map((d) => ({
+      const scatterData: Array<{ x: number; y: number; name: string }> = data.map((d) => ({
         x: Number(d.planned ?? 0),
         y: Number(d.actual ?? d.value ?? 0),
         name: d.name,
       }));
-      const maxX = Math.max(...scatterData.map((d) => d.x), 1);
-      const maxY = Math.max(...scatterData.map((d) => d.y), 1);
       return (
-        <LineChart data={scatterData.map((d) => ({ x: d.x, y: d.y }))} margin={{ top: 4, right: 4, left: -10, bottom: 0 }}>
+        <ScatterChart margin={{ top: 4, right: 4, left: -10, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-          <XAxis dataKey="x" name="X" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-          <YAxis dataKey="y" name="Y" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+          <XAxis dataKey="x" name="X" tick={{ fontSize: 10 }} tickLine={false} axisLine={false}
+            tickFormatter={(v) => formatMetricValue(v, "currency")} />
+          <YAxis dataKey="y" name="Y" tick={{ fontSize: 10 }} tickLine={false} axisLine={false}
+            tickFormatter={(v) => formatMetricValue(v, "currency")} />
           <Tooltip
-            formatter={(v: number) => [formatMetricValue(v, "number"), ""]}
+            formatter={(v: number) => [formatMetricValue(v, "currency"), ""]}
             content={({ active, payload }: any) => {
               if (active && payload && payload.length) {
                 const pt = payload[0]?.payload;
@@ -907,7 +1000,7 @@ function SmartChart({ chart, compact = false }: { chart: ChartData; compact?: bo
             }}
           />
           <Scatter data={scatterData} fill="#6366f1" />
-        </LineChart>
+        </ScatterChart>
       );
     }
 
@@ -940,7 +1033,8 @@ function SmartChart({ chart, compact = false }: { chart: ChartData; compact?: bo
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4">
-      <h4 className="text-sm font-medium text-gray-700 mb-3">{title}</h4>
+      <h4 className="text-sm font-medium text-gray-700 mb-1">{CHART_TYPE_LABELS[type] || ""}</h4>
+      <p className="text-xs text-gray-500 mb-3">{title}</p>
       <ResponsiveContainer width="100%" height={height}>
         {renderContent()}
       </ResponsiveContainer>
@@ -1130,15 +1224,15 @@ function MetricsPanel({ computedKpis }: { computedKpis?: ComputedKPI }) {
 
     // Determine group + label from key
     let group = "khac";
-    let label = key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    let label = KPI_LABEL_VI[key] || key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
     if (["total_revenue", "total_cost", "total_payroll", "total_income", "total_expense",
          "total_profit", "total_budget", "total_stock_value", "revenue", "ad_spend",
          "gross_profit", "net_profit", "product_cost", "other_cost"].includes(key)) {
-      group = "tong_hop"; label = label.replace("Total ", "Tổng ");
+      group = "tong_hop"; if (!KPI_LABEL_VI[key]) label = label.replace("Total ", "Tổng ");
     } else if (["avg_salary", "avg_revenue", "avg_cost", "avg_order_value", "avg_ltv",
                 "avg_kpi", "avg_price", "avg_stock", "aov", "avg_leads_per_day"].includes(key)) {
-      group = "trung_binh"; label = label.replace("Avg ", "TB ");
+      group = "trung_binh"; if (!KPI_LABEL_VI[key]) label = label.replace("Avg ", "TB ");
     } else if (["roas", "conversion_rate", "repeat_rate", "profit_margin", "expense_ratio",
                 "budget_utilization", "turnover_rate_hr", "churn_rate", "completion_rate",
                 "on_time_rate", "return_rate", "new_customer_rate", "active_rate"].includes(key)) {
@@ -1398,7 +1492,7 @@ function AnomalyCard({ anomaly }: { anomaly: AnomalyItem }) {
         <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2 mb-1">
-            <span className="text-sm font-medium text-red-800 truncate">{anomaly.column}</span>
+            <span className="text-sm font-medium text-red-800 truncate">{KPI_LABEL_VI[anomaly.column] || anomaly.column}</span>
             <span className="text-xs font-medium text-red-600 bg-red-100 px-2 py-0.5 rounded-full flex-shrink-0">
               {anomaly.outlier_pct}% bất thường
             </span>
@@ -1483,7 +1577,7 @@ function ComparisonCard({ computedKpis }: { computedKpis?: ComputedKPI }) {
     comparisons.push({ label: "Tỷ lệ khách mới", value: Number(computedKpis.new_customer_rate), benchmark: 0.30, format: "percent" });
   }
   if (computedKpis.aov) {
-    comparisons.push({ label: "Giá trị đơn TB (AOV)", value: Number(computedKpis.aov), benchmark: 0, format: "currency" });
+    comparisons.push({ label: "Giá trị đơn TB", value: Number(computedKpis.aov), benchmark: 0, format: "currency" });
   }
 
   if (comparisons.length === 0) return null;
@@ -1648,7 +1742,7 @@ function CollapsibleResultsPanel({
             <div className="flex items-center gap-2">
               <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Kết quả phân tích</span>
               <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700">
-                {analysisResult.report_type?.replace(/_/g, " ") || "Báo cáo"}
+                {REPORT_TYPE_LABEL_VI[analysisResult.report_type ?? ""] || analysisResult.report_type?.replace(/_/g, " ") || "Báo cáo"}
               </span>
               {analysisResult.report_description && (
                 <span className="text-sm text-gray-400">· {analysisResult.report_description}</span>
@@ -1739,10 +1833,10 @@ function CollapsibleResultsPanel({
                     <KpiCard label="Đơn hàng" value={analysisResult.kpis.orders} format="number" icon={<FileSpreadsheet className="w-4 h-4" />} />
                   )}
                   {analysisResult.kpis.roas > 0 && (
-                    <KpiCard label="ROAS" value={analysisResult.kpis.roas} format="number" icon={<BarChart3 className="w-4 h-4" />} />
+                    <KpiCard label="Chỉ số ROAS" value={analysisResult.kpis.roas} format="number" icon={<BarChart3 className="w-4 h-4" />} />
                   )}
                   {analysisResult.kpis.aov > 0 && (
-                    <KpiCard label="AOV" value={analysisResult.kpis.aov} format="currency" icon={<TrendingUp className="w-4 h-4" />} />
+                    <KpiCard label="Giá trị đơn TB" value={analysisResult.kpis.aov} format="currency" icon={<TrendingUp className="w-4 h-4" />} />
                   )}
                 </div>
               )}
@@ -2028,6 +2122,8 @@ export default function InsightsPage() {
   const [activeSourceId, setActiveSourceId] = useState<string | null>(null);
   const [chatSession, setChatSession] = useState<ChatSession | null>(null);
   const [analysisResult, setAnalysisResult] = useState<DeepAnalysisResult | null>(null);
+// Partial result shown immediately when computed KPIs/charts are ready (before AI narrative)
+const [partialResult, setPartialResult] = useState<Partial<DeepAnalysisResult> | null>(null);
   const [uploading, setUploading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [streamProgress, setStreamProgress] = useState({ current: -1, running: null as number | null, success: false });
@@ -2051,16 +2147,27 @@ export default function InsightsPage() {
 
   // Stream event handler
   const applyStreamEvent = useCallback((evt: DeepAnalysisStreamEvent) => {
+    if (evt.type === "computed") {
+      // KPIs + charts are ready — show immediately, don't wait for AI narrative
+      const data = evt.data as Partial<DeepAnalysisResult>;
+      setPartialResult(data);
+      // Switch to results view so user sees charts right away
+      setAppStep("results");
+      setStreamHint("Đã có số liệu! Đang phân tích AI…");
+      return;
+    }
     if (evt.type !== "progress") return;
     const label = STREAM_STEP_LABEL_VI[evt.step_key] ?? evt.step_key;
     if (evt.status === "started") {
       setStreamProgress((p) => ({ ...p, running: evt.overlay_step }));
-      setStreamHint(`Đang: ${label}…`);
+      if (!partialResult) {
+        setStreamHint(`Đang: ${label}…`);
+      }
     } else if (evt.status === "finished") {
       setStreamProgress((p) => ({ ...p, current: evt.overlay_step, running: null }));
       setStreamHint(`Xong: ${label}`);
     }
-  }, []);
+  }, [partialResult]);
 
   async function loadDataSources() {
     try {
@@ -2142,6 +2249,8 @@ export default function InsightsPage() {
     setElapsedSec(0);
     setError(null);
     setTableFullscreen(false);
+    setPartialResult(null);
+    setAnalysisResult(null);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15 * 60 * 1000);
@@ -2181,6 +2290,8 @@ export default function InsightsPage() {
 
       const result = raw as DeepAnalysisResult;
       setAnalysisResult(result);
+      // Merge full result on top of partial — AI narrative replaces partial
+      setPartialResult(null);
 
       // Cache to localStorage (no DB needed)
       try {
@@ -2318,15 +2429,37 @@ export default function InsightsPage() {
                   />
                 </div>
                 <div className="flex items-center gap-2">
-                  <FileUploadButton onUpload={handleFileUpload} uploading={uploading} />
-                  <button
-                    onClick={handleAnalyze}
-                    disabled={analyzing || rows.length === 0 || columns.length === 0}
-                    className="px-5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg font-medium text-sm hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-lg shadow-blue-500/25"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    Phân tích với AI
-                  </button>
+                  {analysisResult ? (
+                    <>
+                      <button
+                        onClick={() => setAppStep("results")}
+                        className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg font-medium text-sm hover:bg-gray-50 transition-all flex items-center gap-2"
+                      >
+                        <BarChart3 className="w-4 h-4" />
+                        Xem lại phân tích
+                      </button>
+                      <button
+                        onClick={handleAnalyze}
+                        disabled={analyzing || rows.length === 0 || columns.length === 0}
+                        className="px-4 py-2 border border-blue-200 text-blue-600 rounded-lg font-medium text-sm hover:bg-blue-50 transition-all flex items-center gap-2"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        Phân tích lại
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <FileUploadButton onUpload={handleFileUpload} uploading={uploading} />
+                      <button
+                        onClick={handleAnalyze}
+                        disabled={analyzing || rows.length === 0 || columns.length === 0}
+                        className="px-5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg font-medium text-sm hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-lg shadow-blue-500/25"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        Phân tích với AI
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -2345,10 +2478,11 @@ export default function InsightsPage() {
           </div>
         )}
 
-        {/* Results Panel — collapsible inline, always below input form */}
-        {analysisResult && (
+        {/* Results Panel — shows partial result (KPIs+charts) immediately,
+             then full result (with AI narrative) when ready */}
+        {(partialResult || analysisResult) && (
           <CollapsibleResultsPanel
-            analysisResult={analysisResult}
+            analysisResult={(partialResult as DeepAnalysisResult) || analysisResult!}
             chatSession={chatSession}
             onSendMessage={handleSendMessage}
             onEditData={() => setAppStep("input")}

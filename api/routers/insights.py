@@ -283,16 +283,17 @@ def _build_chart_data_for_suggestion(
     rows: list[dict[str, Any]],
     suggestion: dict[str, Any],
     column_mapping: dict[str, str],
+    computed_kpis: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Build chart data dict tu chart suggestion + data rows + column mapping.
-    
+
     Supports:
-    - bar, horizontal_bar, pie, donut: single-key grouped data → {name, value}
-    - line, area: time-series data (date/month) → {name, value} or multi-key
-    - comparison: planned vs actual → {name, planned, actual}
-    - gauge: single metric → {name, value} (first item only)
-    - rank: sorted top N → {name, value} (sorted desc)
-    - scatter: two-key data → {name, planned, actual}
+    - gauge: uses computed_kpis directly (roas, profit_margin, etc.)
+    - comparison: planned/actual fallback → gross_profit/net_profit → revenue/cost
+    - rank: sorted top N — uses row-index as label when no category col
+    - bar/horizontal_bar/pie/donut: falls back to row-index when no category col
+    - line/area: falls back to row-index when no date col, supports multi-key
+    - scatter: falls back to revenue vs orders when planned/actual not available
     """
     try:
         chart_type = suggestion.get("type", "bar")
@@ -304,138 +305,317 @@ def _build_chart_data_for_suggestion(
         if not data_keys:
             return None
 
-        # ── GAUGE: single value shown as ring ──────────────────
+        # ── Helper: find first available mapped column from a list of keys ──
+        # Pass actual column name OR canonical key — this handles both cases
+        def _find_col(keys: list[str]) -> str:
+            # 1. If a key is already an exact column name in the data, return it
+            for col in (rows[0].keys() if rows else []):
+                for k in keys:
+                    if col.lower() == k.lower():
+                        return col
+                    # Also match stripped version
+                    stripped = col.lower().replace(" ", "_").replace("(", "").replace(")", "")
+                    k_stripped = k.lower().replace(" ", "_")
+                    if stripped == k_stripped:
+                        return col
+            # 2. Try column_mapping (canonical key → actual column name)
+            for k in keys:
+                mapped = column_mapping.get(k, "")
+                if mapped:
+                    return mapped
+                # Try with underscore normalization
+                for actual in (rows[0].keys() if rows else []):
+                    norm_actual = actual.lower().replace(" ", "_").replace("(", "").replace(")", "").replace("-", "_")
+                    norm_key = k.lower().replace(" ", "_").replace("(", "").replace(")", "").replace("-", "_")
+                    if norm_actual == norm_key or norm_key in norm_actual:
+                        return actual
+            return ""
+
+        # ── Helper: find any available category column in the data ──
+        def _find_category_col() -> str:
+            candidates = ["category", "danh_muc", "kenh", "bo_phan", "department",
+                          "product", "san_pham", "customer", "khach_hang", "item",
+                          "loai", "phan_loai", "status", "trang_thai", "segment"]
+            for cand in candidates:
+                col = _find_col([cand])
+                if col:
+                    return col
+            # Fallback: first non-numeric column
+            for col in (rows[0].keys() if rows else []):
+                vals = [row.get(col) for row in rows[:3]]
+                if not all(isinstance(v, (int, float)) for v in vals if v is not None):
+                    return col
+            return ""
+
+        # ── Helper: find any available date column ──
+        def _find_date_col() -> str:
+            for col in (rows[0].keys() if rows else []):
+                vals = [row.get(col) for row in rows[:5]]
+                for v in vals:
+                    if v and isinstance(v, str):
+                        low = v.lower()
+                        if any(k in low for k in ["ngay", "date", "thang", "nam", "time", "month", "year", "week"]):
+                            return col
+            return ""
+
+        # ══════════════════════════════════════════════════════
+        # GAUGE — uses computed_kpis directly, NOT column mapping
+        # ══════════════════════════════════════════════════════
         if chart_type == "gauge":
-            primary_key = data_keys[0]
-            mapped_col = column_mapping.get(primary_key, "")
-            if not mapped_col:
+            metric_key = data_keys[0]  # e.g. "roas", "profit_margin"
+            val = None
+            label = metric_key.replace("_", " ").title()
+
+            # Try computed_kpis first (most reliable for derived metrics)
+            if computed_kpis and metric_key in computed_kpis:
+                val = computed_kpis.get(metric_key)
+
+            # Fallback: try to find metric in raw columns
+            if val is None:
+                mapped = column_mapping.get(metric_key, "")
+                if mapped:
+                    vals = [_to_float(r.get(mapped)) for r in rows if _to_float(r.get(mapped)) != 0]
+                    val = _safe_avg(vals) if vals else None
+
+            if val is None or val == 0:
                 return None
-            total = sum(_to_float(r.get(mapped_col)) for r in rows if _to_float(r.get(mapped_col)) is not None)
-            count = sum(1 for r in rows if _to_float(r.get(mapped_col)) is not None)
-            val = total / count if count > 0 else total
+
+            # Determine if it's a ratio (0-1) or absolute value
+            is_ratio = abs(val) <= 5  # ratios like roas=3.8, margin=0.28
             return {
                 "type": "gauge",
                 "title": title,
-                "data": [{"name": primary_key.replace("_", " ").title(), "value": round(val, 4)}],
+                "data": [{"name": label, "value": round(float(val), 4)}],
             }
 
-        # ── RANK: sorted top N bars ────────────────────────────
-        if chart_type == "rank":
-            primary_key = data_keys[0]
-            mapped_col = column_mapping.get(primary_key, "")
-            if not mapped_col:
-                return None
-            # Group by first available categorical column, or use row index
-            name_col = (
-                column_mapping.get("category") or column_mapping.get("product") or
-                column_mapping.get("customer") or column_mapping.get("date") or ""
-            )
-            if name_col:
-                grouped = _build_numeric_groups(rows, name_col, mapped_col)
-                sorted_items = sorted(grouped.items(), key=lambda x: x[1], reverse=True)[:limit]
-                chart_data = [{"name": k, "value": _round_metric(v, "currency")} for k, v in sorted_items]
-            else:
-                vals = [(f"#{i+1}", _to_float(r.get(mapped_col))) for i, r in enumerate(rows)]
-                sorted_vals = sorted(vals, key=lambda x: x[1] or 0, reverse=True)[:limit]
-                chart_data = [{"name": n, "value": _round_metric(v, "currency")} for n, v in sorted_vals]
-            if not chart_data:
-                return None
-            return {"type": "rank", "title": title, "data": chart_data}
-
-        # ── SCATTER: two keys plotted ──────────────────────────
-        if chart_type == "scatter" and len(data_keys) >= 2:
-            x_key = data_keys[0]
-            y_key = data_keys[1]
-            x_col = column_mapping.get(x_key, "")
-            y_col = column_mapping.get(y_key, "")
-            name_col = column_mapping.get("date", "") or column_mapping.get("product", "") or ""
-            scatter_data = []
-            for r in rows:
-                x_val = _to_float(r.get(x_col)) if x_col else None
-                y_val = _to_float(r.get(y_col)) if y_col else None
-                if x_val is not None and y_val is not None:
-                    name = str(r.get(name_col, "")) if name_col else f"{x_key} vs {y_key}"
-                    scatter_data.append({"name": name, "planned": x_val, "actual": y_val})
-            if not scatter_data:
-                return None
-            return {"type": "scatter", "title": title, "data": scatter_data}
-
-        # ── COMPARISON: planned vs actual ──────────────────────
+        # ══════════════════════════════════════════════════════
+        # COMPARISON — planned vs actual, with fallbacks
+        # ══════════════════════════════════════════════════════
         if chart_type == "comparison":
-            planned_col = column_mapping.get("planned", "") or column_mapping.get("du_kien", "")
-            actual_col = column_mapping.get("actual", "") or column_mapping.get("thuc_te", "")
-            group_col = (
-                column_mapping.get("budget_item", "") or column_mapping.get("item", "") or
-                column_mapping.get("hang_muc", "") or column_mapping.get("category", "") or
-                column_mapping.get("product", "") or column_mapping.get("date", "")
-            )
+            planned_col = _find_col(["planned", "du_kien", "budget", "ke_hoach", "forecast"])
+            actual_col = _find_col(["actual", "thuc_te", "real", "thuc_chay"])
+            group_col = _find_category_col() or _find_col(["category", "item", "hang_muc", "product", "date"])
+
+            # Fallback 1: use gross_profit vs net_profit
+            if not (planned_col and actual_col):
+                gp_col = _find_col(["gross_profit", "loi_nhuan_gop", "lợi nhuận gộp", "revenue"])
+                np_col = _find_col(["net_profit", "loi_nhuan_rong", "lợi nhuận ròng", "loi_nhuan", "profit"])
+                if gp_col and np_col:
+                    planned_col = gp_col
+                    actual_col = np_col
+
+            # Fallback 2: use revenue vs total_cost
+            if not (planned_col and actual_col):
+                rev_col = _find_col(["revenue", "doanh_thu", "income", "thu"])
+                cost_col = _find_col(["total_cost", "chi_phi", "expense", "cost"])
+                if rev_col and cost_col:
+                    planned_col = rev_col
+                    actual_col = cost_col
+
             if not (planned_col and actual_col and group_col):
-                return None
-            grouped_plan: dict[str, float] = {}
-            grouped_actual: dict[str, float] = {}
-            for r in rows:
-                key = str(r.get(group_col, "Khác"))
-                p = _to_float(r.get(planned_col))
-                a = _to_float(r.get(actual_col))
-                if p is not None:
-                    grouped_plan[key] = grouped_plan.get(key, 0.0) + p
-                if a is not None:
-                    grouped_actual[key] = grouped_actual.get(key, 0.0) + a
-            all_keys = sorted(set(grouped_plan.keys()) | set(grouped_actual.keys()))
-            chart_data = [
-                {"name": k, "planned": _round_metric(grouped_plan.get(k, 0.0), "currency"),
-                 "actual": _round_metric(grouped_actual.get(k, 0.0), "currency")}
-                for k in all_keys
-            ]
+                # Last resort: use row index as group
+                planned_vals: dict[int, float] = {}
+                actual_vals: dict[int, float] = {}
+                for i, row in enumerate(rows):
+                    p = _to_float(row.get(planned_col))
+                    a = _to_float(row.get(actual_col))
+                    if p not in (None, 0.0):
+                        planned_vals[i] = p
+                    if a not in (None, 0.0):
+                        actual_vals[i] = a
+                if not (planned_vals and actual_vals):
+                    return None
+                all_keys = sorted(set(planned_vals.keys()) | set(actual_vals.keys()))
+                chart_data = [
+                    {"name": f"Dòng {k+1}", "planned": round(planned_vals.get(k, 0.0), -3),
+                     "actual": round(actual_vals.get(k, 0.0), -3)}
+                    for k in all_keys
+                ]
+            else:
+                grouped_plan: dict[str, float] = {}
+                grouped_actual: dict[str, float] = {}
+                for r in rows:
+                    key = str(r.get(group_col, f"Dòng {rows.index(r)+1}"))
+                    p = _to_float(r.get(planned_col))
+                    a = _to_float(r.get(actual_col))
+                    if p not in (None, 0.0):
+                        grouped_plan[key] = grouped_plan.get(key, 0.0) + p
+                    if a not in (None, 0.0):
+                        grouped_actual[key] = grouped_actual.get(key, 0.0) + a
+                all_keys = sorted(set(grouped_plan.keys()) | set(grouped_actual.keys()))
+                chart_data = [
+                    {"name": k, "planned": round(grouped_plan.get(k, 0.0), -3),
+                     "actual": round(grouped_actual.get(k, 0.0), -3)}
+                    for k in all_keys
+                ]
+
             if not chart_data:
                 return None
             return {"type": "comparison", "title": title, "data": chart_data}
 
-        # ── LINE / AREA with multi-key ─────────────────────────
-        if chart_type in ("line", "area") and len(data_keys) > 1:
-            date_col = column_mapping.get("date", "") or column_mapping.get("month", "")
-            if not date_col:
+        # ══════════════════════════════════════════════════════
+        # SCATTER — x/y plot, fallbacks
+        # ══════════════════════════════════════════════════════
+        if chart_type == "scatter" and len(data_keys) >= 2:
+            x_key, y_key = data_keys[0], data_keys[1]
+            x_col = _find_col([x_key])
+            y_col = _find_col([y_key])
+
+            # Fallback: use revenue vs orders for scatter
+            if not (x_col and y_col):
+                x_col = _find_col(["revenue", "doanh_thu", "income"])
+                y_col = _find_col(["orders", "don_hang", "so_don"])
+            if not (x_col and y_col):
+                # Try any two numeric columns
+                numeric_cols = []
+                for col in (rows[0].keys() if rows else []):
+                    vals = [_to_float(r.get(col)) for r in rows if _to_float(r.get(col)) not in (None, 0.0)]
+                    if len(vals) >= len(rows) * 0.5:
+                        numeric_cols.append(col)
+                if len(numeric_cols) >= 2:
+                    x_col, y_col = numeric_cols[0], numeric_cols[1]
+
+            if not (x_col and y_col):
                 return None
-            # Multi-key: group by date, emit one row per date with all keys
-            date_groups: dict[str, dict[str, float]] = {}
-            for r in rows:
-                dk = str(r.get(date_col, ""))
-                if not dk:
-                    continue
-                if dk not in date_groups:
-                    date_groups[dk] = {}
-                for dk2 in data_keys:
-                    col = column_mapping.get(dk2, "")
-                    if col:
-                        v = _to_float(r.get(col))
-                        if v is not None:
-                            date_groups[dk][dk2] = date_groups[dk].get(dk2, 0.0) + v
-            sorted_dates = sorted(date_groups.keys())
-            chart_data = [
-                {"name": d, **{k: _round_metric(v, "currency") for k, v in date_groups[d].items()}}
-                for d in sorted_dates
-            ]
+
+            scatter_data = []
+            for i, r in enumerate(rows):
+                x_val = _to_float(r.get(x_col))
+                y_val = _to_float(r.get(y_col))
+                if x_val not in (None, 0.0) and y_val not in (None, 0.0):
+                    date_col = _find_date_col()
+                    label = str(r.get(date_col, f"R{i+1}")) if date_col else f"R{i+1}"
+                    scatter_data.append({"name": label, "planned": round(x_val, -3), "actual": round(y_val, -3)})
+
+            if not scatter_data:
+                return None
+            return {"type": "scatter", "title": title, "data": scatter_data}
+
+        # ══════════════════════════════════════════════════════
+        # LINE / AREA with multi-key (multiple series)
+        # ══════════════════════════════════════════════════════
+        if chart_type in ("line", "area") and len(data_keys) > 1:
+            date_col = _find_date_col()
+            if not date_col:
+                # No date: use row index as x-axis, each data_key as separate series
+                chart_data = []
+                for i, row in enumerate(rows):
+                    point: dict[str, Any] = {"name": f"R{i+1}"}
+                    for dk in data_keys:
+                        col = _find_col([dk])
+                        if col:
+                            point[dk] = _round_metric(_to_float(row.get(col)), "currency")
+                    if len(point) > 1:
+                        chart_data.append(point)
+            else:
+                # Has date: group by date, sum each data_key
+                date_groups: dict[str, dict[str, float]] = {}
+                for r in rows:
+                    dk_val = str(r.get(date_col, ""))
+                    if not dk_val:
+                        continue
+                    if dk_val not in date_groups:
+                        date_groups[dk_val] = {}
+                    for dk in data_keys:
+                        col = _find_col([dk])
+                        if col:
+                            v = _to_float(r.get(col))
+                            if v not in (None, 0.0):
+                                date_groups[dk_val][dk] = date_groups[dk_val].get(dk, 0.0) + v
+                sorted_dates = sorted(date_groups.keys())
+                chart_data = [
+                    {"name": d, **{k: _round_metric(v, "currency") for k, v in date_groups[d].items()}}
+                    for d in sorted_dates
+                ]
+
             if not chart_data:
                 return None
             return {"type": chart_type, "title": title, "data": chart_data}
 
-        # ── LINE / AREA / BAR / PIE — single key ──────────────
-        primary_key = data_keys[0]
-        mapped_col = column_mapping.get(primary_key, "")
-        if not mapped_col:
-            return None
-
-        if group_by in ("date", "month"):
-            date_col = column_mapping.get("date", "") or column_mapping.get("month", "")
-            if not date_col:
+        # ══════════════════════════════════════════════════════
+        # RANK — sorted top N
+        # ══════════════════════════════════════════════════════
+        if chart_type == "rank":
+            primary_key = data_keys[0]
+            mapped_col = _find_col([primary_key])
+            if not mapped_col:
                 return None
-            grouped = _build_numeric_groups(rows, date_col, mapped_col)
-            sorted_keys = sorted(grouped.keys())
-            chart_data = [{"name": k, "value": _round_metric(grouped[k], "currency")} for k in sorted_keys]
-        elif group_by in ("category", "department", "segment", "status", "item", "product", "customer", "project", "quarter"):
-            grouped = _build_numeric_groups(rows, group_by, mapped_col)
-            sorted_items = sorted(grouped.items(), key=lambda x: x[1], reverse=True)[:limit]
-            chart_data = [{"name": k, "value": _round_metric(v, "currency")} for k, v in sorted_items]
+
+            # Find a name column
+            name_col = (
+                _find_col(["category", "product", "customer", "khach_hang", "danh_muc",
+                            "item", "san_pham", "kenh", "department"]) or
+                _find_date_col() or
+                ""
+            )
+
+            if name_col and name_col != mapped_col:
+                grouped = _build_numeric_groups(rows, name_col, mapped_col)
+                sorted_items = sorted(grouped.items(), key=lambda x: x[1], reverse=True)[:limit]
+                chart_data = [{"name": k, "value": _round_metric(v, "currency")} for k, v in sorted_items]
+            else:
+                # No name col: use row values directly, sorted desc
+                vals = [(f"R{i+1}", _to_float(r.get(mapped_col))) for i, r in enumerate(rows)]
+                sorted_vals = sorted(vals, key=lambda x: x[1] or 0, reverse=True)[:limit]
+                chart_data = [{"name": n, "value": _round_metric(v, "currency")} for n, v in sorted_vals]
+
+            if not chart_data:
+                return None
+            return {"type": "rank", "title": title, "data": chart_data}
+
+        # ══════════════════════════════════════════════════════
+        # BAR / HORIZONTAL_BAR / PIE / DONUT — single or multi-key
+        # ══════════════════════════════════════════════════════
+        # Determine grouping column
+        if group_by in ("date", "month"):
+            date_col = _find_date_col()
+            if not date_col:
+                # Fallback: use row index as group
+                chart_data = []
+                for i, row in enumerate(rows):
+                    point: dict[str, Any] = {"name": f"R{i+1}"}
+                    for dk in data_keys:
+                        col = _find_col([dk])
+                        if col:
+                            point["value"] = _round_metric(_to_float(row.get(col)), "currency")
+                            break
+                    if "value" in point:
+                        chart_data.append(point)
+            else:
+                # Group by date column
+                primary_key = data_keys[0]
+                mapped_col = _find_col([primary_key])
+                if not mapped_col:
+                    return None
+                grouped = _build_numeric_groups(rows, date_col, mapped_col)
+                sorted_keys = sorted(grouped.keys())
+                chart_data = [{"name": k, "value": _round_metric(grouped[k], "currency")} for k in sorted_keys]
+
+        elif group_by in ("category", "department", "segment", "status", "item", "product",
+                           "customer", "project", "quarter"):
+            cat_col = _find_col([group_by])
+            if not cat_col:
+                cat_col = _find_category_col()
+
+            if not cat_col:
+                # Fallback: no category col — use top-N values as "segments"
+                primary_key = data_keys[0]
+                mapped_col = _find_col([primary_key])
+                if not mapped_col:
+                    return None
+                vals = [(f"Top {i+1}", _to_float(r.get(mapped_col))) for i, r in enumerate(rows)]
+                sorted_vals = sorted(vals, key=lambda x: x[1] or 0, reverse=True)[:limit]
+                chart_data = [{"name": n, "value": _round_metric(v, "currency")} for n, v in sorted_vals]
+            else:
+                primary_key = data_keys[0]
+                mapped_col = _find_col([primary_key])
+                if not mapped_col:
+                    mapped_col = _find_col(data_keys)
+                if not mapped_col:
+                    return None
+                grouped = _build_numeric_groups(rows, cat_col, mapped_col)
+                sorted_items = sorted(grouped.items(), key=lambda x: x[1], reverse=True)[:limit]
+                chart_data = [{"name": k, "value": _round_metric(v, "currency")} for k, v in sorted_items]
         else:
             return None
 
@@ -450,6 +630,9 @@ def _build_chart_data_for_suggestion(
         }
     except Exception:
         return None
+
+
+
 
 
 def _build_comparison_chart_data(
@@ -1956,10 +2139,7 @@ async def _run_deep_analysis_gen(
     chart_suggestions = _get_chart_suggestions_for_report_type(report_type)
     valid_charts = []
     for suggestion in chart_suggestions:
-        if suggestion.get("type") == "comparison":
-            cd = _build_comparison_chart_data(payload.report_rows, suggestion, mapping)
-        else:
-            cd = _build_chart_data_for_suggestion(payload.report_rows, suggestion, mapping)
+        cd = _build_chart_data_for_suggestion(payload.report_rows, suggestion, mapping, computed_kpis)
         if cd:
             valid_charts.append(cd)
 
@@ -2372,6 +2552,27 @@ async def _run_deep_analysis_gen(
     insights: list[dict[str, Any]] = []
     action_plan: dict[str, list[str]] = {"day_30": [], "day_60": [], "day_90": []}
 
+    # === PHASE 1: Yield computed result EARLY — before AI narrative ===
+    yield _overlay_evt(5, "started", "yield_computed")
+    computed_result = {
+        "report_type": report_type,
+        "report_type_vi": _report_type_vi(report_type),
+        "report_description": _report_description(report_type),
+        "classification": classification,
+        "schema_mapping": mapping,
+        "mapping_confidence": mapping_confidence,
+        "computed_kpis": computed_kpis,
+        "chart_data": chart_data,
+        "enrichment": enrichment,
+        "kpi_availability": kpi_availability,
+        "data_warnings": data_warnings,
+        "data_quality_score": data_quality_score,
+        "data_quality_breakdown": data_quality_breakdown,
+    }
+    yield {"type": "computed", "data": computed_result}
+    yield _overlay_evt(5, "finished", "yield_computed")
+
+    # === PHASE 2: AI narrative + insights (slower, done in background) ===
     narrative_payload = {
         "report_type": report_type,
         "report_type_vi": _report_type_vi(report_type),
