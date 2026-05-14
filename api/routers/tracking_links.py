@@ -26,6 +26,7 @@ def generate_short_code() -> str:
 class TrackingLinkCreate(BaseModel):
     name: str
     destination_url: str
+    link_type: str = "email_click"
 
     @field_validator("destination_url")
     @classmethod
@@ -33,6 +34,14 @@ class TrackingLinkCreate(BaseModel):
         if not v.startswith(("http://", "https://")):
             raise ValueError("URL phải bắt đầu bằng http:// hoặc https://")
         return v.strip().rstrip("/")
+
+    @field_validator("link_type")
+    @classmethod
+    def validate_link_type(cls, v: str) -> str:
+        allowed = {"email_click", "facebook_post"}
+        if v not in allowed:
+            raise ValueError(f"link_type phải là một trong: {allowed}")
+        return v
 
 
 class TrackingLinkUpdate(BaseModel):
@@ -56,6 +65,7 @@ class TrackingLinkResponse(BaseModel):
     destination_url: str
     short_code: str
     click_count: int
+    link_type: str
     created_at: datetime
 
     class Config:
@@ -120,6 +130,7 @@ async def create_tracking_link(
         destination_url=data.destination_url,
         short_code=short_code,
         click_count=0,
+        link_type=data.link_type,
     )
     db.add(link)
     await db.commit()

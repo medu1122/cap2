@@ -16,7 +16,7 @@ interface Props {
 const BLOCK_CONFIGS = [
   { key: "email" as const, label: "Nội dung Email", icon: "📧" },
   { key: "post" as const, label: "Bài đăng Facebook", icon: "📝" },
-  { key: "video" as const, label: "Kịch bản Video", icon: "🎬" },
+  { key: "video" as const, label: "Kịch bản cho Video", icon: "🎬" },
   { key: "image" as const, label: "Prompt tạo ảnh", icon: "🖼️" },
 ];
 

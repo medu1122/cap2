@@ -2358,25 +2358,43 @@ async def _run_deep_analysis_gen(
     enrichment: dict[str, Any] = {}
 
     # 1. AI-driven summary (3-4 key sentences from data)
+    def _fmt(v: float) -> str:
+        """Format currency in B/M/K with 2 decimal."""
+        if abs(v) >= 1_000_000_000:
+            return f"{v/1_000_000_000:.2f}B"
+        if abs(v) >= 1_000_000:
+            return f"{v/1_000_000:.2f}M"
+        if abs(v) >= 1_000:
+            return f"{v/1_000:.2f}K"
+        return f"{v:.2f}"
+
+    def _fmt_pct(v: float) -> str:
+        """Format percentage with 2 decimal."""
+        return f"{v*100:.2f}%"
+
     try:
         summary_parts = []
         if computed_kpis.get("revenue") or computed_kpis.get("total_revenue"):
             rev = float(computed_kpis.get("revenue", computed_kpis.get("total_revenue", 0)))
             if rev > 0:
-                summary_parts.append(f"Tổng doanh thu đạt {rev/1_000_000:.1f}M VNĐ.")
+                summary_parts.append(f"Tổng doanh thu đạt {_fmt(rev)} VNĐ.")
         if computed_kpis.get("total_cost"):
             cost = float(computed_kpis.get("total_cost", 0))
             if cost > 0:
-                summary_parts.append(f"Tổng chi phí {cost/1_000_000:.1f}M VNĐ.")
+                summary_parts.append(f"Tổng chi phí {_fmt(cost)} VNĐ.")
         if computed_kpis.get("profit_margin"):
             margin = float(computed_kpis.get("profit_margin", 0))
             if margin != 0:
-                summary_parts.append(f"Biên lợi nhuận {margin*100:.1f}%.")
+                summary_parts.append(f"Biên lợi nhuận {_fmt_pct(margin)}.")
+        if computed_kpis.get("roas"):
+            roas_val = float(computed_kpis.get("roas", 0))
+            if roas_val > 0:
+                summary_parts.append(f"ROAS đạt {roas_val:.2f}x.")
         if computed_kpis.get("headcount") and computed_kpis.get("total_payroll"):
             hc = float(computed_kpis.get("headcount", 0))
             pay = float(computed_kpis.get("total_payroll", 0))
             if hc > 0 and pay > 0:
-                summary_parts.append(f"Tổng {int(hc)} nhân viên, quỹ lương {pay/1_000_000:.1f}M VNĐ.")
+                summary_parts.append(f"Tổng {int(hc)} nhân viên, quỹ lương {_fmt(pay)} VNĐ.")
         enrichment["summary"] = " ".join(summary_parts) if summary_parts else None
     except Exception:
         enrichment["summary"] = None

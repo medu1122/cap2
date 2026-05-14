@@ -30,7 +30,7 @@ export const STATUS_COLORS: Record<string, string> = {
 export const CHANNEL_LABELS: Record<string, string> = {
   facebook_post: "Facebook Post",
   email: "Email",
-  video_script: "Video Script",
+  video_script: "Kịch bản cho Video",
 };
 
 export const CHANNEL_COLORS: Record<string, string> = {

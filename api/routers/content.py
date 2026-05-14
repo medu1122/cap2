@@ -204,13 +204,12 @@ def _brand_context_block(brand: Brand | None) -> str:
     )
 
 
-def _get_tracking_links(db: AsyncSession, campaign_id: uuid.UUID) -> list[dict]:
-    """Lấy danh sách tracking link của chiến dịch để inject vào prompt AI."""
-    result = db.execute(
-        select(CampaignTrackingLink)
-        .where(CampaignTrackingLink.campaign_id == campaign_id)
-        .order_by(CampaignTrackingLink.created_at.desc())
-    )
+def _get_tracking_links(db: AsyncSession, campaign_id: uuid.UUID, link_type: str | None = None) -> list[dict]:
+    """Lấy danh sách tracking link của chiến dịch, có thể lọc theo link_type."""
+    stmt = select(CampaignTrackingLink).where(CampaignTrackingLink.campaign_id == campaign_id)
+    if link_type:
+        stmt = stmt.where(CampaignTrackingLink.link_type == link_type)
+    result = db.execute(stmt.order_by(CampaignTrackingLink.created_at.desc()))
     links = result.scalars().all()
     base = settings.TRACKING_PUBLIC_BASE_URL or "https://aimap.vn"
     return [
@@ -264,7 +263,7 @@ def _regenerate_user_prompt(
     if channel == "facebook_post":
         return (
             f"<brand_context>\n{bc}\n</brand_context>\n\n"
-            "Viết một bài đăng Facebook mới (khác nội dung cũ, đổi góc nhìn hoặc cách diỄn đạt).\n\n"
+            "Viết một bài đăng Facebook mới (khác nội dung cũ, đổi góc nhìn hoặc cách diễn đạt).\n\n"
             f"Tóm tắt chiến dịch: {cs}\n"
             f"Thông điệp chính: {km}\n"
             f"Mục tiêu nội dung: {cg}\n"
@@ -273,6 +272,7 @@ def _regenerate_user_prompt(
             f"{links_hint}\n\n"
             'Trả về JSON:\n{\n  "copy": "...",\n  "hashtags": ["...", "...", "...", "...", "..."],\n  "cta_url": "https://..."\n}'
             "\nLưu ý: cta_url là link đích (website/landing page) mà người đọc sẽ được chuyển hướng đến khi nhấn vào link bên dưới bài đăng."
+            "\nTrường fb_post_url: dán link bài đăng Facebook thực tế (VD: https://www.facebook.com/.../posts/...). Nếu chưa có bài đăng, để trống chuỗi rỗng."
         )
     if channel == "email":
         return (
@@ -288,14 +288,36 @@ def _regenerate_user_prompt(
         )
     return (
         f"<brand_context>\n{bc}\n</brand_context>\n\n"
-        "Viết kịch bản video ngắn mới (30–60 giây), khác bản cũ.\n\n"
+        "Bạn là một đạo diễn video chuyên nghiệp. Viết kịch bản sản xuất video ngắn (30–60 giây) hoàn chỉnh, KHÁC bản cũ.\n\n"
         f"Tóm tắt chiến dịch: {cs}\n"
         f"Thông điệp chính: {km}\n"
         f"Mục tiêu nội dung: {cg}\n"
         f"Hướng giọng văn: {th}\n"
         f"Call-to-action: {cta}\n"
         f"{links_hint}\n\n"
-        'Trả về JSON:\n{\n  "hook": "...",\n  "body": "...",\n  "cta": "...",\n  "duration_estimate": "45s"\n}'
+        'Trả về JSON với cấu trúc kịch bản sản xuất:\n{\n'
+        '  "scenes": [\n'
+        '    {\n'
+        '      "sequence": 1,\n'
+        '      "setting": "...",\n'
+        '      "duration": "3s",\n'
+        '      "camera_angle": "...",\n'
+        '      "subject_action": "...",\n'
+        '      "dialog_or_narration": "...",\n'
+        '      "visual_note": "..."\n'
+        '    }\n'
+        '  ],\n'
+        '  "voice_over": "...",\n'
+        '  "background_music_suggestion": "...",\n'
+        '  "call_to_action": "...",\n'
+        '  "total_duration_estimate": "45s"\n'
+        '}'
+        "\nHướng dẫn:\n"
+        "- scenes: mảng các cảnh, mỗi cảnh gồm: sequence (thứ tự), setting (địa điểm/bối cảnh), duration (thời lượng), camera_angle (góc máy: wide/tracking/close-up/POV...), subject_action (hành động của nhân vật), dialog_or_narration (lời thoại/voice-over), visual_note (ghi chú hình ảnh).\n"
+        "- voice_over: lời bình toàn bộ video.\n"
+        "- background_music_suggestion: gợi ý nhạc nền phù hợp.\n"
+        "- call_to_action: câu kêu gọi hành động cuối video.\n"
+        "- total_duration_estimate: tổng thời lượng ước tính."
     )
 
 
@@ -339,9 +361,14 @@ async def regenerate_content(
             "cta": (brand.preferred_cta if brand else "") or "Liên hệ ngay",
         }
 
+    # Lấy tracking links phù hợp với kênh (email_click cho email, facebook_post cho facebook)
+    lt = "email_click" if item.channel == "email" else "facebook_post"
     links_result = await db.execute(
         select(CampaignTrackingLink)
-        .where(CampaignTrackingLink.campaign_id == campaign.id)
+        .where(
+            CampaignTrackingLink.campaign_id == campaign.id,
+            CampaignTrackingLink.link_type == lt,
+        )
         .order_by(CampaignTrackingLink.created_at.desc())
     )
     tracking_links = [

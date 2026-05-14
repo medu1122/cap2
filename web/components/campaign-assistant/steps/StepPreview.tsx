@@ -19,7 +19,7 @@ interface Props {
 const CHANNEL_OPTIONS = [
   { value: "email", label: "Email", icon: "📧" },
   { value: "facebook_post", label: "Facebook", icon: "📝" },
-  { value: "video_script", label: "Content for Video TikTok", icon: "🎬" },
+  { value: "video_script", label: "Kịch bản cho video", icon: "🎬" },
 ];
 
 const OBJECTIVE_OPTIONS: Record<string, { label: string; desc: string }[]> = {
@@ -128,9 +128,15 @@ export default function StepPreview({
     try {
       console.log("[StepPreview] Creating CampaignIdea + Campaign + Building content...", { userPrefs });
 
-      // Use start_date and end_date from userPrefs
-      const startDate = userPrefs.start_date || null;
-      const endDate = userPrefs.end_date || null;
+      // Build deadline: use end_date if set, else default +30 days from today
+      let deadline: string;
+      if (userPrefs.end_date) {
+        deadline = userPrefs.end_date;
+      } else {
+        const d = new Date();
+        d.setDate(d.getDate() + 30);
+        deadline = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      }
 
       // 1. Create CampaignIdea record WITH brand_id for proper context
       const ideaRes = await api.post<{ id: string }>("/campaign-ideas", {
@@ -141,20 +147,21 @@ export default function StepPreview({
         hook: brief.hook,
         timing: brief.timing,
         customer_segment: brief.customer_segment,
-        brand_id: brandId, // Pass brand_id for proper brand context in content generation
+        brand_id: brandId,
       });
       console.log("[StepPreview] CampaignIdea created:", ideaRes.id);
 
       // 2. Create Campaign in DB with actual dates
-      const campaignRes = await api.post<{ id: string }>("/campaigns", {
+      const campaignPayload: Record<string, unknown> = {
         brand_id: brandId,
         campaign_name: brief.title,
         objective: brief.objective,
         channels: brief.channels,
         product_or_service: brief.hook,
-        start_date: startDate,
-        deadline: endDate,
-      });
+        deadline,
+      };
+      if (userPrefs.start_date) campaignPayload.start_date = userPrefs.start_date;
+      const campaignRes = await api.post<{ id: string }>("/campaigns", campaignPayload);
       const campaignId = campaignRes.id;
       console.log("[StepPreview] Campaign created:", campaignId);
       setCreatedCampaignId(campaignId);

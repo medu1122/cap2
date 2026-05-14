@@ -13,6 +13,7 @@ import {
   Link2,
   Mail,
   FileVideo,
+  Video,
 } from "lucide-react";
 import Link from "next/link";
 import { api } from "@/lib/api-client";
@@ -70,6 +71,7 @@ function getCampaignColor(index: number) {
 function ChannelIcon({ channel, size = 11 }: { channel: string; size?: number }) {
   if (channel === "facebook_post") return <FileVideo size={size} className="text-[#377D73]" />;
   if (channel === "email") return <Mail size={size} className="text-[#6366F1]" />;
+  if (channel === "video_script") return <Video size={size} className="text-amber-500" />;
   return <Link2 size={size} className="text-gray-400" />;
 }
 
@@ -413,9 +415,10 @@ export default function CalendarPage() {
 
   const CHANNEL_OPTIONS = [
     { value: "all", label: "Tất cả" },
-    { value: "facebook_post", label: "Facebook" },
-    { value: "email", label: "Email" },
-    { value: "video_script", label: "Video" },
+  { value: "facebook_post", label: "Facebook" },
+  { value: "instagram", label: "Instagram" },
+  { value: "email", label: "Email" },
+  { value: "video_script", label: "Kịch bản cho video" },
   ];
 
   return (

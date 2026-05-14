@@ -12,6 +12,7 @@ import { STATUS_LABELS, STATUS_COLORS, CHANNEL_LABELS, formatDate, cn } from "@/
 import PerformanceSection from "@/components/campaign/PerformanceSection";
 import RevenueUploadModal from "@/components/campaign/RevenueUploadModal";
 import TrackingLinksManager from "@/components/campaign/TrackingLinksManager";
+import VideoScriptContent from "@/components/campaign/VideoScriptContent";
 
 interface AgentLog {
   id: string;
@@ -166,8 +167,6 @@ function ChannelIcon({ channel, size = 14 }: { channel: string; size?: number })
     case "facebook_post":
       return <Facebook size={size} className="text-blue-600" />;
     case "video_script":
-      return <Video size={size} className="text-pink-500" />;
-    case "tiktok":
       return <Video size={size} className="text-pink-500" />;
     default:
       return <Megaphone size={size} className="text-gray-500" />;
@@ -586,30 +585,7 @@ function ContentCard({ item, onAction }: { item: ContentItem; onAction: () => vo
       )}
 
       {item.channel === "video_script" && (
-        <div className="space-y-1">
-          {(["hook", "body", "cta"] as const).map((k) => (
-            <div key={k}>
-              <p className="text-[9px] text-gray-400 uppercase tracking-wide font-medium">
-                {k === "hook" ? "Mở đầu" : k === "body" ? "Nội dung" : "CTA"}
-              </p>
-              {editing ? (
-                <textarea
-                  className="w-full text-xs text-gray-600 border border-blue-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#377D73]/30 bg-blue-50/30 resize-none leading-relaxed"
-                  rows={3}
-                  value={(d[k] as string) || ""}
-                  onChange={(e) => setDraft({ ...draft, [k]: e.target.value })}
-                  placeholder={`Nhập ${k === "hook" ? "mở đầu" : k === "body" ? "nội dung" : "CTA"}...`}
-                />
-              ) : (
-                <p
-                  className="text-xs text-gray-600 whitespace-pre-line leading-relaxed cursor-text hover:bg-gray-50 rounded px-1 -mx-1 py-0.5 transition-colors"
-                  onClick={isPending ? undefined : startEdit}
-                  title={!isPending ? "Nhấn để chỉnh sửa" : undefined}
-                >{d[k] as string}</p>
-              )}
-            </div>
-          ))}
-        </div>
+        <VideoScriptContent content={d} />
       )}
 
       {showReject && (
@@ -635,7 +611,7 @@ function _getContentPreview(item: ContentItem): string {
   if (item.channel === "email") return (c.subject as string) || "";
   if (item.channel === "video_script") {
     const hook = (c.hook as string) || "";
-    return hook ? hook.slice(0, 60) : "Kịch bản video";
+    return hook ? hook.slice(0, 60) : "Kịch bản cho video";
   }
   return "";
 }

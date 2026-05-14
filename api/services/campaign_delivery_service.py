@@ -208,10 +208,13 @@ async def run_email_delivery(
             cta_text = str(cj.get("cta_text") or "Xem chi tiết ưu đãi")
             cta_url = str(cj.get("cta_url") or "").strip()
 
-            # Lấy tracking links của campaign (ưu tiên dùng link đầu tiên nếu có)
+            # Lấy tracking links email_click của campaign (chỉ dùng cho CTA trong email)
             tracking_links_r = await db.execute(
                 select(CampaignTrackingLink)
-                .where(CampaignTrackingLink.campaign_id == campaign_id)
+                .where(
+                    CampaignTrackingLink.campaign_id == campaign_id,
+                    CampaignTrackingLink.link_type == "email_click",
+                )
                 .order_by(CampaignTrackingLink.created_at.asc())
                 .limit(1)
             )

@@ -8,7 +8,7 @@ import HelpDialogButton from "@/components/common/HelpDialogButton";
 const CHANNELS = [
   { value: "facebook_post", label: "Bài đăng Facebook" },
   { value: "email", label: "Email" },
-  { value: "video_script", label: "Kịch bản video" },
+  { value: "video_script", label: "Kịch bản cho video" },
 ];
 
 const today = new Date().toISOString().split("T")[0];
@@ -128,6 +128,10 @@ export default function NewCampaignPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.brand_id) { setError("Vui lòng chọn thương hiệu."); return; }
+    if (!form.campaign_name.trim()) { setError("Vui lòng nhập tên chiến dịch."); return; }
+    if (!form.objective.trim()) { setError("Vui lòng nhập mục tiêu chiến dịch."); return; }
+    if (!form.product_or_service.trim()) { setError("Vui lòng nhập sản phẩm / dịch vụ."); return; }
+    if (!form.deadline) { setError("Vui lòng chọn ngày kết thúc (deadline)."); return; }
     if (form.channels.length === 0) { setError("Vui lòng chọn ít nhất 1 kênh."); return; }
     setError("");
     setLoading(true);

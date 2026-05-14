@@ -267,12 +267,15 @@ const CHART_COLORS = [
 function formatMetricValue(value: number, fmt: string): string {
   if (typeof value !== "number" || !isFinite(value)) return "—";
   if (value === 0) return "0";
-  if (fmt === "percent") return `${(value * 100).toFixed(1)}%`;
+
+  if (fmt === "percent") return `${(value * 100).toFixed(2)}%`;
   if (fmt === "ratio") return value.toFixed(2);
-  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
-  if (value < 1) return value.toFixed(2);
+
+  // Currency + generic number: unified B/M/K abbreviation, always 2 decimal
+  if (Math.abs(value) >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
+  if (Math.abs(value) >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
+  if (Math.abs(value) >= 1_000) return `${(value / 1_000).toFixed(2)}K`;
+  if (Math.abs(value) < 1) return value.toFixed(2);
   return Math.round(value).toLocaleString("vi-VN");
 }
 
@@ -733,18 +736,20 @@ function TableBuilder({
 }
 
 // KPI Card Component
-function KpiCard({ label, value, format = "number", icon, trend }: { 
-  label: string; 
-  value: number; 
+function KpiCard({ label, value, format = "number", icon, trend }: {
+  label: string;
+  value: number;
   format?: "number" | "currency" | "percent";
   icon?: React.ReactNode;
   trend?: "up" | "down" | "neutral";
 }) {
   const display = format === "currency"
-    ? `${formatCurrencyFull(Math.round(value))} đ`
+    ? formatMetricValue(Math.round(value), "currency")
     : format === "percent"
-    ? `${(value * 100).toFixed(1)}%`
-    : formatCurrency(Math.round(value));
+    ? `${(value * 100).toFixed(2)}%`
+    : formatMetricValue(Math.round(value), "number");
+
+  const valueColor = value >= 0 ? "text-gray-900" : "text-red-500";
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition-shadow">
@@ -754,7 +759,7 @@ function KpiCard({ label, value, format = "number", icon, trend }: {
           {icon}
         </div>}
       </div>
-      <p className="text-2xl font-bold text-gray-900 mb-1">{display}</p>
+      <p className={`text-2xl font-bold mb-1 ${valueColor}`}>{display}</p>
       {trend && (
         <div className={`flex items-center gap-1 text-xs font-medium ${
           trend === "up" ? "text-green-600" : trend === "down" ? "text-red-600" : "text-gray-500"
@@ -836,9 +841,66 @@ function ActionCard({ action }: {
   );
 }
 
+// ============================================================
+// CHART ZOOM MODAL
+// ============================================================
+function ChartZoomModal({
+  chart,
+  onClose,
+}: {
+  chart: ChartData;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl mx-4 overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+          <div>
+            <h3 className="text-base font-semibold text-gray-900">
+              {CHART_TYPE_LABELS[chart.type] || ""}
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">{chart.title}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Chart */}
+        <div className="p-5">
+          <ResponsiveContainer width="100%" height={400}>
+            <SmartChart chart={chart} />
+          </ResponsiveContainer>
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 pb-4 text-center">
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium rounded-lg transition-all"
+          >
+            Đóng
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Smart Chart Component
 function SmartChart({ chart, compact = false }: { chart: ChartData; compact?: boolean }) {
   const { type, title, data } = chart;
+  const [zoomOpen, setZoomOpen] = useState(false);
   if (!data || data.length === 0) return null;
 
   const height = compact ? 180 : 260;
@@ -1032,12 +1094,28 @@ function SmartChart({ chart, compact = false }: { chart: ChartData; compact?: bo
   };
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4">
-      <h4 className="text-sm font-medium text-gray-700 mb-1">{CHART_TYPE_LABELS[type] || ""}</h4>
-      <p className="text-xs text-gray-500 mb-3">{title}</p>
-      <ResponsiveContainer width="100%" height={height}>
-        {renderContent()}
-      </ResponsiveContainer>
+    <div className="relative">
+      <div
+        className="bg-white border border-gray-200 rounded-xl p-4"
+      >
+        <div className="flex items-start justify-between mb-1">
+          <div>
+            <h4 className="text-sm font-medium text-gray-700">{CHART_TYPE_LABELS[type] || ""}</h4>
+            <p className="text-xs text-gray-500">{title}</p>
+          </div>
+          <button
+            onClick={() => setZoomOpen(true)}
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-all flex-shrink-0"
+            title="Phóng to"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        <ResponsiveContainer width="100%" height={height}>
+          {renderContent()}
+        </ResponsiveContainer>
+      </div>
+      {zoomOpen && <ChartZoomModal chart={chart} onClose={() => setZoomOpen(false)} />}
     </div>
   );
 }
@@ -1052,6 +1130,9 @@ function SmartMetricCard({ label, value, format = "number" }: {
   const display = formatMetricValue(value, format);
   const [showPopover, setShowPopover] = useState(false);
 
+  // Color: green for positive, red for negative
+  const valueColor = value >= 0 ? "text-emerald-600" : "text-red-500";
+
   return (
     <div className="relative">
       <div
@@ -1060,7 +1141,7 @@ function SmartMetricCard({ label, value, format = "number" }: {
       >
         <span className="text-xs font-medium text-gray-400">{label}</span>
         <div className="flex items-center gap-1.5">
-          <span className="text-base font-bold text-gray-900">{display}</span>
+          <span className={`text-base font-bold ${valueColor}`}>{display}</span>
           <span className="text-gray-300 group-hover:text-indigo-400 transition-colors text-xs opacity-0 group-hover:opacity-100">ⓘ</span>
         </div>
       </div>
@@ -1256,15 +1337,16 @@ function MetricsPanel({ computedKpis }: { computedKpis?: ComputedKPI }) {
     }
 
     let fmt: string = "number";
-    if (key.includes("salary") || key.includes("revenue") || key.includes("cost") ||
-        key.includes("profit") || key.includes("budget") || key.includes("allowance") ||
-        key.includes("bonus") || key.includes("deduction") || key.includes("price") ||
-        key.includes("ltv")) {
-      fmt = "currency";
-    } else if (key.includes("rate") || key.includes("margin") || key.includes("ratio") ||
-               key.includes("utilization") || key.includes("completion") || key.includes("return") ||
-               key.includes("churn") || key.includes("turnover") || key.includes("active")) {
+    // margin/rate/ratio -> percent (check before profit to avoid "profit_margin" being currency)
+    if (key.includes("margin") || key.includes("rate") || key.includes("ratio") ||
+        key.includes("utilization") || key.includes("completion") || key.includes("return") ||
+        key.includes("churn") || key.includes("turnover") || key.includes("active")) {
       fmt = "percent";
+    } else if (key.includes("salary") || key.includes("revenue") || key.includes("cost") ||
+               key.includes("budget") || key.includes("allowance") ||
+               key.includes("bonus") || key.includes("deduction") || key.includes("price") ||
+               key.includes("ltv")) {
+      fmt = "currency";
     }
 
     if (!groups[group]) groups[group] = [];
@@ -1332,12 +1414,20 @@ function KeyNumbersRow({ keyNumbers }: { keyNumbers: KeyNumbers }) {
   if (!keyNumbers || keyNumbers.length === 0) return null;
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-      {keyNumbers.map((kn) => (
-        <div key={kn.key} className="bg-white border border-gray-200 rounded-xl px-4 py-3 text-center">
-          <p className="text-xs font-medium text-gray-400 mb-1">{kn.label}</p>
-          <p className="text-lg font-bold text-gray-900">{formatMetricValue(kn.value, kn.format)}</p>
-        </div>
-      ))}
+      {keyNumbers.map((kn) => {
+        const isPositive = kn.value >= 0;
+        const isPercent = kn.format === "percent";
+        // For percent/ratio, positive is good; for cost/expense, positive is bad
+        const valueColor = kn.format === "percent" || kn.format === "ratio"
+          ? (isPositive ? "text-emerald-600" : "text-red-500")
+          : "text-gray-900";
+        return (
+          <div key={kn.key} className="bg-white border border-gray-200 rounded-xl px-4 py-3 text-center">
+            <p className="text-xs font-medium text-gray-400 mb-1">{kn.label}</p>
+            <p className={`text-lg font-bold ${valueColor}`}>{formatMetricValue(kn.value, kn.format)}</p>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1384,6 +1474,9 @@ function TrendSummaryRow({ trendData }: { trendData: TrendData }) {
 // 5. Ranking List — top / bottom performers
 function RankingRow({ rank, name, value, isBottom = false }: { rank: number; name: string; value: number; isBottom?: boolean }) {
   const medalColors = ["text-yellow-600", "text-gray-500", "text-amber-600"];
+  const valueColor = isBottom
+    ? (value >= 0 ? "text-amber-600" : "text-emerald-600")
+    : (value >= 0 ? "text-emerald-600" : "text-red-500");
   return (
     <div className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
       <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
@@ -1392,7 +1485,7 @@ function RankingRow({ rank, name, value, isBottom = false }: { rank: number; nam
         {rank <= 3 ? ["🥇", "🥈", "🥉"][rank - 1] : rank}
       </span>
       <span className="flex-1 text-sm text-gray-700 truncate">{name}</span>
-      <span className={`text-sm font-semibold ${isBottom ? "text-amber-600" : "text-gray-900"}`}>
+      <span className={`text-sm font-semibold ${valueColor}`}>
         {formatMetricValue(value, "currency")}
       </span>
     </div>
@@ -1589,14 +1682,17 @@ function ComparisonCard({ computedKpis }: { computedKpis?: ComputedKPI }) {
       </div>
       <div className="p-4 space-y-3">
         {comparisons.map((comp) => {
-          const pct = comp.format === "percent"
+          // Normalize for bar width: percent values are *100, currency values use value/max ratio
+          const rawPct = comp.format === "percent"
             ? Math.round(comp.value * 100)
-            : Math.round(comp.value * 100);
-          const benchPct = comp.format === "percent"
+            : comp.benchmark > 0
+              ? Math.round((comp.value / comp.benchmark) * 100)
+              : Math.round(comp.value);
+          const rawBench = comp.format === "percent"
             ? Math.round(comp.benchmark * 100)
-            : Math.round(comp.benchmark * 100);
+            : Math.round(comp.benchmark);
           const isGood = comp.format === "percent" ? comp.value > comp.benchmark : comp.value >= comp.benchmark;
-          const ratio = benchPct > 0 ? Math.min(pct / benchPct, 1.5) : 0;
+          const ratio = rawBench > 0 ? Math.min(rawPct / rawBench, 1.5) : 0;
           return (
             <div key={comp.label}>
               <div className="flex items-center justify-between mb-1">
@@ -1608,7 +1704,7 @@ function ComparisonCard({ computedKpis }: { computedKpis?: ComputedKPI }) {
               <div className="relative h-1.5 bg-gray-100 rounded-full overflow-hidden">
                 <div
                   className="absolute h-full bg-gray-300 rounded-full"
-                  style={{ width: `${Math.min(benchPct / 1.5, 100)}%` }}
+                  style={{ width: `${Math.min(rawBench / 1.5, 100)}%` }}
                 />
                 <div
                   className={`absolute h-full rounded-full transition-all duration-700 ${isGood ? "bg-green-400" : "bg-amber-400"}`}

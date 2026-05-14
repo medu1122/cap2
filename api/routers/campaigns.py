@@ -982,12 +982,13 @@ async def get_campaign_performance(
     )
     logs = list(logs_result.scalars().all())
 
-    # Tracking links — link_clicks tổng từ tất cả tracking links
+    # Tracking links — tách theo link_type
     tracking_result = await db.execute(
         select(CampaignTrackingLink).where(CampaignTrackingLink.campaign_id == campaign_id)
     )
     tracking_links = list(tracking_result.scalars().all())
-    total_link_clicks = sum(t.click_count for t in tracking_links)
+    email_link_clicks = sum(t.click_count for t in tracking_links if t.link_type == "email_click")
+    fb_link_clicks = sum(t.click_count for t in tracking_links if t.link_type == "facebook_post")
 
     # Revenue records (vẫn giữ để không break frontend, không dùng tính toán)
     revenue_result = await db.execute(
@@ -1020,11 +1021,11 @@ async def get_campaign_performance(
 
     total_sent = email_sent + fb_sent
     total_opened = email_opened + fb_opened
-    total_clicked = email_clicked + total_link_clicks  # email click + tracking link clicks
+    total_clicked = email_clicked + email_link_clicks + fb_link_clicks  # email click + email_link_clicks + fb link opens
     total_delivered = sum(1 for r in logs if r.status in ("sent", "delivered"))
     total_bounced = sum(1 for r in logs if r.status == "bounced")
 
-    overall_open_r = round((total_opened / email_sent) * 100, 1) if email_sent else 0.0
+    overall_open_r = round((total_opened / total_sent) * 100, 1) if total_sent else 0.0
     overall_click_r = round((total_clicked / total_sent) * 100, 1) if total_sent else 0.0
 
     metrics = CampaignPerformanceMetrics(
@@ -1044,15 +1045,15 @@ async def get_campaign_performance(
             clicked=email_clicked,
             open_rate=email_open_r,
             click_rate=email_click_r,
-            link_clicks=sum(t.click_count for t in tracking_links if "email" in (t.name or "").lower()),
+            link_clicks=email_link_clicks,
         ),
         facebook=ChannelMetrics(
             sent=fb_sent,
-            opened=fb_opened,
+            opened=fb_link_clicks,  # lượt mở post = clicks trên tracking link facebook_post
             clicked=fb_clicked,
             open_rate=fb_open_r,
             click_rate=fb_click_r,
-            link_clicks=total_link_clicks,
+            link_clicks=fb_link_clicks,
         ),
     )
 

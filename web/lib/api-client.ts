@@ -61,8 +61,32 @@ async function request<T>(
   }
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: "Unknown error" }));
-    throw new Error(err.detail || `HTTP ${res.status}`);
+    let errMsg = "Unknown error";
+    try {
+      const errBody = await res.json();
+      // Pydantic validation error — extract field-level messages
+      if (res.status === 422 && errBody.detail) {
+        const msgs: string[] = [];
+        const detail = errBody.detail;
+        if (Array.isArray(detail)) {
+          detail.forEach((d: { loc?: string[]; msg?: string }) => {
+            if (d.loc && d.msg) {
+              msgs.push(`${d.loc.join(".")}: ${d.msg}`);
+            } else if (typeof d === "string") {
+              msgs.push(d);
+            }
+          });
+        } else if (typeof detail === "string") {
+          msgs.push(detail);
+        }
+        errMsg = msgs.length > 0 ? msgs.join(" | ") : errBody.detail;
+      } else {
+        errMsg = errBody.detail || errBody.message || `HTTP ${res.status}`;
+      }
+    } catch {
+      errMsg = `HTTP ${res.status}`;
+    }
+    throw new Error(errMsg);
   }
 
   if (res.status === 204) return undefined as T;

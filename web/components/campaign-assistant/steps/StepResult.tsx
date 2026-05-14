@@ -3,6 +3,7 @@ import { useState } from "react";
 import { RefreshCw, ExternalLink, Copy, Check } from "lucide-react";
 import { api } from "@/lib/api-client";
 import type { BriefForm, BuildingStatus, ContentBlocks } from "../CampaignAssistantModal";
+import VideoScriptContent from "@/components/campaign/VideoScriptContent";
 
 interface Props {
   ideaId: string;
@@ -105,7 +106,7 @@ export default function StepResult({
 
   const email = blocks.email as { subject?: string; preheader?: string; body?: string; cta_text?: string } | null;
   const post = blocks.post as { hook?: string; body?: string; hashtags?: string[]; image_style?: string } | null;
-  const video = blocks.video as { duration?: string; hook_seconds?: string; scenes?: Array<{ seconds: string; description: string; text_overlay?: string; audio_suggestion?: string }> } | null;
+  const video = blocks.video as Record<string, unknown> | null;
 
   return (
     <div className="space-y-5">
@@ -196,35 +197,12 @@ export default function StepResult({
       {/* Video */}
       {buildingStatus.video === "done" && video && (
         <BlockCard
-          title="Kịch bản Video"
+          title="Kịch bản cho Video"
           icon="🎬"
           onRegenerate={() => handleRegenerate("video")}
           regenerating={regenerating === "video"}
         >
-          <div className="space-y-3 text-sm">
-            {video.hook_seconds && (
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
-                <p className="text-xs text-purple-600 mb-0.5">Mở đầu (3-5s đầu)</p>
-                <p className="text-gray-900">{video.hook_seconds}</p>
-              </div>
-            )}
-            {video.scenes && video.scenes.map((scene, i) => (
-              <div key={i} className="flex gap-3">
-                <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-1 rounded shrink-0">
-                  {scene.seconds}
-                </span>
-                <div className="flex-1">
-                  <p className="text-gray-700">{scene.description}</p>
-                  {scene.text_overlay && (
-                    <p className="text-xs text-blue-600 mt-1">Text: {scene.text_overlay}</p>
-                  )}
-                  {scene.audio_suggestion && (
-                    <p className="text-xs text-gray-400 mt-0.5">Nhạc: {scene.audio_suggestion}</p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+          <VideoScriptContent content={video} />
         </BlockCard>
       )}
 

@@ -20,10 +20,12 @@ class CampaignTrackingLink(Base):
     destination_url = Column(Text, nullable=False)
     short_code = Column(String(64), nullable=False, unique=True)
     click_count = Column(Integer, nullable=False, default=0)
+    # Loại link: email_click (user click CTA trong email) | facebook_post (user mở bài post trên Facebook)
+    link_type = Column(String(32), nullable=False, default="email_click")
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
     # Relationships
     campaign = relationship("Campaign", back_populates="tracking_links")
 
     def __repr__(self) -> str:
-        return f"<CampaignTrackingLink {self.short_code} -> {self.destination_url}>"
+        return f"<CampaignTrackingLink {self.short_code} [{self.link_type}] -> {self.destination_url}>"
