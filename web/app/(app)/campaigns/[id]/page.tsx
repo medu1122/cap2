@@ -1055,14 +1055,6 @@ export default function CampaignDetailPage() {
                         <p className="text-2xl font-bold text-white">{deliverySummary.metrics.sent}</p>
                         <p className="text-[10px] text-white/80 uppercase tracking-wider font-semibold">Đã gửi</p>
                       </div>
-                      <div className="bg-white rounded-xl p-4 text-center border-2 border-gray-100 shadow-sm">
-                        <p className="text-xl font-bold text-blue-600">{deliverySummary.metrics.opened}</p>
-                        <p className="text-[10px] text-gray-500">{deliverySummary.metrics.open_rate}% mở</p>
-                      </div>
-                      <div className="bg-white rounded-xl p-4 text-center border-2 border-gray-100 shadow-sm">
-                        <p className="text-xl font-bold text-indigo-600">{deliverySummary.metrics.clicked}</p>
-                        <p className="text-[10px] text-gray-500">{deliverySummary.metrics.click_rate}% click</p>
-                      </div>
                     </div>
                   ) : null}
 

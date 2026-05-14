@@ -9,6 +9,7 @@ from models.user import User
 from models.campaign import Campaign
 from models.content_item import ContentItem
 from pydantic import BaseModel
+from services.calendar_reminder_service import send_today_calendar_reminders
 from services.publish_schedule import suggest_reschedule_dates
 import uuid
 
@@ -176,3 +177,53 @@ async def reschedule_item(
     item.scheduled_date = payload.scheduled_date
     await db.commit()
     return {"id": str(item.id), "scheduled_date": str(item.scheduled_date)}
+
+
+@router.post("/test-reminder")
+async def test_reminder_email(
+    current_user: User = Depends(get_current_user),
+):
+    """Gửi email reminder test tới huynhthinh61@gmail.com."""
+    import asyncio, smtplib
+    from email.mime.text import MIMEText
+    from core.config import settings
+
+    to_email = "huynhthinh61@gmail.com"
+    today = date.today()
+
+    lines = [
+        f"Chào bạn,",
+        "",
+        f"Hôm nay ({today.strftime('%d/%m/%Y')}) bạn có 2 việc cần xử lý:",
+        "",
+        "1. [Facebook] Chiến dịch Sale Mùa Hè",
+        "   Nội dung: Ưu đãi giảm 30% cho khách hàng thân thiết...",
+        "",
+        "2. [Email] Chiến dịch Newsletter Tháng 6",
+        "   Nội dung: Cập nhật sản phẩm mới tháng 6/2026...",
+        "",
+        "Mở mục Lịch marketing trong AIMAP để xem chi tiết.",
+        "",
+        "Cảm ơn.",
+    ]
+    subject = f"[TEST] Nhắc lịch công việc {today.strftime('%d/%m/%Y')}"
+
+    msg = MIMEText("\n".join(lines), "plain", "utf-8")
+    msg["Subject"] = subject
+    msg["From"] = settings.SMTP_FROM_EMAIL
+    msg["To"] = to_email
+
+    try:
+        await asyncio.to_thread(_send_email_smtp, settings.SMTP_HOST, settings.SMTP_PORT,
+                               settings.SMTP_USER, settings.SMTP_PASSWORD,
+                               settings.SMTP_FROM_EMAIL, to_email, msg.as_string())
+        return {"ok": True, "to": to_email, "message": "Email test đã được gửi."}
+    except Exception as e:
+        raise HTTPException(500, f"Lỗi gửi email: {str(e)}")
+
+
+async def _send_email_smtp(host, port, user, password, from_addr, to_addr, raw_msg):
+    with smtplib.SMTP(host, port, timeout=20) as server:
+        server.starttls()
+        server.login(user, password)
+        server.sendmail(from_addr, [to_addr], raw_msg)

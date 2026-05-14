@@ -44,7 +44,9 @@ def build_email_html(
     ab_variant: str | None,
     cta_text: str = "Xem chi tiết ưu đãi",
 ) -> tuple[str, str]:
-    safe_body = html.escape(body_text or "")
+    import re
+    clean_body = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", body_text or "").strip()
+    safe_body = html.escape(clean_body)
     safe_body_html = safe_body.replace("\n", "<br>\n")
     ab_note = ""
     if ab_variant == "A":

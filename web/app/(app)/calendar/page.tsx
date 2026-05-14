@@ -1,11 +1,27 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Copy, CalendarDays, Check, Sparkles, Bell, BellOff } from "lucide-react";
+import { useEffect, useMemo, useState, useRef } from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Check,
+  Sparkles,
+  Bell,
+  BellOff,
+  CalendarDays,
+  X,
+  Link2,
+  Mail,
+  FileVideo,
+} from "lucide-react";
+import Link from "next/link";
 import { api } from "@/lib/api-client";
 import { STATUS_COLORS, STATUS_LABELS, CHANNEL_LABELS, cn, formatDate } from "@/lib/utils";
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, isToday, parseISO } from "date-fns";
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, isToday, parseISO, isWithinInterval, differenceInDays } from "date-fns";
 import { vi } from "date-fns/locale";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
+
+/* ── Types ──────────────────────────────────────────────────────────────── */
 
 interface CalendarItem {
   id: string;
@@ -26,13 +42,221 @@ interface SuggestDatesResponse {
   horizon_days: number;
   campaign_deadline: string;
   avoid_dates: string[];
+  content_item_id: string;
+  channel: string;
 }
 
-const CHANNEL_DOT: Record<string, string> = {
-  facebook_post: "bg-blue-700",
-  email: "bg-violet-600",
-  video_script: "bg-amber-700",
-};
+/* ── Campaign colors — 10 distinct brand-safe colors ──────────────────────── */
+
+const CAMPAIGN_COLORS = [
+  { bar: "#377D73", bg: "#377D73/10", border: "#377D73/20" },
+  { bar: "#6366F1", bg: "#6366F1/10", border: "#6366F1/20" },
+  { bar: "#F59E0B", bg: "#F59E0B/10", border: "#F59E0B/20" },
+  { bar: "#EF4444", bg: "#EF4444/10", border: "#EF4444/20" },
+  { bar: "#10B981", bg: "#10B981/10", border: "#10B981/20" },
+  { bar: "#8B5CF6", bg: "#8B5CF6/10", border: "#8B5CF6/20" },
+  { bar: "#EC4899", bg: "#EC4899/10", border: "#EC4899/20" },
+  { bar: "#0EA5E9", bg: "#0EA5E9/10", border: "#0EA5E9/20" },
+  { bar: "#F97316", bg: "#F97316/10", border: "#F97316/20" },
+  { bar: "#14B8A6", bg: "#14B8A6/10", border: "#14B8A6/20" },
+];
+
+function getCampaignColor(index: number) {
+  return CAMPAIGN_COLORS[index % CAMPAIGN_COLORS.length];
+}
+
+/* ── Channel icons ──────────────────────────────────────────────────────── */
+
+function ChannelIcon({ channel, size = 11 }: { channel: string; size?: number }) {
+  if (channel === "facebook_post") return <FileVideo size={size} className="text-[#377D73]" />;
+  if (channel === "email") return <Mail size={size} className="text-[#6366F1]" />;
+  return <Link2 size={size} className="text-gray-400" />;
+}
+
+/* ── Modal ──────────────────────────────────────────────────────────────── */
+
+function CampaignModal({
+  item,
+  colorIdx,
+  onClose,
+  rescheduleDate,
+  setRescheduleDate,
+  rescheduleMsg,
+  rescheduling,
+  suggestData,
+  suggestLoading,
+  suggestErr,
+  onReschedule,
+  copied,
+  onCopy,
+}: {
+  item: CalendarItem;
+  colorIdx: number;
+  onClose: () => void;
+  rescheduleDate: string;
+  setRescheduleDate: (v: string) => void;
+  rescheduleMsg: string;
+  rescheduling: boolean;
+  suggestData: SuggestDatesResponse | null;
+  suggestLoading: boolean;
+  suggestErr: string;
+  onReschedule: () => void;
+  copied: boolean;
+  onCopy: () => void;
+}) {
+  const color = getCampaignColor(colorIdx);
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/30 z-40"
+        onClick={onClose}
+      />
+
+      {/* Modal */}
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+        <div
+          className="bg-white rounded-2xl shadow-2xl w-full max-w-lg pointer-events-auto overflow-hidden"
+          style={{ borderTop: `4px solid ${color.bar}` }}
+        >
+          {/* Header */}
+          <div className="flex items-start gap-3 px-5 py-4 border-b border-gray-100">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 mt-0.5"
+              style={{ backgroundColor: color.bg }}
+            >
+              <CalendarDays size={18} style={{ color: color.bar }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-base font-bold text-gray-900 truncate">{item.campaign_name}</h2>
+              <div className="flex gap-2 mt-1.5 flex-wrap">
+                <span className="badge bg-gray-100 text-gray-600 text-[10px]">{CHANNEL_LABELS[item.channel]}</span>
+                <span className={cn("badge text-[10px]", STATUS_COLORS[item.status])}>
+                  {STATUS_LABELS[item.status]}
+                </span>
+                {item.campaign_deadline && (
+                  <span className="badge bg-amber-50 text-amber-700 border border-amber-100 text-[10px]">
+                    Deadline: {formatDate(item.campaign_deadline)}
+                  </span>
+                )}
+              </div>
+            </div>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors shrink-0 mt-1">
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Content */}
+          <div className="px-5 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
+            {/* Copyable content */}
+            <div>
+              <p className="text-[11px] text-gray-400 uppercase tracking-wider font-semibold mb-1.5">Nội dung</p>
+              <div className="bg-gray-50 rounded-xl p-3 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed border border-gray-100">
+                {item.copy_text || item.content_preview || "—"}
+              </div>
+              <button
+                onClick={onCopy}
+                className="mt-2 flex items-center gap-1.5 text-xs text-gray-500 hover:text-[#377D73] transition-colors"
+              >
+                {copied ? (
+                  <><Check size={12} className="text-green-500" /> Đã copy!</>
+                ) : (
+                  <><Copy size={12} /> Copy nội dung</>
+                )}
+              </button>
+            </div>
+
+            {/* Suggestion dates */}
+            <div className="border-t border-gray-100 pt-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles size={13} className="text-amber-500" />
+                <p className="text-xs font-bold text-gray-700">Gợi ý ngày đăng</p>
+              </div>
+
+              {suggestLoading && <p className="text-xs text-gray-400 py-2">Đang phân tích…</p>}
+              {suggestErr && <p className="text-xs text-red-600 py-2">{suggestErr}</p>}
+
+              {suggestData && !suggestLoading && (
+                <div className="space-y-3">
+                  {suggestData.horizon_days <= 1 && (
+                    <p className="text-[11px] text-amber-800 bg-amber-50 rounded-lg px-3 py-2 border border-amber-100">
+                      Deadline rất gần — cân nhắc dời deadline hoặc đăng ngay hôm nay.
+                    </p>
+                  )}
+
+                  <div className="flex flex-wrap gap-1.5">
+                    {suggestData.suggestions.map((s) => (
+                      <button
+                        key={s.date}
+                        onClick={() => setRescheduleDate(s.date)}
+                        className={cn(
+                          "rounded-lg border px-2.5 py-1.5 text-[11px] transition-all",
+                          rescheduleDate === s.date
+                            ? "border-[#377D73] bg-[#377D73]/10 text-[#377D73] font-semibold shadow-sm"
+                            : "border-gray-200 bg-white text-gray-600 hover:border-[#377D73]/40"
+                        )}
+                        title={s.reasons.slice(0, 2).join(" · ")}
+                      >
+                        {format(parseISO(s.date), "EEE d/M", { locale: vi })}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
+                    <p className="text-[11px] leading-relaxed text-gray-500">{suggestData.rules_summary}</p>
+                    {suggestData.suggestions[0]?.reasons[0] && (
+                      <p className="text-[10px] text-gray-400 mt-1.5">
+                        Lý do: {suggestData.suggestions[0].reasons[0]}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Reschedule */}
+            <div className="border-t border-gray-100 pt-4">
+              <p className="text-[11px] text-gray-400 uppercase tracking-wider font-semibold mb-2">Đổi ngày đăng</p>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={rescheduleDate}
+                  onChange={(e) => setRescheduleDate(e.target.value)}
+                  className="input text-sm flex-1"
+                />
+                <button
+                  onClick={onReschedule}
+                  disabled={rescheduling || rescheduleDate === item.scheduled_date}
+                  className="btn-primary text-sm disabled:opacity-40 whitespace-nowrap"
+                >
+                  {rescheduling ? "Đang lưu…" : "Lưu"}
+                </button>
+              </div>
+              {rescheduleMsg && (
+                <p className={cn("text-xs mt-1.5", rescheduleMsg.includes("thất bại") ? "text-red-600" : "text-green-600")}>
+                  {rescheduleMsg}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 flex justify-end">
+            <button
+              onClick={onClose}
+              className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
+            >
+              Đóng
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ── Main Page ─────────────────────────────────────────────────────────── */
 
 export default function CalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -40,21 +264,25 @@ export default function CalendarPage() {
   const [channelFilter, setChannelFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("approved");
   const [items, setItems] = useState<CalendarItem[]>([]);
-  const [selected, setSelected] = useState<CalendarItem | null>(null);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Modal state
+  const [modalItem, setModalItem] = useState<CalendarItem | null>(null);
+  const [modalColorIdx, setModalColorIdx] = useState(0);
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduling, setRescheduling] = useState(false);
   const [rescheduleMsg, setRescheduleMsg] = useState("");
   const [suggestData, setSuggestData] = useState<SuggestDatesResponse | null>(null);
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [suggestErr, setSuggestErr] = useState("");
+
   const [reminderEnabled, setReminderEnabled] = useState(true);
   const [updatingReminder, setUpdatingReminder] = useState(false);
 
   const monthStr = format(currentDate, "yyyy-MM");
 
-  // Load user reminder preference
+  // Load reminder preference
   useEffect(() => {
     api.get<{ email_reminder_enabled: boolean }>("/auth/me")
       .then((u) => setReminderEnabled(u.email_reminder_enabled !== false))
@@ -74,17 +302,6 @@ export default function CalendarPage() {
     }
   }
 
-  const overloadedDays = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const it of items) {
-      map[it.scheduled_date] = (map[it.scheduled_date] || 0) + 1;
-    }
-    return Object.entries(map)
-      .filter(([, n]) => n >= 2)
-      .map(([d, n]) => ({ date: d, count: n }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-  }, [items]);
-
   function loadCalendar() {
     setLoading(true);
     const params = new URLSearchParams({ month: monthStr });
@@ -100,68 +317,62 @@ export default function CalendarPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [monthStr, channelFilter, statusFilter]);
 
-  // Keep selected item in sync after reschedule
-  useEffect(() => {
-    if (selected) {
-      const updated = items.find((i) => i.id === selected.id);
-      if (updated) setSelected(updated);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items]);
+  function openModal(item: CalendarItem, colorIdx: number) {
+    setModalItem(item);
+    setModalColorIdx(colorIdx);
+    setRescheduleDate(item.scheduled_date);
+    setRescheduleMsg("");
+    setCopied(false);
+    setSuggestData(null);
+    setSuggestErr("");
+    setSuggestLoading(true);
+    api
+      .get<SuggestDatesResponse>(`/calendar/items/${item.id}/suggest-dates`)
+      .then(setSuggestData)
+      .catch(() => setSuggestErr("Không tải được gợi ý."))
+      .finally(() => setSuggestLoading(false));
+  }
 
-  function selectItem(item: CalendarItem) {
-    if (selected?.id === item.id) {
-      setSelected(null);
-      setSuggestData(null);
-      setSuggestErr("");
-    } else {
-      setSelected(item);
-      setRescheduleDate(item.scheduled_date);
-      setRescheduleMsg("");
-      setCopied(false);
-      setSuggestData(null);
-      setSuggestErr("");
+  function closeModal() {
+    setModalItem(null);
+    setSuggestData(null);
+    setSuggestErr("");
+    setSuggestLoading(false);
+  }
+
+  async function handleReschedule() {
+    if (!modalItem || !rescheduleDate) return;
+    setRescheduling(true);
+    setRescheduleMsg("");
+    try {
+      await api.patch(`/calendar/${modalItem.id}`, { scheduled_date: rescheduleDate });
+      setRescheduleMsg("Đã lưu ngày mới.");
+      loadCalendar();
+    } catch {
+      setRescheduleMsg("Dời lịch thất bại.");
+    } finally {
+      setRescheduling(false);
     }
   }
 
-  useEffect(() => {
-    if (!selected) {
-      setSuggestLoading(false);
-      return;
-    }
-    setSuggestLoading(true);
-    setSuggestErr("");
-    api
-      .get<SuggestDatesResponse>(`/calendar/items/${selected.id}/suggest-dates`)
-      .then(setSuggestData)
-      .catch(() => setSuggestErr("Không tải được gợi ý ngày."))
-      .finally(() => setSuggestLoading(false));
-  }, [selected?.id]);
-
   function handleCopy() {
-    if (!selected) return;
-    const text = selected.copy_text || selected.content_preview;
+    if (!modalItem) return;
+    const text = modalItem.copy_text || modalItem.content_preview;
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
   }
 
-  async function handleReschedule() {
-    if (!selected || !rescheduleDate) return;
-    setRescheduling(true);
-    setRescheduleMsg("");
-    try {
-      await api.patch(`/calendar/${selected.id}`, { scheduled_date: rescheduleDate });
-      setRescheduleMsg("Đã dời lịch thành công.");
-      loadCalendar();
-    } catch {
-      setRescheduleMsg("Dời lịch thất bại. Vui lòng thử lại.");
-    } finally {
-      setRescheduling(false);
-    }
-  }
+  // ── Campaign color map (stable per campaign_id) ──────────────────────
+  const campaignColorMap = useMemo(() => {
+    const ids = [...new Set(items.map((i) => i.campaign_id))];
+    const map: Record<string, number> = {};
+    ids.forEach((id, idx) => { map[id] = idx; });
+    return map;
+  }, [items]);
 
+  // ── Calendar grid ─────────────────────────────────────────────────────
   const start = viewMode === "month"
     ? startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 })
     : startOfWeek(currentDate, { weekStartsOn: 1 });
@@ -170,12 +381,46 @@ export default function CalendarPage() {
     : endOfWeek(currentDate, { weekStartsOn: 1 });
   const days = eachDayOfInterval({ start, end });
 
-  const itemsByDate = items.reduce((acc, item) => {
-    const d = item.scheduled_date;
-    if (!acc[d]) acc[d] = [];
-    acc[d].push(item);
-    return acc;
-  }, {} as Record<string, CalendarItem[]>);
+  const itemsByDate = useMemo(() => {
+    const m: Record<string, CalendarItem[]> = {};
+    for (const it of items) {
+      const d = it.scheduled_date;
+      if (!m[d]) m[d] = [];
+      m[d].push(it);
+    }
+    return m;
+  }, [items]);
+
+  // ── Campaign timeline bars ──────────────────────────────────────────
+  // Group items by campaign, get date range
+  const campaignGroups = useMemo(() => {
+    const map: Record<string, { items: CalendarItem[]; start: string; end: string; name: string; deadline?: string }> = {};
+    for (const it of items) {
+      if (!map[it.campaign_id]) {
+        map[it.campaign_id] = {
+          items: [],
+          start: it.scheduled_date,
+          end: it.scheduled_date,
+          name: it.campaign_name,
+          deadline: it.campaign_deadline,
+        };
+      }
+      if (it.scheduled_date < map[it.campaign_id].start) map[it.campaign_id].start = it.scheduled_date;
+      if (it.scheduled_date > map[it.campaign_id].end) map[it.campaign_id].end = it.scheduled_date;
+      map[it.campaign_id].items.push(it);
+    }
+    return Object.values(map);
+  }, [items]);
+
+  const monthStart = startOfMonth(currentDate);
+  const monthEnd = endOfMonth(currentDate);
+
+  function dateToPercent(dateStr: string): number {
+    const d = parseISO(dateStr);
+    const total = differenceInDays(monthEnd, monthStart) + 1;
+    const offset = differenceInDays(d, monthStart);
+    return Math.max(0, Math.min(100, (offset / total) * 100));
+  }
 
   function prevMonth() {
     if (viewMode === "month") {
@@ -194,275 +439,272 @@ export default function CalendarPage() {
 
   const WEEKDAYS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 
+  // ── Status filter options ───────────────────────────────────────────
+  const STATUS_OPTIONS = [
+    { value: "approved", label: "Đã duyệt" },
+    { value: "pending_approval", label: "Chờ duyệt" },
+    { value: "rejected", label: "Bị từ chối" },
+    { value: "all", label: "Tất cả" },
+  ];
+
+  const CHANNEL_OPTIONS = [
+    { value: "all", label: "Tất cả kênh" },
+    { value: "facebook_post", label: "Facebook" },
+    { value: "email", label: "Email" },
+    { value: "video_script", label: "Video" },
+  ];
+
   return (
-    <div className="p-6 max-w-6xl">
-      <div className="flex items-center justify-between mb-2">
-        <div>
-          <h1 className="flex items-center gap-2">
-            <CalendarDays size={20} className="text-gray-500" />
-            Lịch đăng nội dung
-          </h1>
-        </div>
-        <div className="flex items-center gap-3">
-          <HelpDialogButton
-            title="Hướng dẫn Lịch marketing"
-            summary="Lịch này hiển thị nội dung đã duyệt và ngày đăng dự kiến để bạn điều phối dễ hơn."
-            steps={[
-              "Dùng bộ lọc để xem theo kênh hoặc trạng thái.",
-              "Đổi chế độ Tháng/Tuần để quan sát theo nhu cầu.",
-              "Bấm một nội dung: cột phải hiện gợi ý ngày (theo kênh + deadline + tránh trùng bài cùng chiến dịch).",
-              "Bấm ngày gợi ý hoặc chọn ngày tay rồi Lưu; dữ liệu giữ sau F5.",
-            ]}
-          />
-          <button
-            onClick={toggleReminder}
-            disabled={updatingReminder}
-            className={cn(
-              "flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border transition-colors",
-              reminderEnabled
-                ? "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
-                : "border-gray-200 bg-gray-50 text-gray-400 hover:bg-gray-100"
-            )}
-            title={reminderEnabled ? "Nhắc lịch qua email: Bật" : "Nhắc lịch qua email: Tắt"}
-          >
-            {updatingReminder ? (
-              <span className="animate-spin text-xs">↻</span>
-            ) : reminderEnabled ? (
-              <Bell size={13} />
-            ) : (
-              <BellOff size={13} />
-            )}
-            <span>{reminderEnabled ? "Nhắc email" : "Tắt nhắc"}</span>
-          </button>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setViewMode("month")}
-              className={cn("btn-secondary text-xs py-1.5", viewMode === "month" && "bg-gray-200")}
-            >
-              Tháng
-            </button>
-            <button
-              onClick={() => setViewMode("week")}
-              className={cn("btn-secondary text-xs py-1.5", viewMode === "week" && "bg-gray-200")}
-            >
-              Tuần
-            </button>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 px-6 py-4">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <Link href="/" className="text-gray-400 hover:text-gray-600 transition-colors">
+                <ChevronLeft size={20} />
+              </Link>
+              <CalendarDays size={22} className="text-[#377D73]" />
+              <h1 className="text-xl font-semibold text-gray-900">Lịch đăng nội dung</h1>
+            </div>
+            <div className="flex items-center gap-3">
+              <HelpDialogButton
+                title="Hướng dẫn Lịch marketing"
+                summary="Timeline hiển thị chiến dịch từ ngày bắt đầu đến deadline. Mỗi thanh màu là một chiến dịch."
+                steps={[
+                  "Timeline màu chạy từ ngày đầu tiên đến deadline của chiến dịch.",
+                  "Chấm tròn trên timeline = ngày đăng thực tế.",
+                  "Click vào chiến dịch hoặc chấm để mở chi tiết.",
+                  "Dùng bộ lọc để xem theo kênh hoặc trạng thái.",
+                  "Bật nhắc email để nhận thông báo ngày đăng.",
+                ]}
+                buttonClassName="btn-secondary text-xs"
+              />
+              <button
+                onClick={toggleReminder}
+                disabled={updatingReminder}
+                className={cn(
+                  "flex items-center gap-1.5 text-xs px-3 py-1.5 rounded border transition-colors",
+                  reminderEnabled
+                    ? "border-[#377D73]/30 bg-[#377D73]/5 text-[#377D73]"
+                    : "border-gray-200 bg-gray-50 text-gray-400 hover:bg-gray-100"
+                )}
+              >
+                {updatingReminder ? (
+                  <span className="animate-spin text-xs">↻</span>
+                ) : reminderEnabled ? (
+                  <Bell size={13} />
+                ) : (
+                  <BellOff size={13} />
+                )}
+                <span>{reminderEnabled ? "Nhắc email" : "Tắt nhắc"}</span>
+              </button>
+            </div>
           </div>
-          <select className="input text-sm" value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)}>
-            <option value="all">Tất cả kênh</option>
-            <option value="facebook_post">Facebook</option>
-            <option value="email">Email</option>
-            <option value="video_script">Video</option>
-          </select>
-          <select className="input text-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option value="all">Tất cả trạng thái</option>
-            <option value="approved">Đã duyệt</option>
-            <option value="pending_approval">Chờ duyệt</option>
-            <option value="rejected">Bị từ chối</option>
-          </select>
-          <button onClick={prevMonth} className="btn-secondary p-1.5"><ChevronLeft size={16} /></button>
-          <span className="text-sm font-medium w-36 text-center">
-            {format(currentDate, "MMMM yyyy", { locale: vi })}
-          </span>
-          <button onClick={nextMonth} className="btn-secondary p-1.5"><ChevronRight size={16} /></button>
+
+          {/* Filters */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <button onClick={prevMonth} className="btn-secondary p-1.5"><ChevronLeft size={16} /></button>
+              <span className="text-sm font-semibold w-40 text-center text-gray-800">
+                {format(currentDate, "MMMM yyyy", { locale: vi })}
+              </span>
+              <button onClick={nextMonth} className="btn-secondary p-1.5"><ChevronRight size={16} /></button>
+            </div>
+            <div className="flex items-center gap-1 border border-gray-200 rounded-lg p-0.5 bg-gray-50">
+              <button
+                onClick={() => setViewMode("month")}
+                className={cn("px-3 py-1 text-xs rounded-md transition-colors", viewMode === "month" ? "bg-white shadow-sm font-semibold text-gray-800" : "text-gray-500 hover:text-gray-700")}
+              >
+                Tháng
+              </button>
+              <button
+                onClick={() => setViewMode("week")}
+                className={cn("px-3 py-1 text-xs rounded-md transition-colors", viewMode === "week" ? "bg-white shadow-sm font-semibold text-gray-800" : "text-gray-500 hover:text-gray-700")}
+              >
+                Tuần
+              </button>
+            </div>
+            <select
+              className="input text-sm"
+              value={channelFilter}
+              onChange={(e) => setChannelFilter(e.target.value)}
+            >
+              {CHANNEL_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            <select
+              className="input text-sm"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              {STATUS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
-      {!loading && items.length === 0 && (
-        <div className="mb-4 text-sm text-gray-400 px-1">
-          Chưa có nội dung nào được lên lịch cho tháng này. Tạo và duyệt chiến dịch để nội dung xuất hiện ở đây.
-        </div>
-      )}
-
-      {!loading && overloadedDays.length > 0 && (
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-          <span className="font-medium">Nhiều bài cùng một ngày trong tháng này:</span>{" "}
-          {overloadedDays.map(({ date, count }) => (
-            <span key={date} className="ml-1">
-              {format(parseISO(date), "d/M", { locale: vi })} ({count} bài)
-            </span>
-          ))}
-          . Cân nhắc dời lịch để tránh dồn đăng.
-        </div>
-      )}
-
-      <div className="flex gap-6">
-        <div className={cn("flex-1", selected && "pr-2")}>
-          <div className="grid grid-cols-7 border-t border-l border-gray-200">
-            {WEEKDAYS.map((d) => (
-              <div key={d} className="border-b border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-500 text-center bg-surface">
-                {d}
-              </div>
-            ))}
-            {days.map((day) => {
-              const dateKey = format(day, "yyyy-MM-dd");
-              const dayItems = itemsByDate[dateKey] || [];
-              const sameMonth = isSameMonth(day, currentDate);
-              const today = isToday(day);
-
-              return (
-                <div
-                  key={dateKey}
-                  className={cn(
-                    "border-b border-r border-gray-200 min-h-24 p-1.5",
-                    !sameMonth && "bg-gray-50",
-                    today && "border-t-2 border-t-blue-600"
-                  )}
-                >
-                  <p className={cn("text-xs mb-1", sameMonth ? "text-gray-700" : "text-gray-300", today && "font-semibold text-blue-600")}>
-                    {format(day, "d")}
-                  </p>
-                  <div className="space-y-0.5">
-                    {dayItems.map((item) => (
-                      <button
-                        key={item.id}
-                        onClick={() => selectItem(item)}
-                        className={cn(
-                          "w-full text-left px-1.5 py-0.5 rounded text-xs truncate flex items-center gap-1",
-                          item.status === "approved" ? "opacity-100" : "opacity-70",
-                          selected?.id === item.id ? "ring-1 ring-blue-400 bg-blue-50" : "hover:bg-gray-100"
-                        )}
-                      >
-                        <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", CHANNEL_DOT[item.channel] || "bg-gray-400")} />
-                        <span className="truncate text-gray-700">{item.content_preview || item.campaign_name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
+      {/* Content */}
+      <div className="max-w-7xl mx-auto px-6 py-5">
+        {/* Empty state */}
+        {!loading && items.length === 0 && (
+          <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
+            <CalendarDays size={48} className="mx-auto text-gray-200 mb-4" />
+            <p className="text-gray-500 mb-2">Chưa có nội dung nào được lên lịch.</p>
+            <p className="text-sm text-gray-400">Tạo và duyệt chiến dịch để nội dung xuất hiện ở đây.</p>
           </div>
-        </div>
+        )}
 
-        {selected && (
-          <div className="w-72 shrink-0">
-            <div className="card sticky top-6 space-y-3">
-              <div className="flex items-center justify-between">
-                <h2>Chi tiết</h2>
-                <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600 text-xs">Đóng</button>
-              </div>
-
-              <div>
-                <p className="text-xs text-gray-500">Chiến dịch</p>
-                <p className="text-sm font-medium">{selected.campaign_name}</p>
-                {selected.campaign_deadline && (
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Deadline: {formatDate(selected.campaign_deadline)}
-                  </p>
-                )}
-              </div>
-
-              <div className="flex gap-2 items-center flex-wrap">
-                <span className="badge bg-gray-100 text-gray-600">{CHANNEL_LABELS[selected.channel]}</span>
-                <span className={cn("badge", STATUS_COLORS[selected.status])}>{STATUS_LABELS[selected.status]}</span>
-              </div>
-
-              <div>
-                <p className="text-xs text-gray-500 mb-1">Nội dung</p>
-                <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                  {selected.copy_text || selected.content_preview || "—"}
-                </p>
-              </div>
-
-              <button
-                onClick={handleCopy}
-                className="btn-secondary w-full flex items-center justify-center gap-1.5 text-xs py-1.5"
-              >
-                {copied ? <Check size={13} className="text-green-600" /> : <Copy size={13} />}
-                {copied ? "Đã copy!" : "Copy nội dung"}
-              </button>
-
-              <div className="border-t border-gray-100 pt-3 space-y-2">
-                <p className="text-xs text-gray-500 font-medium flex items-center gap-1">
-                  <Sparkles size={12} className="text-amber-600" />
-                  Gợi ý ngày đăng
-                </p>
-                {suggestLoading && <p className="text-xs text-gray-400">Đang phân tích…</p>}
-                {suggestErr && <p className="text-xs text-red-600">{suggestErr}</p>}
-                {suggestData && !suggestLoading && (
-                  <div className="space-y-2">
-                    {suggestData.horizon_days <= 1 && (
-                      <p className="text-xs text-amber-800 bg-amber-50 rounded px-2 py-1">
-                        Khoảng tới deadline rất ngắn — AI có thể đã xếp nhiều kênh cùng ngày. Nên đặt deadline xa
-                        hơn vài ngày ở chiến dịch sau để dàn đều tự động.
-                      </p>
-                    )}
-                    {suggestData.avoid_dates.length > 0 && (
-                      <p className="text-xs text-gray-500">
-                        Tránh trùng với {suggestData.avoid_dates.length} ngày đã có bài khác trong cùng chiến dịch.
-                      </p>
-                    )}
-                    <p className="text-[11px] leading-snug text-gray-500">{suggestData.rules_summary}</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {suggestData.suggestions.map((s) => (
-                        <button
-                          key={s.date}
-                          type="button"
-                          onClick={() => {
-                            setRescheduleDate(s.date);
-                            setRescheduleMsg("");
-                          }}
-                          className={cn(
-                            "rounded border px-2 py-1 text-[11px] transition-colors",
-                            rescheduleDate === s.date
-                              ? "border-blue-500 bg-blue-50 text-blue-900"
-                              : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                          )}
-                          title={s.reasons.slice(0, 3).join(" ")}
-                        >
-                          {format(parseISO(s.date), "EEE d/M", { locale: vi })}
-                        </button>
-                      ))}
-                    </div>
-                    {suggestData.suggestions[0] && (
-                      <p className="text-[11px] text-gray-500 leading-relaxed">
-                        {suggestData.suggestions[0].reasons.slice(0, 2).join(" ")}
-                      </p>
-                    )}
+        {/* Timeline view */}
+        {items.length > 0 && (
+          <div className="space-y-4">
+            {/* Legend */}
+            <div className="flex items-center gap-4 text-xs text-gray-500 flex-wrap">
+              <span className="font-semibold text-gray-600">Chiến dịch:</span>
+              {campaignGroups.map((cg) => {
+                const color = getCampaignColor(campaignColorMap[cg.campaign_id]);
+                return (
+                  <div key={cg.campaign_id} className="flex items-center gap-1.5">
+                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: color.bar }} />
+                    <span className="text-gray-600">{cg.name}</span>
                   </div>
-                )}
+                );
+              })}
+            </div>
 
-                <p className="text-xs text-gray-500 font-medium pt-1">Dời lịch đăng</p>
-                <input
-                  type="date"
-                  value={rescheduleDate}
-                  onChange={(e) => setRescheduleDate(e.target.value)}
-                  className="input text-sm py-1 w-full"
-                />
-                <button
-                  onClick={handleReschedule}
-                  disabled={rescheduling || rescheduleDate === selected.scheduled_date}
-                  className="btn-secondary w-full text-xs py-1.5 disabled:opacity-40"
-                >
-                  {rescheduling ? "Đang lưu..." : "Lưu ngày mới"}
-                </button>
-                {rescheduleMsg && (
-                  <p className={cn("text-xs", rescheduleMsg.includes("thất bại") ? "text-red-600" : "text-green-600")}>
-                    {rescheduleMsg}
-                  </p>
-                )}
+            {/* Calendar grid with timeline bars */}
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              {/* Day headers */}
+              <div className="grid border-b border-gray-100" style={{ gridTemplateColumns: "repeat(7, 1fr)" }}>
+                {WEEKDAYS.map((d) => (
+                  <div key={d} className="text-center py-2 text-xs font-semibold text-gray-400 bg-gray-50 border-r border-gray-100 last:border-r-0">
+                    {d}
+                  </div>
+                ))}
               </div>
 
-              <a
-                href={`/campaigns/${selected.campaign_id}`}
-                className="btn-secondary text-xs py-1 w-full justify-center block text-center"
-              >
-                Xem chiến dịch đầy đủ →
-              </a>
+              {/* Days */}
+              <div className="relative" style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)" }}>
+                {days.map((day, dayIdx) => {
+                  const dateKey = format(day, "yyyy-MM-dd");
+                  const dayItems = itemsByDate[dateKey] || [];
+                  const sameMonth = isSameMonth(day, currentDate);
+                  const today = isToday(day);
+
+                  // Which campaigns have bars passing through this day?
+                  const activeCampaigns = campaignGroups.filter((cg) => {
+                    const startD = parseISO(cg.start);
+                    const endD = parseISO(cg.end);
+                    return day >= startD && day <= endD;
+                  });
+
+                  return (
+                    <div
+                      key={dateKey}
+                      className={cn(
+                        "relative border-r border-b border-gray-100 min-h-20 p-1.5",
+                        !sameMonth && "bg-gray-50/50",
+                        today && "bg-[#377D73]/3"
+                      )}
+                      style={{ borderRightWidth: dayIdx % 7 === 6 ? 0 : 1 }}
+                    >
+                      {/* Day number */}
+                      <p className={cn(
+                        "text-xs mb-1 font-semibold",
+                        sameMonth ? (today ? "text-[#377D73]" : "text-gray-700") : "text-gray-300",
+                        today && "w-6 h-6 rounded-full bg-[#377D73] text-white flex items-center justify-center"
+                      )}>
+                        {format(day, "d")}
+                      </p>
+
+                      {/* Timeline bar segment (if this day is start of a campaign) */}
+                      {activeCampaigns.slice(0, 3).map((cg) => {
+                        const color = getCampaignColor(campaignColorMap[cg.campaign_id]);
+                        const isStart = cg.start === dateKey;
+                        const isEnd = cg.end === dateKey;
+                        return (
+                          <div
+                            key={cg.campaign_id}
+                            onClick={() => openModal(cg.items[0], campaignColorMap[cg.campaign_id])}
+                            className="mb-0.5 cursor-pointer group"
+                          >
+                            <div
+                              className="h-2.5 rounded-full relative group-hover:opacity-80 transition-opacity"
+                              style={{ backgroundColor: color.bar }}
+                            >
+                              {/* Campaign name tooltip on hover */}
+                              <div className="absolute left-0 bottom-full mb-1 hidden group-hover:block z-20 pointer-events-none">
+                                <div className="bg-gray-900 text-white text-[10px] rounded px-2 py-1 whitespace-nowrap shadow-lg">
+                                  {cg.name}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Content pills */}
+                      <div className="space-y-0.5 mt-1">
+                        {dayItems.map((item) => {
+                          const color = getCampaignColor(campaignColorMap[item.campaign_id]);
+                          return (
+                            <button
+                              key={item.id}
+                              onClick={() => openModal(item, campaignColorMap[item.campaign_id])}
+                              className="w-full flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-left hover:opacity-80 transition-opacity"
+                              style={{ backgroundColor: color.bg, borderLeft: `2px solid ${color.bar}` }}
+                              title={item.campaign_name}
+                            >
+                              <ChannelIcon channel={item.channel} size={9} />
+                              <span className="truncate font-medium" style={{ color: color.bar }}>
+                                {item.content_preview || item.campaign_name}
+                              </span>
+                            </button>
+                          );
+                        })}
+                        {dayItems.length > 2 && (
+                          <p className="text-[9px] text-gray-400 text-center">+{dayItems.length - 2}</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Legend row */}
+            <div className="flex items-center gap-4 text-xs text-gray-400 flex-wrap">
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full bg-[#377D73]" />
+                Hôm nay
+              </span>
+              <span className="italic">Click vào thanh/tin để xem chi tiết và dời lịch</span>
             </div>
           </div>
         )}
       </div>
 
-      <div className="mt-4 flex items-center gap-4 text-xs text-gray-500">
-        {Object.entries(CHANNEL_DOT).map(([ch, color]) => (
-          <span key={ch} className="flex items-center gap-1">
-            <span className={cn("w-2 h-2 rounded-full", color)} />
-            {CHANNEL_LABELS[ch]}
-          </span>
-        ))}
-        <span className="ml-auto italic">Click vào mục để xem nội dung và dời lịch</span>
-      </div>
+      {/* Modal */}
+      {modalItem && (
+        <CampaignModal
+          item={modalItem}
+          colorIdx={modalColorIdx}
+          onClose={closeModal}
+          rescheduleDate={rescheduleDate}
+          setRescheduleDate={setRescheduleDate}
+          rescheduleMsg={rescheduleMsg}
+          rescheduling={rescheduling}
+          suggestData={suggestData}
+          suggestLoading={suggestLoading}
+          suggestErr={suggestErr}
+          onReschedule={handleReschedule}
+          copied={copied}
+          onCopy={handleCopy}
+        />
+      )}
     </div>
   );
 }

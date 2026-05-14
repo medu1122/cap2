@@ -26,6 +26,7 @@ from models.agent_run_log import AgentRunLog
 from models.customer_list import CustomerList
 from models.campaign_execution_log import CampaignExecutionLog
 from models.campaign_revenue import CampaignRevenue
+from models.campaign_tracking_link import CampaignTrackingLink
 from schemas.campaign import (
     CampaignCreate,
     CampaignListItem,
@@ -45,6 +46,7 @@ from schemas.campaign_revenue import (
     CampaignRevenueOut,
     CampaignPerformanceMetrics,
     CampaignPerformanceResponse,
+    ChannelMetrics,
 )
 from services.agent_dispatcher import dispatch_campaign
 from services.campaign_delivery_service import (
@@ -966,8 +968,7 @@ async def get_campaign_performance(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Lấy KPIs tổng hợp của 1 chiến dịch."""
-    # Verify campaign belongs to user
+    """Lấy KPIs tổng hợp của 1 chiến dịch — không dùng tiền bạc."""
     result = await db.execute(
         select(Campaign).where(Campaign.id == campaign_id, Campaign.user_id == current_user.id)
     )
@@ -975,13 +976,20 @@ async def get_campaign_performance(
     if not campaign:
         raise HTTPException(404, "Không tìm thấy chiến dịch")
 
-    # Get all execution logs for this campaign
+    # Execution logs
     logs_result = await db.execute(
         select(CampaignExecutionLog).where(CampaignExecutionLog.campaign_id == campaign_id)
     )
     logs = list(logs_result.scalars().all())
 
-    # Get all revenues
+    # Tracking links — link_clicks tổng từ tất cả tracking links
+    tracking_result = await db.execute(
+        select(CampaignTrackingLink).where(CampaignTrackingLink.campaign_id == campaign_id)
+    )
+    tracking_links = list(tracking_result.scalars().all())
+    total_link_clicks = sum(t.click_count for t in tracking_links)
+
+    # Revenue records (vẫn giữ để không break frontend, không dùng tính toán)
     revenue_result = await db.execute(
         select(CampaignRevenue)
         .where(CampaignRevenue.campaign_id == campaign_id)
@@ -989,49 +997,63 @@ async def get_campaign_performance(
     )
     revenues = [CampaignRevenueOut.model_validate(r) for r in revenue_result.scalars().all()]
 
-    # Calculate metrics
-    total_sent = len(logs)
-    delivered = sum(1 for r in logs if r.status in ("sent", "delivered"))
-    bounced = sum(1 for r in logs if r.status == "bounced")
-    opened = sum(1 for r in logs if r.opened_at is not None)
-    clicked = sum(1 for r in logs if r.clicked_at is not None)
-    unsubscribed = sum(1 for r in logs if r.status == "unsubscribed")
+    # ── Breakdown theo kênh ──────────────────────────────────────
+    email_logs = [r for r in logs if r.channel == "email"]
+    fb_logs = [r for r in logs if r.channel == "facebook"]
 
-    total_revenue = sum(r.revenue for r in revenues)
-    total_orders = sum(r.order_count for r in revenues)
+    def channel_stats(rows):
+        sent = len(rows)
+        opened = sum(1 for r in rows if r.opened_at)
+        clicked = sum(1 for r in rows if r.clicked_at)
+        return sent, opened, clicked
 
-    # Get campaign cost
-    campaign_cost = campaign.cost or 0
+    def channel_rates(sent, opened, clicked):
+        open_r = round((opened / sent) * 100, 1) if sent else 0.0
+        click_r = round((clicked / sent) * 100, 1) if sent else 0.0
+        return open_r, click_r
 
-    # Calculate rates
-    open_rate = round((opened / delivered) * 100, 2) if delivered > 0 else 0.0
-    click_rate = round((clicked / delivered) * 100, 2) if delivered > 0 else 0.0
-    conversion_rate = round((total_orders / delivered) * 100, 2) if delivered > 0 else 0.0
-    revenue_per_email = round(total_revenue / delivered, 0) if delivered > 0 else 0.0
+    email_sent, email_opened, email_clicked = channel_stats(email_logs)
+    fb_sent, fb_opened, fb_clicked = channel_stats(fb_logs)
 
-    # Calculate ROI
-    roi_percent = None
-    if campaign_cost > 0:
-        roi_percent = round(((total_revenue - campaign_cost) / campaign_cost) * 100, 2)
+    email_open_r, email_click_r = channel_rates(email_sent, email_opened, email_clicked)
+    fb_open_r, fb_click_r = channel_rates(fb_sent, fb_opened, fb_clicked)
+
+    total_sent = email_sent + fb_sent
+    total_opened = email_opened + fb_opened
+    total_clicked = email_clicked + total_link_clicks  # email click + tracking link clicks
+    total_delivered = sum(1 for r in logs if r.status in ("sent", "delivered"))
+    total_bounced = sum(1 for r in logs if r.status == "bounced")
+
+    overall_open_r = round((total_opened / email_sent) * 100, 1) if email_sent else 0.0
+    overall_click_r = round((total_clicked / total_sent) * 100, 1) if total_sent else 0.0
 
     metrics = CampaignPerformanceMetrics(
         campaign_id=campaign.id,
         campaign_name=campaign.campaign_name,
         status=campaign.status,
         total_sent=total_sent,
-        delivered=delivered,
-        bounced=bounced,
-        opened=opened,
-        clicked=clicked,
-        unsubscribed=unsubscribed,
-        total_revenue=total_revenue,
-        total_orders=total_orders,
-        open_rate=open_rate,
-        click_rate=click_rate,
-        conversion_rate=conversion_rate,
-        cost=campaign_cost,
-        roi_percent=roi_percent,
-        revenue_per_email=revenue_per_email,
+        total_delivered=total_delivered,
+        total_opened=total_opened,
+        total_clicked=total_clicked,
+        total_bounced=total_bounced,
+        open_rate=overall_open_r,
+        click_rate=overall_click_r,
+        email=ChannelMetrics(
+            sent=email_sent,
+            opened=email_opened,
+            clicked=email_clicked,
+            open_rate=email_open_r,
+            click_rate=email_click_r,
+            link_clicks=sum(t.click_count for t in tracking_links if "email" in (t.name or "").lower()),
+        ),
+        facebook=ChannelMetrics(
+            sent=fb_sent,
+            opened=fb_opened,
+            clicked=fb_clicked,
+            open_rate=fb_open_r,
+            click_rate=fb_click_r,
+            link_clicks=total_link_clicks,
+        ),
     )
 
     return CampaignPerformanceResponse(metrics=metrics, revenues=revenues)
