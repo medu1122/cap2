@@ -292,6 +292,7 @@ async def get_campaign(
     detail = CampaignDetail.model_validate({
         "id": campaign.id,
         "brand_id": campaign.brand_id,
+        "customer_list_id": campaign.customer_list_id,
         "campaign_name": campaign.campaign_name,
         "objective": campaign.objective,
         "product_or_service": campaign.product_or_service,
@@ -309,6 +310,70 @@ async def get_campaign(
         "agent_logs": agent_logs,
     })
     return detail
+
+
+class UpdateCustomerListPayload(BaseModel):
+    customer_list_id: uuid.UUID
+
+
+@router.patch("/{campaign_id}/customer-list", response_model=CampaignDetail)
+async def update_campaign_customer_list(
+    campaign_id: uuid.UUID,
+    body: UpdateCustomerListPayload,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cập nhật danh sách khách hàng gắn với chiến dịch."""
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.user_id == current_user.id)
+    )
+    campaign = result.scalar_one_or_none()
+    if not campaign:
+        raise HTTPException(404, "Không tìm thấy chiến dịch")
+
+    # Verify customer list belongs to user
+    list_r = await db.execute(
+        select(CustomerList).where(
+            CustomerList.id == body.customer_list_id,
+            CustomerList.user_id == current_user.id,
+        )
+    )
+    if not list_r.scalar_one_or_none():
+        raise HTTPException(400, "Danhh sách khách không hợp lệ")
+
+    campaign.customer_list_id = body.customer_list_id
+    await db.commit()
+
+    # Return full campaign detail
+    content_result = await db.execute(
+        select(ContentItem).where(ContentItem.campaign_id == campaign_id).order_by(ContentItem.channel, ContentItem.version.desc())
+    )
+    log_result = await db.execute(
+        select(AgentRunLog).where(AgentRunLog.campaign_id == campaign_id).order_by(AgentRunLog.step_order)
+    )
+    content_items = [ContentItemOut.model_validate(ci) for ci in content_result.scalars().all()]
+    agent_logs = [AgentLogOut.model_validate(log) for log in log_result.scalars().all()]
+
+    return CampaignDetail.model_validate({
+        "id": campaign.id,
+        "brand_id": campaign.brand_id,
+        "customer_list_id": campaign.customer_list_id,
+        "campaign_name": campaign.campaign_name,
+        "objective": campaign.objective,
+        "product_or_service": campaign.product_or_service,
+        "target_audience": campaign.target_audience,
+        "offer_or_hook": campaign.offer_or_hook,
+        "start_date": campaign.start_date,
+        "deadline": campaign.deadline,
+        "channels": campaign.channels,
+        "additional_notes": campaign.additional_notes,
+        "status": campaign.status,
+        "error_message": campaign.error_message,
+        "campaign_plan_json": campaign.campaign_plan_json,
+        "created_at": campaign.created_at,
+        "content_items": content_items,
+        "agent_logs": agent_logs,
+    })
 
 
 @router.post("/{campaign_id}/execute", status_code=202)
@@ -393,6 +458,62 @@ async def execute_campaign_delivery(
         "batch_id": str(batch_id),
         "status": "sending",
     }
+
+
+class SendEmailRequest(BaseModel):
+    to: str
+    subject: str
+    body: str
+
+
+@router.post("/{campaign_id}/send-email", status_code=202)
+async def send_single_email(
+    campaign_id: uuid.UUID,
+    body: SendEmailRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Gửi một email trực tiếp cho khách hàng (dùng brand_name làm sender)."""
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.user_id == current_user.id)
+    )
+    campaign = result.scalar_one_or_none()
+    if not campaign:
+        raise HTTPException(404, "Không tìm thấy chiến dịch")
+
+    brand_name = None
+    brand_reply_to = None
+    if campaign.brand_id:
+        brand_r = await db.execute(select(Brand).where(Brand.id == campaign.brand_id))
+        brand = brand_r.scalar_one_or_none()
+        if brand:
+            brand_name = brand.brand_name
+            brand_reply_to = brand.contact_email
+
+    import secrets
+    from services.campaign_delivery_service import send_smtp_sync, build_email_html, tracking_urls
+
+    if not settings.SMTP_HOST or not settings.SMTP_USER:
+        raise HTTPException(503, "Chưa cấu hình SMTP.")
+
+    # Generate tracking token
+    token = secrets.token_urlsafe(24)
+    from services.campaign_delivery_service import tracking_urls
+    open_u, click_u = tracking_urls(token, None)
+    text_part, html_part = build_email_html(body.body, open_u, click_u, None, "Xem chi tiết")
+
+    await asyncio.to_thread(
+        send_smtp_sync,
+        body.to,
+        body.subject,
+        text_part,
+        html_part,
+        from_name=brand_name,
+        from_addr=brand_reply_to,
+        reply_to=brand_reply_to,
+    )
+
+    return {"status": "sent", "to": body.to}
 
 
 @router.get("/{campaign_id}/delivery-summary", response_model=DeliverySummaryResponse)

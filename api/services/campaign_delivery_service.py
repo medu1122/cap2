@@ -75,6 +75,13 @@ def build_email_html(
     return plain, html_part
 
 
+def _parse_email(raw: str) -> str:
+    """Trích email từ chuỗi 'Brand Name <email@domain.com>' hoặc trả về raw."""
+    import re
+    m = re.search(r"<([^>]+)>", raw)
+    return m.group(1).strip() if m else raw.strip()
+
+
 def send_smtp_sync(
     to_email: str,
     subject: str,
@@ -86,11 +93,14 @@ def send_smtp_sync(
 ) -> None:
     if not settings.SMTP_HOST or not settings.SMTP_USER:
         raise RuntimeError("Chưa cấu hình SMTP (SMTP_HOST / SMTP_USER).")
-    default_from = (settings.SMTP_FROM_EMAIL or settings.SMTP_USER).strip()
-    sender_addr = (from_addr or default_from).strip()
+    # Ưu tiên: brand email > SMTP_FROM_EMAIL (trích nếu là "Name <email>") > SMTP_USER
+    if from_addr:
+        sender_addr = _parse_email(from_addr)
+    else:
+        sender_addr = _parse_email(settings.SMTP_FROM_EMAIL or settings.SMTP_USER)
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    # Custom display name: "Brand Name" <system@email.com>
+    # Custom display name: "Brand Name" <brand@email.com>
     if from_name:
         msg["From"] = f'"{from_name}" <{sender_addr}>'
     else:
@@ -274,6 +284,7 @@ async def run_email_delivery(
                         text_part,
                         html_part,
                         from_name=brand_name,
+                        from_addr=brand.contact_email if brand else None,
                         reply_to=brand_reply_to,
                     )
                     log.status = "sent"

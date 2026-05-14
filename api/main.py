@@ -69,7 +69,7 @@ app.include_router(insights.router, prefix="/insights", tags=["insights"])
 app.include_router(insights_chat.router, prefix="/insights", tags=["insights-chat"])
 app.include_router(tracking.router, prefix="/track", tags=["tracking"])
 app.include_router(internal.router, prefix="/internal", tags=["internal"])
-app.include_router(redirect.router, prefix="/r", tags=["redirect"])
+app.include_router(redirect.router, tags=["redirect"])
 
 
 @app.get("/health")

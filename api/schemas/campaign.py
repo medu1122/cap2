@@ -10,6 +10,7 @@ VALID_STATUSES = ["pending_agent", "running", "pending_approval", "approved", "p
 
 class CampaignCreate(BaseModel):
     brand_id: uuid.UUID
+    customer_list_id: uuid.UUID | None = None
     campaign_name: str
     objective: str
     product_or_service: str
@@ -108,6 +109,7 @@ class ContentItemCreate(BaseModel):
 class CampaignDetail(BaseModel):
     id: uuid.UUID
     brand_id: uuid.UUID | None = None
+    customer_list_id: uuid.UUID | None = None
     campaign_name: str
     objective: str
     product_or_service: str

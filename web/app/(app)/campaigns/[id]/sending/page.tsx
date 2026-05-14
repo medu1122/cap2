@@ -1,14 +1,9 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
-  Mail,
-  Send,
-  RefreshCw,
-  Loader2,
-  CheckCircle2,
-  XCircle,
-  ChevronLeft,
+  Mail, Send, RefreshCw, Loader2, CheckCircle2, XCircle,
+  ChevronLeft, AlertCircle, Users, Inbox,
 } from "lucide-react";
 import { api } from "@/lib/api-client";
 
@@ -35,6 +30,20 @@ interface EmailItem {
   body: string;
   status: "pending" | "composing" | "done" | "sending" | "sent" | "failed";
   errorMsg?: string;
+}
+
+interface CampaignDetail {
+  id: string;
+  campaign_name: string;
+  channels: string[];
+  customer_list_id: string | null;
+}
+
+interface DeliveryState {
+  status: "idle" | "sending" | "done" | "failed";
+  total?: number;
+  sent?: number;
+  failed?: number;
 }
 
 /* ── Helpers ──────────────────────────────────────────────────────────────── */
@@ -73,7 +82,7 @@ function EmailCard({
   const isFailed = item.status === "failed";
   const canEdit = !isLoading && !isSending && !isSent;
 
-  const statusBadge = () => {
+  function statusBadge() {
     switch (item.status) {
       case "composing":
         return (
@@ -99,7 +108,7 @@ function EmailCard({
       case "sent":
         return (
           <span className="flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">
-            <Send className="h-2.5 w-2.5" />
+            <CheckCircle2 className="h-2.5 w-2.5" />
             Đã gửi
           </span>
         );
@@ -117,7 +126,7 @@ function EmailCard({
           </span>
         );
     }
-  };
+  }
 
   return (
     <div className="flex flex-col rounded-xl border border-amber-200 bg-white shadow-sm">
@@ -206,56 +215,109 @@ function EmailCard({
 export default function CampaignSendingPage() {
   const { id } = useParams();
   const router = useRouter();
-  const [campaignName, setCampaignName] = useState("");
+
+  const [campaign, setCampaign] = useState<CampaignDetail | null>(null);
+  const [customerListName, setCustomerListName] = useState("");
   const [emails, setEmails] = useState<EmailItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [composing, setComposing] = useState<string | null>(null);
+  const [deliveryState, setDeliveryState] = useState<DeliveryState>({ status: "idle" });
 
-  // Load campaign and customer list
-  useEffect(() => {
-    const init = async () => {
-      try {
-        // Get campaign info
-        const campaign = await api.get<{ campaign_name: string; content_items: unknown[] }>(
-          `/campaigns/${id}`
-        );
-        setCampaignName(campaign.campaign_name);
+  // Load campaign + customer list
+  const loadData = useCallback(async () => {
+    try {
+      const camp = await api.get<CampaignDetail>(`/campaigns/${id}`);
+      setCampaign(camp);
 
-        // Get first customer list
-        const lists = await api.get<{ id: string; list_name: string }[]>(
-          "/workflow/customer-lists"
-        );
-
-        if (lists.length > 0) {
-          const listData = await api.get<CustomerListResponse>(
-            `/workflow/customer-lists/${lists[0].id}/rows`
-          );
-
-          // Build email items from customers with approved email content
-          const items: EmailItem[] = listData.rows
-            .filter((row) => row.Email)
-            .map((row, idx) => ({
-              id: `email-${row.ID || idx}`,
-              name: String(row.HoVaTen || "").trim() || "Khách",
-              email: String(row.Email || "").trim(),
-              subject: "",
-              body: "",
-              status: "pending" as const,
-            }));
-
-          setEmails(items);
+      // Get customer list — dùng campaign.customer_list_id nếu có, không thì lấy list đầu tiên
+      let listId = camp.customer_list_id;
+      if (!listId) {
+        const lists = await api.get<{ id: string; list_name: string }[]>("/workflow/customer-lists");
+        if (lists.length === 0) {
+          setError("Chưa có danh sách khách hàng. Vui lòng tạo danh sách trước.");
+          setLoading(false);
+          return;
         }
-      } catch (err) {
-        console.error("Failed to load:", err);
-      } finally {
-        setLoading(false);
+        listId = lists[0].id;
+        setCustomerListName(lists[0].list_name);
+      } else {
+        // Get list name
+        const lists = await api.get<{ id: string; list_name: string }[]>("/workflow/customer-lists");
+        const found = lists.find((l) => l.id === listId);
+        setCustomerListName(found?.list_name || "Danh sách khách");
       }
-    };
 
-    init();
+      const listData = await api.get<CustomerListResponse>(
+        `/workflow/customer-lists/${listId}/rows`
+      );
+
+      const items: EmailItem[] = listData.rows
+        .filter((row) => row.Email)
+        .map((row, idx) => ({
+          id: `email-${row.ID || idx}`,
+          name: String(row.HoVaTen || "").trim() || "Khách",
+          email: String(row.Email || "").trim(),
+          subject: "",
+          body: "",
+          status: "pending" as const,
+        }));
+
+      setEmails(items);
+
+      // Check delivery status
+      try {
+        const delivery = await api.get<{ status: string; total?: number; sent?: number; failed?: number }>(
+          `/campaigns/${id}/delivery-summary`
+        );
+        if (delivery.status === "sending") {
+          setDeliveryState({ status: "sending", total: delivery.total, sent: delivery.sent, failed: delivery.failed });
+        } else if (delivery.status === "completed") {
+          setDeliveryState({ status: "done", total: delivery.total, sent: delivery.sent, failed: delivery.failed });
+        } else {
+          setDeliveryState({ status: "idle" });
+        }
+      } catch {
+        setDeliveryState({ status: "idle" });
+      }
+    } catch (err) {
+      console.error("Failed to load:", err);
+      setError("Không tải được dữ liệu chiến dịch.");
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
 
-  // Compose single email with AI
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Polling: tự động reload mỗi 5s khi đang gửi
+  useEffect(() => {
+    if (deliveryState.status !== "sending") return;
+    const t = setInterval(async () => {
+      try {
+        const delivery = await api.get<{ status: string; total?: number; sent?: number; failed?: number }>(
+          `/campaigns/${id}/delivery-summary`
+        );
+        setDeliveryState({
+          status: delivery.status === "sending" ? "sending" : "done",
+          total: delivery.total,
+          sent: delivery.sent,
+          failed: delivery.failed,
+        });
+        if (delivery.status !== "sending") {
+          // Reload emails to reflect sent status
+          loadData();
+        }
+      } catch {
+        // ignore polling errors
+      }
+    }, 5000);
+    return () => clearInterval(t);
+  }, [deliveryState.status, id, loadData]);
+
+  // Compose single email
   const composeEmail = useCallback(
     async (itemId: string, vars: Record<string, string>) => {
       setComposing(itemId);
@@ -264,14 +326,11 @@ export default function CampaignSendingPage() {
       );
 
       try {
-        // Get approved email content from campaign
-        const campaign = await api.get<{ content_items: Array<{ channel: string; content_json: { subject: string; body: string } }> }>(
-          `/campaigns/${id}`
-        );
+        const camp = await api.get<{
+          content_items: Array<{ channel: string; content_json: { subject: string; body: string } }>
+        }>(`/campaigns/${id}`);
 
-        const emailContent = campaign.content_items.find(
-          (c) => c.channel === "email"
-        );
+        const emailContent = camp.content_items.find((c) => c.channel === "email");
 
         if (emailContent) {
           const subject = fillTemplate(
@@ -279,39 +338,28 @@ export default function CampaignSendingPage() {
             vars
           );
           const body = fillTemplate(
-            emailContent.content_json.body || "Xin chào {{HoVaTen}},\n\n{{HoVaTen}} ơi,...",
+            emailContent.content_json.body || "Xin chào {{HoVaTen}},\n\n...",
             vars
           );
-
           setEmails((prev) =>
             prev.map((e) =>
-              e.id === itemId
-                ? { ...e, subject, body, status: "done" }
-                : e
+              e.id === itemId ? { ...e, subject, body, status: "done" } : e
             )
           );
         } else {
-          // Fallback: simple template
-          const subject = `Chào ${vars.HoVaTen}!`;
-          const body = `Xin chào ${vars.HoVaTen},\n\nCảm ơn bạn đã quan tâm đến sản phẩm của chúng tôi!\n\nTrân trọng.`;
-
           setEmails((prev) =>
             prev.map((e) =>
               e.id === itemId
-                ? { ...e, subject, body, status: "done" }
+                ? { ...e, subject: `Chào ${vars.HoVaTen}!`, body: `Xin chào ${vars.HoVaTen},\n\nCảm ơn bạn đã quan tâm!\n\nTrân trọng.`, status: "done" }
                 : e
             )
           );
         }
-      } catch (err) {
+      } catch {
         setEmails((prev) =>
           prev.map((e) =>
             e.id === itemId
-              ? {
-                  ...e,
-                  status: "failed" as const,
-                  errorMsg: "Không thể soạn email",
-                }
+              ? { ...e, status: "failed" as const, errorMsg: "Không thể soạn email" }
               : e
           )
         );
@@ -322,90 +370,63 @@ export default function CampaignSendingPage() {
     [id]
   );
 
-  // Compose all pending emails (one by one)
+  // Compose all pending
   const handleComposeAll = async () => {
     const pending = emails.filter((e) => e.status === "pending");
     for (const item of pending) {
-      const row: CustomerRow = {
-        ID: item.id,
-        HoVaTen: item.name,
-        Email: item.email,
-        SDT: "",
-      };
-      const vars = buildVariablesFromRow(row);
+      const vars = buildVariablesFromRow({ ID: item.id, HoVaTen: item.name, Email: item.email, SDT: "" });
       await composeEmail(item.id, vars);
-      // Small delay between requests
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 300));
     }
   };
 
-  // Regenerate single email
+  // Regenerate single
   const handleRegenerate = async (itemId: string) => {
     const item = emails.find((e) => e.id === itemId);
     if (!item) return;
-
-    const row: CustomerRow = {
-      ID: itemId,
-      HoVaTen: item.name,
-      Email: item.email,
-      SDT: "",
-    };
-    const vars = buildVariablesFromRow(row);
+    const vars = buildVariablesFromRow({ ID: itemId, HoVaTen: item.name, Email: item.email, SDT: "" });
     await composeEmail(itemId, vars);
   };
 
-  // Send single email
+  // Send single
   const handleSend = async (itemId: string) => {
     setEmails((prev) =>
-      prev.map((e) =>
-        e.id === itemId ? { ...e, status: "sending" } : e
-      )
+      prev.map((e) => (e.id === itemId ? { ...e, status: "sending" } : e))
     );
-
     try {
       await api.post(`/campaigns/${id}/send-email`, {
         to: emails.find((e) => e.id === itemId)?.email,
         subject: emails.find((e) => e.id === itemId)?.subject,
         body: emails.find((e) => e.id === itemId)?.body,
       });
-
       setEmails((prev) =>
-        prev.map((e) =>
-          e.id === itemId ? { ...e, status: "sent" } : e
-        )
+        prev.map((e) => (e.id === itemId ? { ...e, status: "sent" } : e))
       );
-    } catch (err) {
+    } catch {
       setEmails((prev) =>
         prev.map((e) =>
           e.id === itemId
-            ? {
-                ...e,
-                status: "failed" as const,
-                errorMsg: "Gửi thất bại. Vui lòng thử lại.",
-              }
+            ? { ...e, status: "failed" as const, errorMsg: "Gửi thất bại. Vui lòng thử lại." }
             : e
         )
       );
     }
   };
 
-  const handleSubjectChange = (id: string, val: string) => {
-    setEmails((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, subject: val } : e))
-    );
-  };
+  const handleSubjectChange = (id: string, val: string) =>
+    setEmails((prev) => prev.map((e) => (e.id === id ? { ...e, subject: val } : e)));
 
-  const handleBodyChange = (id: string, val: string) => {
-    setEmails((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, body: val } : e))
-    );
-  };
+  const handleBodyChange = (id: string, val: string) =>
+    setEmails((prev) => prev.map((e) => (e.id === id ? { ...e, body: val } : e)));
 
   // Stats
   const total = emails.length;
   const sent = emails.filter((e) => e.status === "sent").length;
   const done = emails.filter((e) => e.status === "done").length;
+  const failed = emails.filter((e) => e.status === "failed").length;
   const pending = emails.filter((e) => e.status === "pending").length;
+  const composingCount = emails.filter((e) => e.status === "composing").length;
+  const sendingCount = emails.filter((e) => e.status === "sending").length;
 
   if (loading) {
     return (
@@ -418,21 +439,42 @@ export default function CampaignSendingPage() {
     );
   }
 
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-50 flex items-center justify-center">
+        <div className="text-center max-w-sm">
+          <AlertCircle className="h-10 w-10 text-red-400 mx-auto mb-3" />
+          <p className="text-slate-600 font-medium mb-1">{error}</p>
+          <button onClick={loadData} className="mt-3 text-sm text-amber-600 hover:underline">
+            Thử lại
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-50">
       {/* Header */}
-      <header className="bg-white border-b border-amber-200 px-4 py-3">
+      <header className="bg-white border-b border-amber-200 px-4 py-3 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
-              onClick={() => router.back()}
+              onClick={() => router.push(`/campaigns/${id}`)}
               className="text-slate-400 hover:text-slate-600 transition-colors"
             >
               <ChevronLeft size={20} />
             </button>
             <div className="flex items-center gap-2">
               <Mail className="h-5 w-5 text-amber-600" />
-              <h1 className="font-semibold text-slate-900">{campaignName || "Gửi Email"}</h1>
+              <div>
+                <h1 className="font-semibold text-slate-900 text-sm">{campaign?.campaign_name || "Gửi Email"}</h1>
+                {customerListName && (
+                  <p className="text-[10px] text-slate-400 flex items-center gap-1">
+                    <Users size={9} />{customerListName}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 
@@ -443,69 +485,104 @@ export default function CampaignSendingPage() {
               <p className="text-slate-400">Tổng</p>
             </div>
             <div className="text-center">
-              <p className="text-lg font-bold text-emerald-600">{done}</p>
+              <p className="text-lg font-bold text-emerald-600">{done + sent}</p>
               <p className="text-slate-400">Sẵn sàng</p>
             </div>
             <div className="text-center">
               <p className="text-lg font-bold text-green-600">{sent}</p>
               <p className="text-slate-400">Đã gửi</p>
             </div>
+            {failed > 0 && (
+              <div className="text-center">
+                <p className="text-lg font-bold text-red-500">{failed}</p>
+                <p className="text-slate-400">Lỗi</p>
+              </div>
+            )}
             <div className="text-center">
-              <p className="text-lg font-bold text-slate-400">{pending}</p>
-              <p className="text-slate-400">Chờ xử lý</p>
+              <p className="text-lg font-bold text-slate-400">{pending + composingCount + sendingCount}</p>
+              <p className="text-slate-400">Chờ</p>
             </div>
           </div>
+
+          {/* Polling indicator */}
+          {deliveryState.status === "sending" && (
+            <div className="flex items-center gap-1.5 text-[10px] text-blue-600">
+              <Loader2 size={10} className="animate-spin" />
+              <span>Đang gửi… {deliveryState.sent}/{deliveryState.total}</span>
+            </div>
+          )}
         </div>
       </header>
 
-      {/* Actions */}
-      <div className="max-w-6xl mx-auto px-4 py-4">
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-slate-500">
-            Mỗi email được soạn riêng cho từng khách hàng bằng AI.
+      {/* Empty state */}
+      {emails.length === 0 ? (
+        <div className="max-w-md mx-auto text-center py-24">
+          <Inbox className="h-14 w-14 text-slate-200 mx-auto mb-4" />
+          <p className="text-slate-500 font-medium">Chưa có khách hàng nào</p>
+          <p className="text-slate-400 text-xs mt-1">
+            Vui lòng thêm danh sách khách hàng có email trước khi gửi.
           </p>
           <button
-            onClick={handleComposeAll}
-            disabled={composing !== null || pending === 0}
-            className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 disabled:opacity-50"
+            onClick={() => router.push("/customer-lists")}
+            className="mt-4 text-sm text-amber-600 hover:underline font-medium"
           >
-            {composing ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Đang soạn...
-              </>
-            ) : (
-              <>
-                <Mail className="h-4 w-4" />
-                Soạn tất cả ({pending})
-              </>
-            )}
+            Tạo danh sách khách hàng →
           </button>
         </div>
-      </div>
-
-      {/* Email Grid */}
-      <main className="max-w-6xl mx-auto px-4 pb-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {emails.map((item) => (
-            <EmailCard
-              key={item.id}
-              item={item}
-              onSubjectChange={handleSubjectChange}
-              onBodyChange={handleBodyChange}
-              onRegenerate={handleRegenerate}
-              onSend={handleSend}
-            />
-          ))}
-        </div>
-
-        {emails.length === 0 && (
-          <div className="text-center py-20">
-            <Mail className="h-12 w-12 mx-auto text-slate-200 mb-4" />
-            <p className="text-slate-500">Không có khách hàng nào để gửi email.</p>
+      ) : (
+        <>
+          {/* Actions */}
+          <div className="max-w-6xl mx-auto px-4 py-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-500">
+                Mỗi email được soạn riêng cho từng khách hàng bằng AI.
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={loadData}
+                  className="flex items-center gap-1.5 rounded-lg border border-amber-300 px-3 py-1.5 text-[11px] font-medium text-amber-700 transition hover:bg-amber-50"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  Làm mới
+                </button>
+                <button
+                  onClick={handleComposeAll}
+                  disabled={composing !== null || pending === 0}
+                  className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 disabled:opacity-50"
+                >
+                  {composing ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Đang soạn...
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="h-4 w-4" />
+                      Soạn tất cả ({pending})
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
-        )}
-      </main>
+
+          {/* Email Grid */}
+          <main className="max-w-6xl mx-auto px-4 pb-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {emails.map((item) => (
+                <EmailCard
+                  key={item.id}
+                  item={item}
+                  onSubjectChange={handleSubjectChange}
+                  onBodyChange={handleBodyChange}
+                  onRegenerate={handleRegenerate}
+                  onSend={handleSend}
+                />
+              ))}
+            </div>
+          </main>
+        </>
+      )}
     </div>
   );
 }
