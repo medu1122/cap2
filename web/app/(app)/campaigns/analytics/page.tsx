@@ -8,9 +8,6 @@ import {
   Send,
   Percent,
   MousePointerClick,
-  DollarSign,
-  TrendingUp,
-  TrendingDown,
   Users,
   Calendar,
   AlertCircle,
@@ -18,18 +15,17 @@ import {
   Clock,
   XCircle,
   RefreshCw,
+  Eye,
+  TrendingUp,
 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import {
   STATUS_LABELS,
-  STATUS_COLORS,
   CHANNEL_LABELS,
   formatDate,
   formatDateShort,
-  cn,
 } from "@/lib/utils";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
-import RevenueUploadModal from "@/components/campaign/RevenueUploadModal";
 
 interface CampaignListItem {
   id: string;
@@ -41,7 +37,6 @@ interface CampaignListItem {
   content_count: number;
   pending_count: number;
   created_at: string;
-  cost?: number;
 }
 
 interface CampaignPerformance {
@@ -54,45 +49,16 @@ interface CampaignPerformance {
   opened: number;
   clicked: number;
   unsubscribed: number;
-  total_revenue: number;
-  total_orders: number;
   open_rate: number;
   click_rate: number;
   conversion_rate: number;
   cost: number;
-  roi_percent: number | null;
   revenue_per_email: number;
-}
-
-interface RevenueRecord {
-  id: string;
-  revenue: number;
-  order_count: number;
-  cost: number;
-  source: string;
-  notes: string | null;
-  recorded_date: string | null;
-  created_at: string;
 }
 
 interface PerformanceResponse {
   metrics: CampaignPerformance;
-  revenues: RevenueRecord[];
 }
-
-const formatCurrency = (value: number) => {
-  if (value >= 1000000) {
-    return `${(value / 1000000).toFixed(1)}M`;
-  }
-  if (value >= 1000) {
-    return `${(value / 1000).toFixed(0)}K`;
-  }
-  return new Intl.NumberFormat("vi-VN").format(value) + "đ";
-};
-
-const formatFullCurrency = (value: number) => {
-  return new Intl.NumberFormat("vi-VN").format(value) + " đ";
-};
 
 export default function CampaignAnalyticsPage() {
   const [campaigns, setCampaigns] = useState<CampaignListItem[]>([]);
@@ -100,7 +66,6 @@ export default function CampaignAnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [loadingPerformance, setLoadingPerformance] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
-  const [showRevenueModal, setShowRevenueModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Fetch campaigns list
@@ -119,14 +84,12 @@ export default function CampaignAnalyticsPage() {
         setLoading(false);
       }
     };
-
     fetchCampaigns();
   }, []);
 
-  // Fetch performance for selected campaign
+  // Fetch performance
   const fetchPerformance = useCallback(async () => {
     if (!selectedCampaignId) return;
-
     setLoadingPerformance(true);
     setError(null);
     try {
@@ -149,13 +112,13 @@ export default function CampaignAnalyticsPage() {
 
   const selectedCampaign = campaigns.find((c) => c.id === selectedCampaignId);
 
-  // Calculate summary stats from all campaigns
+  // Summary from selected campaign
   const totalSent = selectedPerformance?.total_sent || 0;
-  const totalRevenue = selectedPerformance?.total_revenue || 0;
+  const totalOpened = selectedPerformance?.opened || 0;
   const avgOpenRate = selectedPerformance?.open_rate || 0;
-  const avgRoi = selectedPerformance?.roi_percent ?? null;
+  const avgClickRate = selectedPerformance?.click_rate || 0;
 
-  const getStatusIcon = (status: string) => {
+  function getStatusIcon(status: string) {
     switch (status) {
       case "completed":
         return <CheckCircle2 size={14} className="text-green-500" />;
@@ -168,11 +131,11 @@ export default function CampaignAnalyticsPage() {
       default:
         return <AlertCircle size={14} className="text-gray-400" />;
     }
-  };
+  }
 
-  const getStatusLabel = (status: string) => {
+  function getStatusLabel(status: string) {
     return STATUS_LABELS[status] || status;
-  };
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -192,65 +155,53 @@ export default function CampaignAnalyticsPage() {
             </h1>
             <HelpDialogButton
               title="Hướng dẫn Phân tích chiến dịch"
-              summary="Xem hiệu quả của các chiến dịch email."
+              summary="Xem hiệu quả email của các chiến dịch đã gửi."
               steps={[
                 "Chọn chiến dịch để xem chi tiết.",
-                "Theo dõi: email gửi, tỷ lệ mở, click, doanh thu, ROI.",
-                "Nhấn 'Nhập doanh thu' để cập nhật số liệu.",
+                "Theo dõi: email gửi, tỷ lệ mở, tỷ lệ click, tỷ lệ thất bại.",
                 "Kết quả từ Customer Outreach cũng được gộp vào nếu có gắn campaign.",
               ]}
               buttonClassName="btn-secondary text-xs"
             />
           </div>
 
-          {/* Summary Stats - Only show when there's data */}
+          {/* Summary Stats */}
           {selectedPerformance && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-gray-50 rounded-lg p-3">
-                <div className="flex items-center gap-2 text-gray-500 text-xs mb-1">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div className="bg-blue-50 rounded-lg p-3">
+                <div className="flex items-center gap-2 text-blue-600 text-xs mb-1">
                   <Send size={12} />
                   Email gửi
                 </div>
                 <p className="text-lg font-bold text-gray-900">
                   {totalSent.toLocaleString()}
                 </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {selectedPerformance.delivered} thành công
+                </p>
               </div>
-              <div className="bg-gray-50 rounded-lg p-3">
-                <div className="flex items-center gap-2 text-gray-500 text-xs mb-1">
-                  <Percent size={12} />
+              <div className="bg-purple-50 rounded-lg p-3">
+                <div className="flex items-center gap-2 text-purple-600 text-xs mb-1">
+                  <Eye size={12} />
                   Tỷ lệ mở
                 </div>
                 <p className="text-lg font-bold text-purple-600">
                   {avgOpenRate.toFixed(1)}%
                 </p>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-3">
-                <div className="flex items-center gap-2 text-gray-500 text-xs mb-1">
-                  <DollarSign size={12} />
-                  Doanh thu
-                </div>
-                <p className="text-lg font-bold text-green-600">
-                  {formatCurrency(totalRevenue)}
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {totalOpened} lần mở
                 </p>
               </div>
-              <div className="bg-gray-50 rounded-lg p-3">
-                <div className="flex items-center gap-2 text-gray-500 text-xs mb-1">
-                  <TrendingUp size={12} />
-                  ROI
+              <div className="bg-teal-50 rounded-lg p-3">
+                <div className="flex items-center gap-2 text-teal-600 text-xs mb-1">
+                  <MousePointerClick size={12} />
+                  Tỷ lệ click
                 </div>
-                <p
-                  className={cn(
-                    "text-lg font-bold",
-                    avgRoi !== null && avgRoi >= 0
-                      ? "text-green-600"
-                      : avgRoi !== null
-                      ? "text-red-500"
-                      : "text-gray-400"
-                  )}
-                >
-                  {avgRoi !== null
-                    ? `${avgRoi >= 0 ? "+" : ""}${avgRoi.toFixed(1)}%`
-                    : "N/A"}
+                <p className="text-lg font-bold text-teal-600">
+                  {avgClickRate.toFixed(1)}%
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {selectedPerformance.clicked} lần click
                 </p>
               </div>
             </div>
@@ -335,7 +286,7 @@ export default function CampaignAnalyticsPage() {
                     <div>
                       <p className="text-xs text-gray-500">Nội dung</p>
                       <p className="font-medium mt-1">
-                        {selectedCampaign.content_count} item
+                        {selectedCampaign.content_count} mục
                         {selectedCampaign.pending_count > 0 && (
                           <span className="text-amber-600 ml-1">
                             ({selectedCampaign.pending_count} chờ duyệt)
@@ -357,7 +308,7 @@ export default function CampaignAnalyticsPage() {
                       {selectedCampaign?.campaign_name}
                     </h2>
                     <p className="text-sm text-gray-500 mt-1">
-                      Chi tiết hiệu quả chiến dịch
+                      Thống kê hiệu quả chiến dịch
                     </p>
                   </div>
                   <button
@@ -373,7 +324,7 @@ export default function CampaignAnalyticsPage() {
                   </button>
                 </div>
 
-                {/* Loading State */}
+                {/* Loading */}
                 {loadingPerformance && (
                   <div className="flex items-center justify-center py-12">
                     <Loader2 size={24} className="animate-spin text-[#377D73]" />
@@ -381,124 +332,17 @@ export default function CampaignAnalyticsPage() {
                   </div>
                 )}
 
-                {/* Error State */}
+                {/* Error */}
                 {error && !loadingPerformance && (
                   <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm mb-4">
                     {error}
                   </div>
                 )}
 
-                {/* Performance Metrics */}
+                {/* Metrics */}
                 {!loadingPerformance && !error && selectedPerformance && (
                   <>
-                    {/* Metrics Grid */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
-                      <div className="bg-blue-50 rounded-lg p-3">
-                        <div className="flex items-center gap-1.5 text-blue-600 text-xs mb-1">
-                          <Send size={12} />
-                          Gửi
-                        </div>
-                        <p className="text-xl font-bold text-gray-900">
-                          {selectedPerformance.total_sent.toLocaleString()}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {selectedPerformance.delivered} thành công
-                        </p>
-                      </div>
-
-                      <div className="bg-purple-50 rounded-lg p-3">
-                        <div className="flex items-center gap-1.5 text-purple-600 text-xs mb-1">
-                          <Percent size={12} />
-                          Mở
-                        </div>
-                        <p className="text-xl font-bold text-purple-600">
-                          {selectedPerformance.open_rate.toFixed(1)}%
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {selectedPerformance.opened} lần
-                        </p>
-                      </div>
-
-                      <div className="bg-teal-50 rounded-lg p-3">
-                        <div className="flex items-center gap-1.5 text-teal-600 text-xs mb-1">
-                          <MousePointerClick size={12} />
-                          Click
-                        </div>
-                        <p className="text-xl font-bold text-teal-600">
-                          {selectedPerformance.click_rate.toFixed(1)}%
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {selectedPerformance.clicked} lần
-                        </p>
-                      </div>
-
-                      <div className="bg-green-50 rounded-lg p-3">
-                        <div className="flex items-center gap-1.5 text-green-600 text-xs mb-1">
-                          <DollarSign size={12} />
-                          Doanh thu
-                        </div>
-                        <p className="text-xl font-bold text-green-600">
-                          {formatCurrency(selectedPerformance.total_revenue)}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {selectedPerformance.total_orders} đơn
-                        </p>
-                      </div>
-
-                      <div className="bg-gray-50 rounded-lg p-3">
-                        <div className="flex items-center gap-1.5 text-gray-600 text-xs mb-1">
-                          <Users size={12} />
-                          Mỗi email
-                        </div>
-                        <p className="text-xl font-bold text-gray-900">
-                          {formatCurrency(selectedPerformance.revenue_per_email)}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">mang lại
-                        </p>
-                      </div>
-
-                      <div className="bg-amber-50 rounded-lg p-3">
-                        <div className="flex items-center gap-1.5 text-amber-600 text-xs mb-1">
-                          <TrendingUp size={12} />
-                          ROI
-                        </div>
-                        <p
-                          className={cn(
-                            "text-xl font-bold",
-                            selectedPerformance.roi_percent !== null &&
-                              selectedPerformance.roi_percent >= 0
-                              ? "text-green-600"
-                              : selectedPerformance.roi_percent !== null
-                              ? "text-red-500"
-                              : "text-gray-400"
-                          )}
-                        >
-                          {selectedPerformance.roi_percent !== null
-                            ? `${selectedPerformance.roi_percent >= 0 ? "+" : ""}${selectedPerformance.roi_percent.toFixed(1)}%`
-                            : "N/A"}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {formatFullCurrency(selectedPerformance.cost)} chi phí
-                        </p>
-                      </div>
-
-                      <div className="bg-red-50 rounded-lg p-3">
-                        <div className="flex items-center gap-1.5 text-red-600 text-xs mb-1">
-                          <XCircle size={12} />
-                          Thất bại
-                        </div>
-                        <p className="text-xl font-bold text-red-500">
-                          {selectedPerformance.bounced}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {selectedPerformance.total_sent > 0
-                            ? `${((selectedPerformance.bounced / selectedPerformance.total_sent) * 100).toFixed(1)}%`
-                            : "0%"}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Empty State - No Data */}
+                    {/* Empty State */}
                     {selectedPerformance.total_sent === 0 && (
                       <div className="text-center py-8 bg-gray-50 rounded-xl">
                         <BarChart3 size={48} className="mx-auto text-gray-200 mb-4" />
@@ -506,25 +350,151 @@ export default function CampaignAnalyticsPage() {
                           Chưa có dữ liệu gửi cho chiến dịch này.
                         </p>
                         <p className="text-sm text-gray-400 mt-2">
-                          Gửi email từ mục Chiến dịch hoặc Customer Outreach (có gắn campaign) để xem thống kê.
+                          Gửi email từ trang Gửi Email của chiến dịch để xem thống kê.
                         </p>
                       </div>
                     )}
 
-                    {/* Actions */}
-                    <div className="flex gap-3 pt-4 border-t border-gray-100">
-                      <button
-                        onClick={() => setShowRevenueModal(true)}
+                    {/* Metrics Grid */}
+                    {selectedPerformance.total_sent > 0 && (
+                      <>
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+                          {/* Gửi */}
+                          <div className="bg-blue-50 rounded-xl p-4 text-center">
+                            <div className="flex items-center justify-center gap-1.5 text-blue-600 text-xs mb-2">
+                              <Send size={11} />
+                              Gửi
+                            </div>
+                            <p className="text-2xl font-bold text-gray-900">
+                              {selectedPerformance.total_sent.toLocaleString()}
+                            </p>
+                            <p className="text-[10px] text-gray-400 mt-1">
+                              {selectedPerformance.delivered} thành công
+                            </p>
+                          </div>
+
+                          {/* Mở */}
+                          <div className="bg-purple-50 rounded-xl p-4 text-center">
+                            <div className="flex items-center justify-center gap-1.5 text-purple-600 text-xs mb-2">
+                              <Eye size={11} />
+                              Mở
+                            </div>
+                            <p className="text-2xl font-bold text-purple-600">
+                              {selectedPerformance.opened.toLocaleString()}
+                            </p>
+                            <p className="text-[10px] text-gray-400 mt-1">
+                              {selectedPerformance.open_rate.toFixed(1)}%
+                            </p>
+                          </div>
+
+                          {/* Click */}
+                          <div className="bg-teal-50 rounded-xl p-4 text-center">
+                            <div className="flex items-center justify-center gap-1.5 text-teal-600 text-xs mb-2">
+                              <MousePointerClick size={11} />
+                              Click
+                            </div>
+                            <p className="text-2xl font-bold text-teal-600">
+                              {selectedPerformance.clicked.toLocaleString()}
+                            </p>
+                            <p className="text-[10px] text-gray-400 mt-1">
+                              {selectedPerformance.click_rate.toFixed(1)}%
+                            </p>
+                          </div>
+
+                          {/* Tỷ lệ mở */}
+                          <div className="bg-indigo-50 rounded-xl p-4 text-center">
+                            <div className="flex items-center justify-center gap-1.5 text-indigo-600 text-xs mb-2">
+                              <Percent size={11} />
+                              Tỷ lệ mở
+                            </div>
+                            <p className="text-2xl font-bold text-indigo-600">
+                              {selectedPerformance.open_rate.toFixed(0)}%
+                            </p>
+                            <p className="text-[10px] text-gray-400 mt-1">
+                              trên tổng gửi
+                            </p>
+                          </div>
+
+                          {/* Tỷ lệ click */}
+                          <div className="bg-emerald-50 rounded-xl p-4 text-center">
+                            <div className="flex items-center justify-center gap-1.5 text-emerald-600 text-xs mb-2">
+                              <TrendingUp size={11} />
+                              Tỷ lệ click
+                            </div>
+                            <p className="text-2xl font-bold text-emerald-600">
+                              {selectedPerformance.click_rate.toFixed(0)}%
+                            </p>
+                            <p className="text-[10px] text-gray-400 mt-1">
+                              CTR
+                            </p>
+                          </div>
+
+                          {/* Thất bại */}
+                          <div className="bg-red-50 rounded-xl p-4 text-center">
+                            <div className="flex items-center justify-center gap-1.5 text-red-500 text-xs mb-2">
+                              <XCircle size={11} />
+                              Thất bại
+                            </div>
+                            <p className="text-2xl font-bold text-red-500">
+                              {selectedPerformance.bounced}
+                            </p>
+                            <p className="text-[10px] text-gray-400 mt-1">
+                              {selectedPerformance.total_sent > 0
+                                ? `${((selectedPerformance.bounced / selectedPerformance.total_sent) * 100).toFixed(1)}%`
+                                : "0%"}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Email Funnel */}
+                        <div className="bg-gray-50 rounded-xl p-4">
+                          <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                            Phổ biến email
+                          </p>
+                          <div className="space-y-2.5">
+                            <FunnelBar
+                              label="Đã gửi"
+                              value={selectedPerformance.total_sent}
+                              total={selectedPerformance.total_sent}
+                              color="bg-blue-400"
+                            />
+                            <FunnelBar
+                              label="Đã mở"
+                              value={selectedPerformance.opened}
+                              total={selectedPerformance.total_sent}
+                              color="bg-purple-400"
+                            />
+                            <FunnelBar
+                              label="Đã click"
+                              value={selectedPerformance.clicked}
+                              total={selectedPerformance.total_sent}
+                              color="bg-teal-400"
+                            />
+                            <FunnelBar
+                              label="Thất bại"
+                              value={selectedPerformance.bounced}
+                              total={selectedPerformance.total_sent}
+                              color="bg-red-400"
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Footer actions */}
+                    <div className="flex gap-3 pt-4 border-t border-gray-100 mt-4">
+                      <Link
+                        href={`/campaigns/${selectedCampaignId}/sending`}
                         className="btn-primary flex items-center gap-2"
                       >
-                        <DollarSign size={16} />
-                        Nhập doanh thu
-                      </button>
+                        <Send size={14} />
+                        Xem trang gửi email
+                      </Link>
                       <Link
                         href={`/campaigns/${selectedCampaignId}`}
                         className="btn-secondary"
                       >
-                        Xem chi tiết
+                        Quay lại chiến dịch
                       </Link>
                     </div>
                   </>
@@ -534,18 +504,37 @@ export default function CampaignAnalyticsPage() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
 
-      {/* Revenue Modal */}
-      {selectedCampaignId && showRevenueModal && (
-        <RevenueUploadModal
-          campaignId={selectedCampaignId}
-          campaignName={selectedCampaign?.campaign_name || ""}
-          onClose={() => {
-            setShowRevenueModal(false);
-            fetchPerformance();
-          }}
+function FunnelBar({
+  label,
+  value,
+  total,
+  color,
+}: {
+  label: string;
+  value: number;
+  total: number;
+  color: string;
+}) {
+  const pct = total > 0 ? (value / total) * 100 : 0;
+  return (
+    <div className="flex items-center gap-3">
+      <div className="w-24 shrink-0">
+        <p className="text-[11px] text-gray-600 font-medium">{label}</p>
+      </div>
+      <div className="flex-1 bg-gray-200 rounded-full h-5 overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-500 ${color}`}
+          style={{ width: `${pct}%` }}
         />
-      )}
+      </div>
+      <div className="w-20 shrink-0 text-right">
+        <p className="text-[11px] font-semibold text-gray-700">{value.toLocaleString()}</p>
+        <p className="text-[10px] text-gray-400">{pct.toFixed(1)}%</p>
+      </div>
     </div>
   );
 }

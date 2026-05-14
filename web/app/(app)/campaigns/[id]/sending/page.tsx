@@ -1,9 +1,10 @@
 "use client";
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   Mail, Send, RefreshCw, Loader2, CheckCircle2, XCircle,
-  ChevronLeft, AlertCircle, Users, Inbox,
+  ChevronLeft, AlertCircle, Users, Inbox, Eye, MousePointerClick,
+  CheckCircle,
 } from "lucide-react";
 import { api } from "@/lib/api-client";
 
@@ -22,16 +23,6 @@ interface CustomerListResponse {
   rows: CustomerRow[];
 }
 
-interface EmailItem {
-  id: string;
-  name: string;
-  email: string;
-  subject: string;
-  body: string;
-  status: "pending" | "composing" | "done" | "sending" | "sent" | "failed";
-  errorMsg?: string;
-}
-
 interface CampaignDetail {
   id: string;
   campaign_name: string;
@@ -39,175 +30,66 @@ interface CampaignDetail {
   customer_list_id: string | null;
 }
 
-interface DeliveryState {
-  status: "idle" | "sending" | "done" | "failed";
+interface ExecutionLog {
+  id: string;
+  recipient_name: string | null;
+  recipient_email: string | null;
+  recipient_phone: string | null;
+  channel: string;
+  status: string;
+  opened_at: string | null;
+  clicked_at: string | null;
+  sent_at: string | null;
+  error_message: string | null;
+}
+
+interface DeliverySummary {
+  status: string;
   total?: number;
   sent?: number;
   failed?: number;
+  logs: ExecutionLog[];
 }
 
 /* ── Helpers ──────────────────────────────────────────────────────────────── */
 
-function buildVariablesFromRow(row: CustomerRow): Record<string, string> {
-  return {
-    HoVaTen: String(row.HoVaTen || "").trim() || "khách",
-    name: String(row.HoVaTen || "").trim() || "bạn",
-    phone: String(row.SDT || "").trim(),
-    Email: String(row.Email || "").trim(),
-  };
-}
-
-function fillTemplate(template: string, vars: Record<string, string>): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] || `{${key}}`);
-}
-
-/* ── Email Card ─────────────────────────────────────────────────────────── */
-
-function EmailCard({
-  item,
-  onSubjectChange,
-  onBodyChange,
-  onRegenerate,
-  onSend,
-}: {
-  item: EmailItem;
-  onSubjectChange: (id: string, val: string) => void;
-  onBodyChange: (id: string, val: string) => void;
-  onRegenerate: (id: string) => void;
-  onSend: (id: string) => void;
-}) {
-  const isLoading = item.status === "composing";
-  const isSent = item.status === "sent";
-  const isSending = item.status === "sending";
-  const isFailed = item.status === "failed";
-  const canEdit = !isLoading && !isSending && !isSent;
-
-  function statusBadge() {
-    switch (item.status) {
-      case "composing":
-        return (
-          <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800">
-            <Loader2 className="h-2.5 w-2.5 animate-spin" />
-            Đang soạn…
-          </span>
-        );
-      case "done":
-        return (
-          <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
-            <CheckCircle2 className="h-2.5 w-2.5" />
-            Sẵn sàng
-          </span>
-        );
-      case "sending":
-        return (
-          <span className="flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-800">
-            <Loader2 className="h-2.5 w-2.5 animate-spin" />
-            Đang gửi…
-          </span>
-        );
-      case "sent":
-        return (
-          <span className="flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">
-            <CheckCircle2 className="h-2.5 w-2.5" />
-            Đã gửi
-          </span>
-        );
-      case "failed":
-        return (
-          <span className="flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-800">
-            <XCircle className="h-2.5 w-2.5" />
-            Lỗi
-          </span>
-        );
-      default:
-        return (
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
-            Chờ xử lý
-          </span>
-        );
-    }
+function StatusBadge({ status }: { status: string }) {
+  switch (status) {
+    case "sent":
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-800">
+          <CheckCircle2 size={9} />
+          Đã gửi
+        </span>
+      );
+    case "failed":
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-800">
+          <XCircle size={9} />
+          Lỗi
+        </span>
+      );
+    case "pending":
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+          <Loader2 size={9} className="animate-spin" />
+          Đang gửi
+        </span>
+      );
+    case "skipped_no_email":
+    case "skipped_no_phone":
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-500">
+          Bỏ qua
+        </span>
+      );
+    default:
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+          {status}
+        </span>
+      );
   }
-
-  return (
-    <div className="flex flex-col rounded-xl border border-amber-200 bg-white shadow-sm">
-      {/* Card header */}
-      <div className="flex items-center justify-between border-b border-amber-100 px-4 py-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="truncate text-[13px] font-semibold text-slate-900">{item.name}</span>
-          {item.email && (
-            <span className="truncate text-[11px] text-slate-400">{item.email}</span>
-          )}
-        </div>
-        {statusBadge()}
-      </div>
-
-      {/* Card body */}
-      <div className="flex-1 space-y-2.5 px-4 py-3">
-        {/* Subject */}
-        <div>
-          <label className="text-[10px] font-medium text-slate-500">Tiêu đề</label>
-          <input
-            type="text"
-            className="mt-0.5 w-full border border-amber-200 rounded-lg bg-amber-50/30 px-3 py-1.5 text-[12px] text-slate-800 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300 disabled:opacity-60"
-            value={item.subject}
-            onChange={(e) => onSubjectChange(item.id, e.target.value)}
-            disabled={!canEdit}
-            placeholder="Tiêu đề email…"
-          />
-        </div>
-
-        {/* Body */}
-        <div>
-          <label className="text-[10px] font-medium text-slate-500">Nội dung</label>
-          {isLoading ? (
-            <div className="mt-0.5 space-y-1.5 rounded-lg border border-amber-100 bg-amber-50/40 p-3">
-              <div className="h-3 w-3/4 animate-pulse rounded bg-amber-200" />
-              <div className="h-3 w-full animate-pulse rounded bg-amber-200" />
-              <div className="h-3 w-5/6 animate-pulse rounded bg-amber-200" />
-              <div className="h-3 w-2/3 animate-pulse rounded bg-amber-200" />
-            </div>
-          ) : (
-            <textarea
-              className="mt-0.5 w-full min-h-[120px] resize-y rounded-lg border border-amber-200 bg-amber-50/30 px-3 py-2 text-[12px] leading-relaxed text-slate-800 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300 disabled:opacity-60"
-              value={item.body}
-              onChange={(e) => onBodyChange(item.id, e.target.value)}
-              disabled={!canEdit}
-              placeholder="Nội dung email…"
-            />
-          )}
-        </div>
-
-        {/* Error */}
-        {isFailed && item.errorMsg && (
-          <p className="text-[10px] text-red-600">{item.errorMsg}</p>
-        )}
-      </div>
-
-      {/* Card footer */}
-      {!isSent && (
-        <div className="flex items-center justify-end gap-2 border-t border-amber-100 px-4 py-2.5">
-          <button
-            type="button"
-            className="flex items-center gap-1 rounded-lg border border-amber-300 px-3 py-1.5 text-[11px] font-medium text-amber-800 transition hover:bg-amber-50 disabled:opacity-40"
-            onClick={() => onRegenerate(item.id)}
-            disabled={isLoading || isSending}
-          >
-            <RefreshCw className="h-3 w-3" />
-            Soạn lại
-          </button>
-          <button
-            type="button"
-            className="flex items-center gap-1 rounded-lg bg-amber-500 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-amber-600 disabled:opacity-40"
-            onClick={() => onSend(item.id)}
-            disabled={isLoading || isSending || !item.body}
-          >
-            <Send className="h-3 w-3" />
-            Gửi
-          </button>
-        </div>
-      )}
-    </div>
-  );
 }
 
 /* ── Main Page ────────────────────────────────────────────────────────────── */
@@ -218,19 +100,19 @@ export default function CampaignSendingPage() {
 
   const [campaign, setCampaign] = useState<CampaignDetail | null>(null);
   const [customerListName, setCustomerListName] = useState("");
-  const [emails, setEmails] = useState<EmailItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [composing, setComposing] = useState<string | null>(null);
-  const [deliveryState, setDeliveryState] = useState<DeliveryState>({ status: "idle" });
+  const [summary, setSummary] = useState<DeliverySummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [sendingProgress, setSendingProgress] = useState({ sent: 0, total: 0 });
 
-  // Load campaign + customer list
-  const loadData = useCallback(async () => {
+  // Load campaign info
+  const loadCampaign = useCallback(async () => {
     try {
       const camp = await api.get<CampaignDetail>(`/campaigns/${id}`);
       setCampaign(camp);
 
-      // Get customer list — dùng campaign.customer_list_id nếu có, không thì lấy list đầu tiên
       let listId = camp.customer_list_id;
       if (!listId) {
         const lists = await api.get<{ id: string; list_name: string }[]>("/workflow/customer-lists");
@@ -242,212 +124,97 @@ export default function CampaignSendingPage() {
         listId = lists[0].id;
         setCustomerListName(lists[0].list_name);
       } else {
-        // Get list name
         const lists = await api.get<{ id: string; list_name: string }[]>("/workflow/customer-lists");
         const found = lists.find((l) => l.id === listId);
         setCustomerListName(found?.list_name || "Danh sách khách");
       }
+    } catch {
+      setError("Không tải được thông tin chiến dịch.");
+    }
+  }, [id]);
 
-      const listData = await api.get<CustomerListResponse>(
-        `/workflow/customer-lists/${listId}/rows`
-      );
+  // Load delivery summary (logs + metrics)
+  const loadSummary = useCallback(async () => {
+    try {
+      const data = await api.get<DeliverySummary>(`/campaigns/${id}/delivery-summary`);
+      setSummary(data);
 
-      const items: EmailItem[] = listData.rows
-        .filter((row) => row.Email)
-        .map((row, idx) => ({
-          id: `email-${row.ID || idx}`,
-          name: String(row.HoVaTen || "").trim() || "Khách",
-          email: String(row.Email || "").trim(),
-          subject: "",
-          body: "",
-          status: "pending" as const,
-        }));
-
-      setEmails(items);
-
-      // Check delivery status
-      try {
-        const delivery = await api.get<{ status: string; total?: number; sent?: number; failed?: number }>(
-          `/campaigns/${id}/delivery-summary`
-        );
-        if (delivery.status === "sending") {
-          setDeliveryState({ status: "sending", total: delivery.total, sent: delivery.sent, failed: delivery.failed });
-        } else if (delivery.status === "completed") {
-          setDeliveryState({ status: "done", total: delivery.total, sent: delivery.sent, failed: delivery.failed });
-        } else {
-          setDeliveryState({ status: "idle" });
-        }
-      } catch {
-        setDeliveryState({ status: "idle" });
+      // Update sending progress
+      const sending = data.logs.filter((l) => l.status === "pending").length;
+      const total = data.logs.length;
+      const sent = data.logs.filter((l) => l.status === "sent").length;
+      if (total > 0 && sending > 0) {
+        setIsSending(true);
+        setSendingProgress({ sent, total });
+      } else if (sent > 0 || total > 0) {
+        setIsSending(false);
+        setSendingProgress({ sent, total });
       }
-    } catch (err) {
-      console.error("Failed to load:", err);
-      setError("Không tải được dữ liệu chiến dịch.");
-    } finally {
-      setLoading(false);
+    } catch {
+      // ignore
     }
   }, [id]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    Promise.all([loadCampaign()]).finally(() => setLoading(false));
+  }, [loadCampaign]);
 
-  // Polling: tự động reload mỗi 5s khi đang gửi
+  // Poll summary every 3s while sending
   useEffect(() => {
-    if (deliveryState.status !== "sending") return;
-    const t = setInterval(async () => {
-      try {
-        const delivery = await api.get<{ status: string; total?: number; sent?: number; failed?: number }>(
-          `/campaigns/${id}/delivery-summary`
-        );
-        setDeliveryState({
-          status: delivery.status === "sending" ? "sending" : "done",
-          total: delivery.total,
-          sent: delivery.sent,
-          failed: delivery.failed,
-        });
-        if (delivery.status !== "sending") {
-          // Reload emails to reflect sent status
-          loadData();
-        }
-      } catch {
-        // ignore polling errors
-      }
-    }, 5000);
+    if (!isSending) return;
+    const t = setInterval(loadSummary, 3000);
     return () => clearInterval(t);
-  }, [deliveryState.status, id, loadData]);
-
-  // Compose single email
-  const composeEmail = useCallback(
-    async (itemId: string, vars: Record<string, string>) => {
-      setComposing(itemId);
-      setEmails((prev) =>
-        prev.map((e) => (e.id === itemId ? { ...e, status: "composing" } : e))
-      );
-
-      try {
-        const camp = await api.get<{
-          content_items: Array<{ channel: string; content_json: { subject: string; body: string } }>
-        }>(`/campaigns/${id}`);
-
-        const emailContent = camp.content_items.find((c) => c.channel === "email");
-
-        if (emailContent) {
-          const subject = fillTemplate(
-            emailContent.content_json.subject || "Chào {{HoVaTen}}",
-            vars
-          );
-          const body = fillTemplate(
-            emailContent.content_json.body || "Xin chào {{HoVaTen}},\n\n...",
-            vars
-          );
-          setEmails((prev) =>
-            prev.map((e) =>
-              e.id === itemId ? { ...e, subject, body, status: "done" } : e
-            )
-          );
-        } else {
-          setEmails((prev) =>
-            prev.map((e) =>
-              e.id === itemId
-                ? { ...e, subject: `Chào ${vars.HoVaTen}!`, body: `Xin chào ${vars.HoVaTen},\n\nCảm ơn bạn đã quan tâm!\n\nTrân trọng.`, status: "done" }
-                : e
-            )
-          );
-        }
-      } catch {
-        setEmails((prev) =>
-          prev.map((e) =>
-            e.id === itemId
-              ? { ...e, status: "failed" as const, errorMsg: "Không thể soạn email" }
-              : e
-          )
-        );
-      } finally {
-        setComposing(null);
-      }
-    },
-    [id]
-  );
-
-  // Compose all pending
-  const handleComposeAll = async () => {
-    const pending = emails.filter((e) => e.status === "pending");
-    for (const item of pending) {
-      const vars = buildVariablesFromRow({ ID: item.id, HoVaTen: item.name, Email: item.email, SDT: "" });
-      await composeEmail(item.id, vars);
-      await new Promise((r) => setTimeout(r, 300));
-    }
-  };
-
-  // Regenerate single
-  const handleRegenerate = async (itemId: string) => {
-    const item = emails.find((e) => e.id === itemId);
-    if (!item) return;
-    const vars = buildVariablesFromRow({ ID: itemId, HoVaTen: item.name, Email: item.email, SDT: "" });
-    await composeEmail(itemId, vars);
-  };
-
-  // Send single
-  const handleSend = async (itemId: string) => {
-    setEmails((prev) =>
-      prev.map((e) => (e.id === itemId ? { ...e, status: "sending" } : e))
-    );
-    try {
-      await api.post(`/campaigns/${id}/send-email`, {
-        to: emails.find((e) => e.id === itemId)?.email,
-        subject: emails.find((e) => e.id === itemId)?.subject,
-        body: emails.find((e) => e.id === itemId)?.body,
-      });
-      setEmails((prev) =>
-        prev.map((e) => (e.id === itemId ? { ...e, status: "sent" } : e))
-      );
-    } catch {
-      setEmails((prev) =>
-        prev.map((e) =>
-          e.id === itemId
-            ? { ...e, status: "failed" as const, errorMsg: "Gửi thất bại. Vui lòng thử lại." }
-            : e
-        )
-      );
-    }
-  };
-
-  const handleSubjectChange = (id: string, val: string) =>
-    setEmails((prev) => prev.map((e) => (e.id === id ? { ...e, subject: val } : e)));
-
-  const handleBodyChange = (id: string, val: string) =>
-    setEmails((prev) => prev.map((e) => (e.id === id ? { ...e, body: val } : e)));
+  }, [isSending, loadSummary]);
 
   // Stats
-  const total = emails.length;
-  const sent = emails.filter((e) => e.status === "sent").length;
-  const done = emails.filter((e) => e.status === "done").length;
-  const failed = emails.filter((e) => e.status === "failed").length;
-  const pending = emails.filter((e) => e.status === "pending").length;
-  const composingCount = emails.filter((e) => e.status === "composing").length;
-  const sendingCount = emails.filter((e) => e.status === "sending").length;
+  const total = summary?.logs.length || 0;
+  const sent = summary?.logs.filter((l) => l.status === "sent").length || 0;
+  const failed = summary?.logs.filter((l) => l.status === "failed").length || 0;
+  const pending = summary?.logs.filter((l) => l.status === "pending").length || 0;
+  const opened = summary?.logs.filter((l) => l.opened_at).length || 0;
+  const clicked = summary?.logs.filter((l) => l.clicked_at).length || 0;
+
+  // Start sending
+  async function handleRunCampaign() {
+    if (!campaign) return;
+
+    // Get list id
+    let listId = campaign.customer_list_id;
+    if (!listId) {
+      const lists = await api.get<{ id: string }[]>("/workflow/customer-lists");
+      if (lists.length === 0) {
+        setError("Chưa có danh sách khách hàng.");
+        return;
+      }
+      listId = lists[0].id;
+    }
+
+    setIsSending(true);
+    setError("");
+
+    try {
+      await api.post(`/campaigns/${id}/execute`, {
+        mode: "email",
+        customer_list_id: listId,
+        ab_test: false,
+      });
+      // Start polling
+      loadSummary();
+    } catch (e: unknown) {
+      setIsSending(false);
+      const msg = e && typeof e === "object" && "message" in e
+        ? String((e as { message: string }).message)
+        : "Không thể khởi động chiến dịch.";
+      setError(msg);
+    }
+  }
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-50 flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin text-amber-500 mx-auto mb-2" />
-          <p className="text-sm text-slate-500">Đang tải dữ liệu...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-50 flex items-center justify-center">
-        <div className="text-center max-w-sm">
-          <AlertCircle className="h-10 w-10 text-red-400 mx-auto mb-3" />
-          <p className="text-slate-600 font-medium mb-1">{error}</p>
-          <button onClick={loadData} className="mt-3 text-sm text-amber-600 hover:underline">
-            Thử lại
-          </button>
+          <p className="text-sm text-slate-500">Đang tải...</p>
         </div>
       </div>
     );
@@ -456,8 +223,8 @@ export default function CampaignSendingPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-50">
       {/* Header */}
-      <header className="bg-white border-b border-amber-200 px-4 py-3 sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
+      <header className="bg-white border-b border-amber-200 px-4 py-3 sticky top-0 z-10 shadow-sm">
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
               onClick={() => router.push(`/campaigns/${id}`)}
@@ -468,7 +235,9 @@ export default function CampaignSendingPage() {
             <div className="flex items-center gap-2">
               <Mail className="h-5 w-5 text-amber-600" />
               <div>
-                <h1 className="font-semibold text-slate-900 text-sm">{campaign?.campaign_name || "Gửi Email"}</h1>
+                <h1 className="font-semibold text-slate-900 text-sm">
+                  {campaign?.campaign_name || "Gửi Email"}
+                </h1>
                 {customerListName && (
                   <p className="text-[10px] text-slate-400 flex items-center gap-1">
                     <Users size={9} />{customerListName}
@@ -478,111 +247,212 @@ export default function CampaignSendingPage() {
             </div>
           </div>
 
-          {/* Stats */}
-          <div className="flex items-center gap-4 text-xs">
-            <div className="text-center">
-              <p className="text-lg font-bold text-slate-700">{total}</p>
-              <p className="text-slate-400">Tổng</p>
-            </div>
-            <div className="text-center">
-              <p className="text-lg font-bold text-emerald-600">{done + sent}</p>
-              <p className="text-slate-400">Sẵn sàng</p>
-            </div>
-            <div className="text-center">
-              <p className="text-lg font-bold text-green-600">{sent}</p>
-              <p className="text-slate-400">Đã gửi</p>
-            </div>
-            {failed > 0 && (
-              <div className="text-center">
-                <p className="text-lg font-bold text-red-500">{failed}</p>
-                <p className="text-slate-400">Lỗi</p>
-              </div>
-            )}
-            <div className="text-center">
-              <p className="text-lg font-bold text-slate-400">{pending + composingCount + sendingCount}</p>
-              <p className="text-slate-400">Chờ</p>
-            </div>
-          </div>
-
-          {/* Polling indicator */}
-          {deliveryState.status === "sending" && (
-            <div className="flex items-center gap-1.5 text-[10px] text-blue-600">
-              <Loader2 size={10} className="animate-spin" />
-              <span>Đang gửi… {deliveryState.sent}/{deliveryState.total}</span>
+          {isSending && (
+            <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-full px-3 py-1.5">
+              <Loader2 size={12} className="animate-spin text-blue-600" />
+              <span className="text-[11px] text-blue-700 font-medium">
+                Đang gửi… {sendingProgress.sent}/{sendingProgress.total}
+              </span>
             </div>
           )}
         </div>
       </header>
 
-      {/* Empty state */}
-      {emails.length === 0 ? (
-        <div className="max-w-md mx-auto text-center py-24">
-          <Inbox className="h-14 w-14 text-slate-200 mx-auto mb-4" />
-          <p className="text-slate-500 font-medium">Chưa có khách hàng nào</p>
-          <p className="text-slate-400 text-xs mt-1">
-            Vui lòng thêm danh sách khách hàng có email trước khi gửi.
-          </p>
-          <button
-            onClick={() => router.push("/customer-lists")}
-            className="mt-4 text-sm text-amber-600 hover:underline font-medium"
-          >
-            Tạo danh sách khách hàng →
-          </button>
+      <main className="max-w-4xl mx-auto px-4 py-6">
+        {error && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-xl p-3 flex items-center gap-2">
+            <AlertCircle size={14} className="text-red-500 shrink-0" />
+            <p className="text-xs text-red-700">{error}</p>
+          </div>
+        )}
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-3 gap-3 mb-6">
+          <div className="bg-white rounded-xl p-4 text-center border border-gray-100 shadow-sm">
+            <p className="text-3xl font-bold text-slate-700">{total}</p>
+            <p className="text-[10px] text-slate-400 uppercase tracking-wide font-semibold mt-1">Tổng khách</p>
+          </div>
+          <div className="bg-gradient-to-br from-[#377D73] to-[#2d6a61] rounded-xl p-4 text-center shadow-lg shadow-[#377D73]/20">
+            <p className="text-3xl font-bold text-white">{sent}</p>
+            <p className="text-[10px] text-white/80 uppercase tracking-wide font-semibold mt-1">Đã gửi</p>
+          </div>
+          <div className="bg-white rounded-xl p-4 text-center border border-gray-100 shadow-sm">
+            <p className="text-3xl font-bold text-red-500">{failed}</p>
+            <p className="text-[10px] text-slate-400 uppercase tracking-wide font-semibold mt-1">Lỗi</p>
+          </div>
         </div>
-      ) : (
-        <>
-          {/* Actions */}
-          <div className="max-w-6xl mx-auto px-4 py-4">
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-slate-500">
-                Mỗi email được soạn riêng cho từng khách hàng bằng AI.
-              </p>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={loadData}
-                  className="flex items-center gap-1.5 rounded-lg border border-amber-300 px-3 py-1.5 text-[11px] font-medium text-amber-700 transition hover:bg-amber-50"
-                >
-                  <RefreshCw className="h-3 w-3" />
-                  Làm mới
-                </button>
-                <button
-                  onClick={handleComposeAll}
-                  disabled={composing !== null || pending === 0}
-                  className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-600 disabled:opacity-50"
-                >
-                  {composing ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Đang soạn...
-                    </>
-                  ) : (
-                    <>
-                      <Mail className="h-4 w-4" />
-                      Soạn tất cả ({pending})
-                    </>
-                  )}
-                </button>
+
+        {/* Open & Click rates */}
+        {total > 0 && (
+          <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="bg-white rounded-xl p-4 text-center border border-gray-100 shadow-sm">
+              <p className="text-2xl font-bold text-blue-600">{opened}</p>
+              <div className="flex items-center justify-center gap-1 mt-1">
+                <Eye size={10} className="text-blue-400" />
+                <p className="text-[10px] text-slate-400">Đã mở</p>
+              </div>
+              <div className="w-full bg-gray-100 rounded-full h-1 mt-2">
+                <div
+                  className="bg-blue-400 h-1 rounded-full transition-all"
+                  style={{ width: `${total > 0 ? (opened / total) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+            <div className="bg-white rounded-xl p-4 text-center border border-gray-100 shadow-sm">
+              <p className="text-2xl font-bold text-indigo-600">{clicked}</p>
+              <div className="flex items-center justify-center gap-1 mt-1">
+                <MousePointerClick size={10} className="text-indigo-400" />
+                <p className="text-[10px] text-slate-400">Đã click</p>
+              </div>
+              <div className="w-full bg-gray-100 rounded-full h-1 mt-2">
+                <div
+                  className="bg-indigo-400 h-1 rounded-full transition-all"
+                  style={{ width: `${total > 0 ? (clicked / total) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+            <div className="bg-white rounded-xl p-4 text-center border border-gray-100 shadow-sm">
+              <p className="text-2xl font-bold text-amber-500">{pending}</p>
+              <div className="flex items-center justify-center gap-1 mt-1">
+                <Loader2 size={10} className="text-amber-400 animate-spin" />
+                <p className="text-[10px] text-slate-400">Đang chờ</p>
               </div>
             </div>
           </div>
+        )}
 
-          {/* Email Grid */}
-          <main className="max-w-6xl mx-auto px-4 pb-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {emails.map((item) => (
-                <EmailCard
-                  key={item.id}
-                  item={item}
-                  onSubjectChange={handleSubjectChange}
-                  onBodyChange={handleBodyChange}
-                  onRegenerate={handleRegenerate}
-                  onSend={handleSend}
-                />
+        {/* Run Campaign Button */}
+        <div className="flex items-center justify-between mb-6 bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+          <div>
+            <p className="text-sm font-semibold text-slate-800">
+              {total === 0 ? "Chưa có dữ liệu gửi" : `${total} khách hàng sẵn sàng`}
+            </p>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {total === 0
+                ? "Bấm chạy chiến dịch để bắt đầu gửi email đến khách hàng."
+                : `Đã gửi: ${sent}/${total}${failed > 0 ? ` · Lỗi: ${failed}` : ""}`}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={loadSummary}
+              className="flex items-center gap-1.5 rounded-lg border border-amber-300 px-3 py-2 text-[11px] font-medium text-amber-700 hover:bg-amber-50 transition-colors"
+            >
+              <RefreshCw size={11} />
+              Làm mới
+            </button>
+            <button
+              onClick={handleRunCampaign}
+              disabled={isSending || !campaign}
+              className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#377D73] to-[#2d6a61] px-5 py-2.5 text-[12px] font-bold text-white shadow-lg shadow-[#377D73]/30 hover:shadow-xl hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSending ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <Send size={13} />
+              )}
+              {isSending ? "Đang gửi…" : sent > 0 ? "Gửi lại" : "Chạy chiến dịch"}
+            </button>
+          </div>
+        </div>
+
+        {/* Empty state */}
+        {total === 0 && !isSending && (
+          <div className="text-center py-16 bg-white rounded-xl border border-gray-100 shadow-sm">
+            <Inbox className="h-14 w-14 text-slate-200 mx-auto mb-4" />
+            <p className="text-slate-500 font-medium">Chưa có khách hàng nào</p>
+            <p className="text-slate-400 text-xs mt-1 mb-4">
+              Vui lòng thêm danh sách khách hàng có email trước khi gửi.
+            </p>
+            <button
+              onClick={() => router.push("/customer-lists")}
+              className="text-sm text-[#377D73] hover:underline font-medium"
+            >
+              Tạo danh sách khách hàng →
+            </button>
+          </div>
+        )}
+
+        {/* Customer delivery list */}
+        {total > 0 && (
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+              <p className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">
+                Danh sách khách hàng
+              </p>
+              {isSending && (
+                <div className="flex items-center gap-1.5 text-[10px] text-blue-600">
+                  <Loader2 size={10} className="animate-spin" />
+                  <span>Đang cập nhật…</span>
+                </div>
+              )}
+            </div>
+
+            <div className="divide-y divide-gray-50">
+              {summary?.logs.map((log) => (
+                <div key={log.id} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50/50 transition-colors">
+                  {/* Avatar */}
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#377D73]/20 to-[#377D73]/10 flex items-center justify-center shrink-0">
+                    <span className="text-[11px] font-bold text-[#377D73]">
+                      {(log.recipient_name || "K")[0].toUpperCase()}
+                    </span>
+                  </div>
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[12px] font-semibold text-slate-800 truncate">
+                      {log.recipient_name || "Khách hàng"}
+                    </p>
+                    <p className="text-[10px] text-slate-400 truncate">
+                      {log.recipient_email || log.recipient_phone || "—"}
+                    </p>
+                  </div>
+
+                  {/* Error */}
+                  {log.status === "failed" && log.error_message && (
+                    <p className="text-[9px] text-red-500 italic truncate max-w-[120px]" title={log.error_message}>
+                      {log.error_message}
+                    </p>
+                  )}
+
+                  {/* Status */}
+                  <StatusBadge status={log.status} />
+
+                  {/* Open & Click */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div
+                      className={`flex items-center gap-1 text-[10px] ${
+                        log.opened_at ? "text-[#377D73]" : "text-gray-300"
+                      }`}
+                      title={log.opened_at ? `Mở lúc: ${new Date(log.opened_at).toLocaleString("vi")}` : "Chưa mở"}
+                    >
+                      <Eye size={11} />
+                      {log.opened_at ? (
+                        <CheckCircle size={9} />
+                      ) : (
+                        <span className="text-[9px]">—</span>
+                      )}
+                    </div>
+                    <div
+                      className={`flex items-center gap-1 text-[10px] ${
+                        log.clicked_at ? "text-[#377D73]" : "text-gray-300"
+                      }`}
+                      title={log.clicked_at ? `Click lúc: ${new Date(log.clicked_at).toLocaleString("vi")}` : "Chưa click"}
+                    >
+                      <MousePointerClick size={11} />
+                      {log.clicked_at ? (
+                        <CheckCircle size={9} />
+                      ) : (
+                        <span className="text-[9px]">—</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
               ))}
             </div>
-          </main>
-        </>
-      )}
+          </div>
+        )}
+      </main>
     </div>
   );
 }

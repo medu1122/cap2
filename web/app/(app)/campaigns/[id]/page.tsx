@@ -1066,8 +1066,8 @@ export default function CampaignDetailPage() {
                     </div>
                   ) : null}
 
-                  {/* logs table */}
-                  {!deliveryLoading && deliveryError === "" && deliverySummary && deliverySummary.logs.length > 0 ? (
+                  {/* Logs table moved to analytics page */}
+                  {/* !deliveryLoading && deliveryError === "" && deliverySummary && deliverySummary.logs.length > 0 ? (
                     <div className="overflow-x-auto rounded-xl border border-blue-100/50 mb-4 bg-white shadow-sm">
                       <table className="w-full text-[11px]">
                         <thead>
@@ -1106,7 +1106,7 @@ export default function CampaignDetailPage() {
                         </tbody>
                       </table>
                     </div>
-                  ) : null}
+                  ) : null */}
 
                   {/* Execute form */}
                   <div className="space-y-3 bg-white/60 rounded-xl p-4 border border-blue-100/50">

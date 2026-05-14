@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api-client";
-import { Plus, Link2, Trash2, Copy, ExternalLink, ChevronDown, ChevronUp, MousePointerClick } from "lucide-react";
+import { Plus, Link2, Trash2, Copy, ChevronUp, MousePointerClick } from "lucide-react";
 
 interface TrackingLink {
   id: string;
@@ -95,24 +95,13 @@ export default function TrackingLinksManager({ campaignId }: Props) {
           )}
         </div>
         <div className="flex items-center gap-2">
-          {links.length > 0 && (
-            <button
-              onClick={() => setExpanded(!expanded)}
-              className="flex items-center gap-1 text-[10px] text-[#377D73] hover:underline font-medium"
-            >
-              {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-              {expanded ? "Ẩn" : "Thêm"}
-            </button>
-          )}
-          {!expanded && (
-            <button
-              onClick={() => setExpanded(true)}
-              className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-white bg-[#377D73] rounded-md hover:bg-[#2d635c] transition-colors"
-            >
-              <Plus size={10} />
-              Thêm
-            </button>
-          )}
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-white bg-[#377D73] rounded-md hover:bg-[#2d635c] transition-colors"
+          >
+            {expanded ? <ChevronUp size={10} /> : <Plus size={10} />}
+            {expanded ? "Đóng" : "Thêm"}
+          </button>
         </div>
       </div>
 
