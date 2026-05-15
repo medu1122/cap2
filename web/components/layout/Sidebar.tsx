@@ -1,22 +1,55 @@
 "use client";
+
 import Link from "next/link";
 import Image from "next/image";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Megaphone, CalendarDays, Users, LogOut, BarChart3 } from "lucide-react";
-import { clearToken } from "@/lib/api-client";
+import {
+  Activity,
+  BarChart3,
+  CalendarDays,
+  LayoutDashboard,
+  LogOut,
+  Megaphone,
+  Settings,
+  ShieldCheck,
+  Users,
+} from "lucide-react";
+import { api, clearToken } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
-const NAV = [
-  { href: "/dashboard",   label: "Tổng quan",          icon: LayoutDashboard },
-  { href: "/campaigns",   label: "Chiến dịch",          icon: Megaphone },
-  { href: "/calendar",    label: "Lịch marketing",      icon: CalendarDays },
-  { href: "/customer-lists", label: "Danh sách khách",  icon: Users },
+const USER_NAV = [
+  { href: "/dashboard", label: "Tổng quan", icon: LayoutDashboard },
+  { href: "/campaigns", label: "Chiến dịch", icon: Megaphone },
+  { href: "/calendar", label: "Lịch marketing", icon: CalendarDays },
+  { href: "/customer-lists", label: "Danh sách khách", icon: Users },
   { href: "/insights", label: "Hỗ trợ phân tích", icon: BarChart3 },
 ];
+
+const ADMIN_NAV = [
+  { href: "/admin#overview", label: "Tổng quan admin", icon: ShieldCheck },
+  { href: "/admin#users", label: "Người dùng", icon: Users },
+  { href: "/admin#activity", label: "Hoạt động hệ thống", icon: Activity },
+  { href: "/admin#settings", label: "Thiết lập", icon: Settings },
+];
+
+interface CurrentUser {
+  role: string;
+}
+
+const ADMIN_ROLES = new Set(["super_admin", "admin", "staff"]);
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+
+  useEffect(() => {
+    void api.get<CurrentUser>("/auth/me").then(setCurrentUser).catch(() => setCurrentUser(null));
+  }, []);
+
+  const isAdmin = currentUser ? ADMIN_ROLES.has(currentUser.role) : pathname.startsWith("/admin");
+  const visibleNav = useMemo(() => (isAdmin ? ADMIN_NAV : USER_NAV), [isAdmin]);
 
   function logout() {
     clearToken();
@@ -24,8 +57,8 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-20 w-60 flex flex-col border-r border-gray-200 bg-surface">
-      <div className="px-4 py-5 border-b border-gray-200">
+    <aside className="fixed inset-y-0 left-0 z-20 flex w-60 flex-col border-r border-gray-200 bg-surface">
+      <div className="border-b border-gray-200 px-4 py-5">
         <Image
           src="/images/logo/aimap-logo.png"
           alt="AIMAP"
@@ -35,22 +68,21 @@ export default function Sidebar() {
           style={{ height: "auto" }}
           priority
         />
-        <p className="text-xs text-gray-400 mt-0.5">Tự động hoá Marketing</p>
+        <p className="mt-0.5 text-xs text-gray-400">
+          {isAdmin ? "Quản trị hệ thống" : "Tự động hoá Marketing"}
+        </p>
       </div>
-      <nav className="flex-1 px-2 py-4 space-y-0.5">
-        {NAV.map(({ href, label, icon: Icon }) => (
-          <Link
-            key={href}
-            href={href}
-            className={cn(
-              "sidebar-link",
-              pathname === href || pathname.startsWith(href + "/") ? "active" : ""
-            )}
-          >
-            <Icon size={15} />
-            {label}
-          </Link>
-        ))}
+      <nav className="flex-1 space-y-0.5 px-2 py-4">
+        {visibleNav.map(({ href, label, icon: Icon }) => {
+          const baseHref = href.split("#")[0];
+          const active = pathname === baseHref || pathname.startsWith(baseHref + "/");
+          return (
+            <Link key={href} href={href} className={cn("sidebar-link", active ? "active" : "")}>
+              <Icon size={15} />
+              {label}
+            </Link>
+          );
+        })}
       </nav>
       <div className="px-2 pb-4">
         <button onClick={logout} className="sidebar-link w-full text-left text-gray-500">

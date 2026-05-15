@@ -13,11 +13,12 @@ router = APIRouter()
 
 @router.post("/register", response_model=UserOut, status_code=201)
 async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == payload.email))
+    email = payload.email.strip().lower()
+    result = await db.execute(select(User).where(User.email == email))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already exists")
     user = User(
-        email=payload.email,
+        email=email,
         hashed_pw=hash_password(payload.password),
         full_name=payload.full_name,
     )
@@ -29,7 +30,10 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
 
 @router.post("/login", response_model=TokenResponse)
 async def login(payload: UserLogin, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == payload.email))
+    email = payload.email.strip().lower()
+    if not email or not payload.password:
+        raise HTTPException(status_code=400, detail="Email and password are required")
+    result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
     if not user or not verify_password(payload.password, user.hashed_pw):
         raise HTTPException(status_code=401, detail="Invalid credentials")
