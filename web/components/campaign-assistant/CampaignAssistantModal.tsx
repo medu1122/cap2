@@ -30,6 +30,7 @@ export type SuggestionItem = {
   timing: string | null;
   customer_segment: string | null;
   urgency_level: string | null;
+  reasoning?: string | null;
 };
 
 export type UserPrefs = {

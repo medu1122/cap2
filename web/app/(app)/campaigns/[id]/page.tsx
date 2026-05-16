@@ -15,6 +15,7 @@ import RevenueUploadModal from "@/components/campaign/RevenueUploadModal";
 import TrackingLinksManager from "@/components/campaign/TrackingLinksManager";
 import VideoScriptContent from "@/components/campaign/VideoScriptContent";
 import FacebookPostContent from "@/components/campaign/FacebookPostContent";
+import { CampaignBuildingProgress } from "@/components/campaign/CampaignBuildingProgress";
 
 interface AgentLog {
   id: string;
@@ -111,6 +112,7 @@ const RECIPIENT_STATUS_LABELS: Record<string, string> = {
   skipped_no_phone: "Bỏ qua",
 };
 
+
 // ── Delete Confirmation Modal ─────────────────────────────────────────────────
 
 function DeleteConfirmModal({ campaignName, onConfirm, onCancel, deleting }: {
@@ -180,6 +182,7 @@ function ChannelIcon({ channel, size = 14 }: { channel: string; size?: number })
 function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpdated: () => void }) {
   const [generating, setGenerating] = useState(false);
   const [genPhase, setGenPhase] = useState(0);
+  const [autoTriggered, setAutoTriggered] = useState(false);
   const [error, setError] = useState("");
   const [customPrompt, setCustomPrompt] = useState("");
   const [showPrompt, setShowPrompt] = useState(false);
@@ -190,6 +193,53 @@ function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpda
   const imageUrl = plan.image_url as string | undefined;
   const savedPrompt = plan.image_prompt_final as string | undefined;
   const lastPrompt = useRef<string | null>(null);
+
+  // Tự động trigger tạo ảnh khi: có prompt nhưng chưa có ảnh, và chưa từng trigger
+  const hasPendingImage = !!savedPrompt && !imageUrl && !generating;
+  const [readyAuto, setReadyAuto] = useState(false);
+
+  useEffect(() => {
+    if (hasPendingImage && !autoTriggered) {
+      // Delay ngắn để user thấy UI đã load xong rồi mới bắt đầu loading
+      const t = setTimeout(() => {
+        setAutoTriggered(true);
+        setReadyAuto(true);
+      }, 1500);
+      return () => clearTimeout(t);
+    }
+  }, [hasPendingImage, autoTriggered]);
+
+  useEffect(() => {
+    if (!readyAuto) return;
+    const doGenerate = async () => {
+      setGenerating(true);
+      setGenPhase(0);
+      setError("");
+      try {
+        await new Promise((r) => setTimeout(r, 500));
+        setGenPhase(1);
+        const res = await api.post<{ image_url: string; prompt_used: string }>(
+          `/campaigns/${campaign.id}/image/generate`,
+          {}
+        );
+        lastPrompt.current = res.prompt_used;
+        setGenPhase(2);
+        await new Promise((r) => setTimeout(r, 500));
+        setGenPhase(3);
+        onUpdated();
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : "Tạo ảnh thất bại");
+        setGenPhase(-1);
+      } finally {
+        setTimeout(() => {
+          setGenerating(false);
+          setGenPhase(0);
+          setReadyAuto(false);
+        }, 800);
+      }
+    };
+    doGenerate();
+  }, [readyAuto]);
 
   const handleGenerate = async () => {
     setGenerating(true);
@@ -243,7 +293,9 @@ function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpda
     }
   };
 
-  const phaseLabels = ["Đang chuẩn bị...", "AI đang tạo ảnh...", "Đang lưu...", "Hoàn tất!"];
+  const phaseLabels = autoTriggered
+    ? ["Đang chuẩn bị...", "AI đang tạo ảnh bằng AI...", "Đang lưu...", "Hoàn tất!"]
+    : ["Đang chuẩn bị...", "AI đang tạo ảnh...", "Đang lưu...", "Hoàn tất!"];
   const effectivePrompt = customPrompt || lastPrompt.current || savedPrompt || "";
 
   return (
@@ -711,10 +763,6 @@ export default function CampaignDetailPage() {
     };
   }, [campaign?.status, load]);
 
-  // Fake AI progress state: hiện trong 5s đầu tiên khi bắt đầu xử lý
-  const isFakeLoading = (campaign?.status === "running" || campaign?.status === "pending_agent") && !campaign.agent_logs.some(l => l.status !== "pending");
-  const hasAnyAgentProgress = campaign?.agent_logs.some(l => l.status === "success" || l.status === "running") || false;
-
   if (!campaign) return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 via-white to-teal-50/30 p-6">
       <div className="max-w-6xl mx-auto space-y-5">
@@ -739,20 +787,6 @@ export default function CampaignDetailPage() {
   const sourceContext = (campaign.campaign_plan_json?.source_context || null) as SourceContext | null;
   const hasEmailChannel = campaign.channels.includes("email");
 
-  // Banner: fake 5s loading (khi chưa có agent log nào)
-  const showFakeBanner = isProcessing && isFakeLoading;
-  // Banner: real agent progress (khi có log rồi)
-  const showRealBanner = isProcessing && !isFakeLoading && !hasAnyAgentProgress;
-
-  const runningLog = campaign.agent_logs.find((l) => l.status === "running");
-  let bannerLabel = "AI đang chuẩn bị...";
-  if (runningLog) {
-    const ch = runningLog.channel ? ` ${CHANNEL_LABELS[runningLog.channel]}` : "";
-    if (runningLog.agent_name === "strategist") bannerLabel = "Strategist đang phân tích...";
-    else if (runningLog.agent_name === "writer") bannerLabel = `Writer đang soạn nội dung${ch}...`;
-    else if (runningLog.agent_name === "critic") bannerLabel = `Critic đang kiểm tra${ch}...`;
-  }
-
   async function runCampaignExecution() {
     if (!id || selectedListIds.length === 0) { setExecError("Chọn ít nhất 1 danh sách."); return; }
     setExecError("");
@@ -770,12 +804,8 @@ export default function CampaignDetailPage() {
 
   return (
     <>
-      {(showFakeBanner || showRealBanner) && (
-        <div className="mb-4 flex items-center gap-3 bg-[#377D73]/5 border border-[#377D73]/20 rounded-xl px-4 py-3">
-          <Loader2 size={16} className="text-[#377D73] animate-spin shrink-0" />
-          <span className="text-sm font-medium text-[#377D73]">{bannerLabel}</span>
-          <span className="text-xs text-[#377D73]/60 ml-auto">{showFakeBanner ? "Đang khởi tạo..." : ""}</span>
-        </div>
+      {isProcessing && (
+        <CampaignBuildingProgress channels={campaign.channels} agent_logs={campaign.agent_logs} campaign_plan_json={campaign.campaign_plan_json ?? undefined} />
       )}
       {showDeleteConfirm && campaign && (
         <DeleteConfirmModal campaignName={campaign.campaign_name} onConfirm={handleDelete} onCancel={() => setShowDeleteConfirm(false)} deleting={deleting} />
@@ -1175,9 +1205,7 @@ export default function CampaignDetailPage() {
               </div>
 
               {/* Tracking Links */}
-              <div className="bg-gradient-to-br from-blue-50/50 via-white to-indigo-50/30 rounded-xl p-4 border border-blue-200/50 shadow-md">
-                <TrackingLinksManager campaignId={id as string} />
-              </div>
+              <TrackingLinksManager campaignId={id as string} />
             </div>
           </div>
         </div>

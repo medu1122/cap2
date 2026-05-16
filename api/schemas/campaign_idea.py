@@ -56,6 +56,7 @@ class CampaignIdeaSuggestionItem(BaseModel):
     timing: str | None = None
     customer_segment: str | None = None
     urgency_level: str | None = None
+    reasoning: str | None = None  # Tại sao gợi ý ý tưởng này
 
 
 class CampaignIdeaSuggestResponse(BaseModel):

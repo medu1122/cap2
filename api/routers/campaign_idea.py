@@ -153,6 +153,17 @@ async def _call_openai(messages: list[dict]) -> str:
     return resp.choices[0].message.content.strip()
 
 
+async def _call_openai_mini(messages: list[dict]) -> str:
+    """GPT-4o-mini — nhanh, dùng cho suggest campaign ideas."""
+    resp = await _openai.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages,
+        temperature=0.8,
+        timeout=15.0,
+    )
+    return resp.choices[0].message.content.strip()
+
+
 async def _call_openai_primary(messages: list[dict]) -> str:
     """OpenAI GPT-4o — model mạnh nhất cho video script chất lượng cao."""
     resp = await _openai.chat.completions.create(
@@ -234,7 +245,7 @@ async def suggest_campaign_ideas(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """AI gợi ý 4 ý tưởng chiến dịch dựa trên thương hiệu + sự kiện + patterns ngành."""
+    """AI gợi ý 4 ý tưởng chiến dịch nhanh, dùng GPT-4o-mini trực tiếp."""
     brand = None
     if payload.brand_id:
         result = await db.execute(
@@ -253,42 +264,40 @@ async def suggest_campaign_ideas(
         business_type = brand.tone_of_voice or ""
         brand_info = f"""Thương hiệu: {brand.brand_name}
 Mô tả: {brand.brand_description}
-Tone: {brand.tone_of_voice}
 Khách hàng mục tiêu: {brand.target_audience}
-Sản phẩm chính: {', '.join(brand.key_products or [])}
-"""
+Sản phẩm: {', '.join(brand.key_products or []) or 'chưa có'}"""
 
     industry_patterns = _get_industry_patterns(business_type)
 
+    # Prompt rút gọn — GPT-4o-mini xử lý nhanh
     prompt = f"""Bạn là chuyên gia marketing cho doanh nghiệp nhỏ Việt Nam.
-Hãy gợi ý 4 ý tưởng chiến dịch marketing ĐA DẠNG, mỗi ý tưởng phải khác nhau về hướng tiếp cận.
+Gợi ý đúng 4 ý tưởng chiến dịch, mỗi ý khác nhau về hướng tiếp cận.
 
 Thương hiệu:
 {brand_info}
-Các dịp lễ/sự kiện sắp tới:
-{calendar_ctx}
 
-Các pattern marketing phổ biến theo ngành (chọn và áp dụng sáng tạo):
+Dịp lễ/sự kiện sắp tới: {calendar_ctx}
+
+Pattern marketing theo ngành:
 {industry_patterns}
 
-YÊU CẦU QUAN TRỌNG:
-1. Mỗi ý tưởng phải KHÁC NHAU: 1 cái theo dịp lễ, 1 cái win-back khách cũ, 1 cái referral/giới thiệu, 1 cái theo mùa/trend.
-2. KHÔNG lặp lại cùng 1 hướng tiếp cận.
-3. Mỗi ý tưởng PHẢI có đủ 8 trường: id, title, description, category, channels, hook, timing, customer_segment, urgency_level
+Mỗi ý tưởng cần: id, title, description, category, channels, hook, timing, customer_segment, urgency_level, reasoning
+- reasoning: 1 câu giải thích TẠI SAO gợi ý ý tưởng này cho thương hiệu này (dựa vào dịp gì, pattern nào, hay insight gì)
 
 Trả về JSON hợp lệ:
 {{
   "suggestions": [
     {{
       "id": "1",
-      "title": "Tên chiến dịch NGẮN (dưới 10 từ, hấp dẫn, có emoji nếu phù hợp)",
-      "description": "Mô tả 2-3 câu: chiến dịch làm gì, tại sao hiệu quả, ai được lợi",
-      "category": "retention|acquisition|awareness|upsell|seasonal",
-      "channels": ["facebook_post", "email", "video_script"],
-      "hook": "Ưu đãi chính cực kỳ hấp dẫn (1-2 dòng, gây FOMO)",
-      "timing": "Tháng X - chạy Y tuần trước dịp. Lý do tại sao timing này tốt",
-      "customer_segment": "Nhắm vào ai? (VD: khách cũ 3-6 tháng, khách VIP, khách chưa từng mua...)",
-      "urgency_level": "high|medium|low"
+      "title": "Tên ngắn dưới 10 từ, hấp dẫn",
+      "description": "Mô tả 1-2 câu ngắn gọn",
+      "category": "seasonal|retention|acquisition|awareness|upsell",
+      "channels": ["facebook_post", "email"],
+      "hook": "Ưu đãi chính 1 dòng",
+      "timing": "Tháng X - chạy Y tuần",
+      "customer_segment": "Đối tượng khách hàng",
+      "urgency_level": "high|medium|low",
+      "reasoning": "Tại sao gợi ý ý tưởng này cho thương hiệu này"
     }}
   ]
 }}
@@ -296,7 +305,10 @@ Trả về JSON hợp lệ:
 Chỉ trả về JSON, không thêm text khác."""
 
     messages = [{"role": "user", "content": prompt}]
-    raw = await _call_ai_safe(messages, timeout=240)
+    try:
+        raw = await _call_openai_mini(messages)
+    except Exception as exc:
+        raise HTTPException(503, f"Không thể gợi ý: {exc}")
 
     try:
         data = _parse_json_flexible(raw)
@@ -306,7 +318,7 @@ Chỉ trả về JSON, không thêm text khác."""
         ]
         return CampaignIdeaSuggestResponse(suggestions=suggestions)
     except Exception:
-        raise HTTPException(503, "AI trả về dữ liệu không hợp lệ. Vui lòng thử lại.")
+        raise HTTPException(503, "AI trả về dữ liệu không hợp lệ.")
 
 
 class CampaignIdeaSuggestMoreRequest(BaseModel):
@@ -387,7 +399,10 @@ Trả về JSON hợp lệ:
 Chỉ trả về JSON, không thêm text khác."""
 
     messages = [{"role": "user", "content": prompt}]
-    raw = await _call_ai_safe(messages, timeout=240)
+    try:
+        raw = await _call_openai_mini(messages)
+    except Exception as exc:
+        raise HTTPException(503, f"Không thể gợi ý: {exc}")
 
     try:
         data = _parse_json_flexible(raw)
@@ -397,7 +412,7 @@ Chỉ trả về JSON, không thêm text khác."""
         ]
         return CampaignIdeaSuggestResponse(suggestions=suggestions)
     except Exception:
-        raise HTTPException(503, "AI trả về dữ liệu không hợp lệ. Vui lòng thử lại.")
+        raise HTTPException(503, "AI trả về dữ liệu không hợp lệ.")
 
 
 @router.post("/generate-brief", response_model=BriefGenerated)

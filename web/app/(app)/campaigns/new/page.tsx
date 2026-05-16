@@ -19,17 +19,6 @@ interface BrandOption {
   brand_name: string;
 }
 
-interface TrackingLinkInput {
-  name: string;
-  destination_url: string;
-}
-
-interface CreatedLinkInfo {
-  short_code: string;
-  name: string;
-  link_type: string;
-}
-
 export default function NewCampaignPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -52,8 +41,8 @@ export default function NewCampaignPage() {
   const [loading, setLoading] = useState(false);
   const [loadingBrands, setLoadingBrands] = useState(true);
   const [suggesting, setSuggesting] = useState(false);
-  const [showLinkModal, setShowLinkModal] = useState(false);
-  const [destUrls, setDestUrls] = useState<string[]>([]);
+  const [showLinkDialog, setShowLinkDialog] = useState(false); // yes/no dialog
+  const [showLinkModal, setShowLinkModal] = useState(false);   // form nhập link
 
   useEffect(() => {
     api.get<BrandOption[]>("/brands")
@@ -135,10 +124,6 @@ export default function NewCampaignPage() {
     }));
   }
 
-  function confirmCreateLinks(urls: string[]) {
-    executeCreateCampaign(urls);
-  }
-
   async function executeCreateCampaign(urls: string[]) {
     setLoading(true);
     try {
@@ -157,7 +142,6 @@ export default function NewCampaignPage() {
       };
       const res = await api.post<{ id: string }>("/campaigns", payload);
 
-      // Tạo tracking links bulk (email_click + facebook_post cho mỗi URL)
       if (urls.length > 0) {
         await api.post(`/campaigns/${res.id}/tracking-links/bulk`, {
           destination_urls: urls,
@@ -172,10 +156,6 @@ export default function NewCampaignPage() {
     }
   }
 
-  function toggleImageRequired() {
-    setForm((f) => ({ ...f, image_required: !f.image_required }));
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.brand_id) { setError("Vui lòng chọn thương hiệu."); return; }
@@ -185,7 +165,8 @@ export default function NewCampaignPage() {
     if (!form.deadline) { setError("Vui lòng chọn ngày kết thúc (deadline)."); return; }
     if (form.channels.length === 0) { setError("Vui lòng chọn ít nhất 1 kênh."); return; }
     setError("");
-    setShowLinkModal(true);
+    // Hỏi có nhập link không trước
+    setShowLinkDialog(true);
   }
 
   return (
@@ -199,15 +180,15 @@ export default function NewCampaignPage() {
         </div>
         <HelpDialogButton
           title="Hướng dẫn tạo chiến dịch"
-          summary="Bạn chỉ cần điền brief cơ bản, AI sẽ phân tích và sinh nội dung theo kênh đã chọn."
+          summary="Điền brief cơ bản, AI sẽ tạo nội dung theo kênh đã chọn."
           steps={[
             "Nhập tên chiến dịch và mục tiêu.",
-            "Chọn sản phẩm, đối tượng, deadline và kênh cần tạo nội dung.",
-            "Có thể bấm 'AI điền giúp tất cả' để gợi ý nhanh.",
-            "Bấm 'Tạo chiến dịch' để bắt đầu pipeline.",
+            "Chọn sản phẩm, đối tượng, deadline và kênh.",
+            "Bấm 'AI điền giúp tất cả' để gợi ý nhanh.",
+            "Bấm 'Tạo chiến dịch' để bắt đầu.",
           ]}
           tips={[
-            "Lịch đăng được AI đề xuất từ đầu, và hiển thị ở Lịch marketing sau khi nội dung được duyệt.",
+            "Lịch đăng được AI đề xuất tự động.",
           ]}
         />
       </div>
@@ -246,7 +227,7 @@ export default function NewCampaignPage() {
 
         <div>
           <label className="label">Tên chiến dịch *</label>
-          <input className="input" value={form.campaign_name} onChange={(e) => update("campaign_name", e.target.value)} placeholder="Ra mắt cà phê mới" required />
+          <input className="input" value={form.campaign_name} onChange={(e) => update("campaign_name", e.target.value)} required />
         </div>
 
         {form.source_insight_run_id ? (
@@ -270,22 +251,22 @@ export default function NewCampaignPage() {
               {suggesting ? "AI đang gợi ý..." : "AI điền giúp tất cả"}
             </button>
           </div>
-          <textarea className="input min-h-[72px] resize-none" value={form.objective} onChange={(e) => update("objective", e.target.value)} placeholder="Giới thiệu sản phẩm mới, tăng nhận diện thương hiệu..." required />
+          <textarea className="input min-h-[72px] resize-none" value={form.objective} onChange={(e) => update("objective", e.target.value)} required />
         </div>
 
         <div>
           <label className="label">Sản phẩm / Dịch vụ *</label>
-          <input className="input" value={form.product_or_service} onChange={(e) => update("product_or_service", e.target.value)} placeholder="Cà phê trứng truyền thống" required />
+          <input className="input" value={form.product_or_service} onChange={(e) => update("product_or_service", e.target.value)} required />
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="label">Khách hàng mục tiêu</label>
-            <input className="input" value={form.target_audience} onChange={(e) => update("target_audience", e.target.value)} placeholder="Dân văn phòng 25-35 tuổi" />
+            <input className="input" value={form.target_audience} onChange={(e) => update("target_audience", e.target.value)} />
           </div>
           <div>
             <label className="label">Ưu đãi / Hook</label>
-            <input className="input" value={form.offer_or_hook} onChange={(e) => update("offer_or_hook", e.target.value)} placeholder="Mua 1 tặng 1 trong tuần đầu" />
+            <input className="input" value={form.offer_or_hook} onChange={(e) => update("offer_or_hook", e.target.value)} />
           </div>
         </div>
 
@@ -316,26 +297,19 @@ export default function NewCampaignPage() {
             <input
               type="checkbox"
               checked={form.image_required}
-              onChange={toggleImageRequired}
+              onChange={() => setForm((f) => ({ ...f, image_required: !f.image_required }))}
               className="accent-[#377D73] mt-0.5"
             />
-            <div>
-              <span className="text-sm text-gray-800">Hệ thống hỗ trợ AI tạo ảnh giúp đăng kèm luôn</span>
-              <p className="text-[10px] text-gray-500 mt-0.5">Bật tùy chọn này, ảnh sẽ được tạo và gắn kèm tự động vào email và bài đăng</p>
-            </div>
+            <span className="text-sm text-gray-800">Hệ thống hỗ trợ AI tạo ảnh giúp đăng kèm</span>
           </label>
         </div>
 
         <div>
           <label className="label">Ghi chú thêm</label>
-          <textarea className="input min-h-[72px] resize-none" value={form.additional_notes} onChange={(e) => update("additional_notes", e.target.value)} placeholder="Nhấn mạnh nguyên liệu sạch, không dùng đường công nghiệp..." />
+          <textarea className="input min-h-[72px] resize-none" value={form.additional_notes} onChange={(e) => update("additional_notes", e.target.value)} />
         </div>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
-
-        <p className="text-xs text-gray-400">
-          Sau khi tạo, AI sẽ tự động phân tích và đề xuất lịch đăng theo từng kênh; lịch này sẽ xuất hiện trong mục Lịch marketing sau khi nội dung được duyệt.
-        </p>
 
         <div className="flex gap-3">
           <Link href="/campaigns" className="btn-secondary">Hủy</Link>
@@ -345,12 +319,140 @@ export default function NewCampaignPage() {
         </div>
       </form>
 
+      {/* Dialog hỏi trước khi nhập link */}
+      {showLinkDialog && (
+        <YesNoLinkDialog
+          onClose={() => setShowLinkDialog(false)}
+          onYes={() => {
+            // Đóng dialog → mở form nhập link
+            setShowLinkDialog(false);
+            setTimeout(() => setShowLinkModal(true), 50);
+          }}
+          onNo={(urls: string[]) => executeCreateCampaign(urls)}
+        />
+      )}
+
+      {/* Form nhập link */}
       <TrackingLinksModal
         isOpen={showLinkModal}
         onClose={() => setShowLinkModal(false)}
-        onConfirm={confirmCreateLinks}
-        onSkip={() => confirmCreateLinks([])}
+        onConfirm={(urls: string[]) => executeCreateCampaign(urls)}
+        onSkip={() => executeCreateCampaign([])}
       />
+    </div>
+  );
+}
+
+function YesNoLinkDialog({ onClose, onYes, onNo }: YesNoLinkDialogProps) {
+  const [step, setStep] = useState<"ask" | "links">("ask");
+  const [urls, setUrls] = useState<string[]>([]);
+  const [currentUrl, setCurrentUrl] = useState("");
+  const [urlError, setUrlError] = useState("");
+
+  useEffect(() => {
+    if (isOpen) {
+      setStep("ask");
+      setUrls([]);
+      setCurrentUrl("");
+      setUrlError("");
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  // Bước 2: nhập link
+  if (step === "links") {
+    function addUrl() {
+      const trimmed = currentUrl.trim();
+      if (!trimmed) { setUrlError("Nhập URL"); return; }
+      if (!trimmed.startsWith("http")) { setUrlError("URL phải bắt đầu bằng http:// hoặc https://"); return; }
+      if (urls.includes(trimmed)) { setUrlError("URL này đã thêm"); return; }
+      setUrls([...urls, trimmed]);
+      setCurrentUrl("");
+      setUrlError("");
+    }
+
+    return (
+      <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+        <div className="absolute inset-0 bg-black/50" onClick={() => { setStep("ask"); onClose(); }} />
+        <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <h2 className="font-semibold text-gray-900">Nhập link đích</h2>
+            <button onClick={() => { setStep("ask"); onClose(); }} className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-400">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <div className="p-6 space-y-3">
+            {urls.length > 0 && (
+              <div className="space-y-1.5">
+                {urls.map((url, i) => (
+                  <div key={i} className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg">
+                    <span className="text-[10px] text-gray-400 font-mono shrink-0">#{i + 1}</span>
+                    <p className="text-[11px] text-gray-700 truncate flex-1">{url}</p>
+                    <button onClick={() => setUrls(urls.filter((_, j) => j !== i))} className="text-gray-300 hover:text-red-500 shrink-0">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <input
+                type="url"
+                value={currentUrl}
+                onChange={(e) => { setCurrentUrl(e.target.value); setUrlError(""); }}
+                onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addUrl())}
+                placeholder="https://yoursite.com/landing"
+                className="input text-[12px] flex-1"
+              />
+              <button type="button" onClick={addUrl} className="px-3 text-xs font-medium text-white bg-[#377D73] rounded-lg hover:bg-[#2d635c] shrink-0">
+                Thêm
+              </button>
+            </div>
+            {urlError && <p className="text-[10px] text-red-500">{urlError}</p>}
+          </div>
+          <div className="px-6 py-4 border-t border-gray-200 flex gap-3 justify-end">
+            <button onClick={() => { setStep("ask"); onClose(); }} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors">
+              Hủy
+            </button>
+            <button onClick={() => onNo(urls)} className="px-4 py-2 text-sm font-medium text-white bg-[#377D73] rounded-lg hover:bg-[#2d635c] transition-colors">
+              {urls.length > 0 ? `Tạo với ${urls.length} link` : "Tiếp tục không có link"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Bước 1: hỏi yes/no
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden">
+        <div className="p-6 text-center space-y-3">
+          <div className="w-12 h-12 rounded-full bg-[#377D73]/10 flex items-center justify-center mx-auto">
+            <svg className="w-6 h-6 text-[#377D73]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+            </svg>
+          </div>
+          <h3 className="text-base font-semibold text-gray-900">Bạn có link hay địa chỉ trang web nào muốn bổ sung cho nội dung không?</h3>
+          <p className="text-xs text-gray-500">Hệ thống sẽ tạo link trung gian để theo dõi lượt click vào email hoặc bài đăng Facebook.</p>
+        </div>
+        <div className="flex gap-3 p-4 border-t border-gray-100">
+          <button
+            onClick={() => { onNo([]); onClose(); }}
+            className="flex-1 py-2.5 text-sm text-gray-600 hover:text-gray-800 border border-gray-200 rounded-lg transition-colors"
+          >
+            Không, bỏ qua
+          </button>
+          <button
+            onClick={() => setStep("links")}
+            className="flex-1 py-2.5 text-sm font-medium text-white bg-[#377D73] hover:bg-[#2d635c] rounded-lg transition-colors"
+          >
+            Có, nhập link
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
