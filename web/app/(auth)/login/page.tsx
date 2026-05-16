@@ -16,9 +16,14 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const res = await api.postNoAuth<{ access_token: string }>("/auth/login", { email, password });
+      const res = await api.postNoAuth<{ access_token: string; user: { role: string } }>("/auth/login", {
+        email: email.trim(),
+        password,
+      });
       setToken(res.access_token);
-      router.push("/dashboard");
+      const next = new URLSearchParams(window.location.search).get("next");
+      const fallback = ["admin", "staff", "super_admin"].includes(res.user.role) ? "/admin" : "/dashboard";
+      router.replace(next?.startsWith("/") ? next : fallback);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Đăng nhập thất bại");
     } finally {
