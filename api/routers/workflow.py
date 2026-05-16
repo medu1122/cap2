@@ -471,6 +471,8 @@ def _normalize_smart_contact_compose_output(raw: str, mode: str) -> str:
         "dưới đây là nội dung",
         "email:",
         "tin nhắn:",
+        "tiêu đề:",
+        "subject:",
     ):
         if lower_start.startswith(prefix):
             t = t[len(prefix) :].lstrip(" \n:：-")
@@ -1752,12 +1754,28 @@ async def _compose_single_email(
     base_subject = random.choice(purpose_subject)
     subject = f"{brand_name}: {base_subject}"
 
+    # Replace placeholders in body with actual values
+    _PLACEHOLDER_MAP = {
+        "{{HoVaTen}}": variables.get("HoVaTen") or variables.get("name") or name,
+        "{{name}}": variables.get("name") or variables.get("HoVaTen") or name,
+        "{{phone}}": variables.get("phone") or "",
+        "{{LanCuoiChiTra}}": variables.get("LanCuoiChiTra") or "",
+        "{{days_since_last}}": variables.get("days_since_last") or "",
+        "{{DichVuLanCuoiSuDung}}": variables.get("DichVuLanCuoiSuDung") or "",
+        "{{DichVuSuDungNhieuNhat}}": variables.get("DichVuSuDungNhieuNhat") or "",
+        "{{TongSoLanQuayLai}}": variables.get("TongSoLanQuayLai") or "",
+    }
+    rendered_body = body
+    for placeholder, value in _PLACEHOLDER_MAP.items():
+        if value:
+            rendered_body = rendered_body.replace(placeholder, str(value))
+
     return {
         "name": name,
         "email": email_addr,
         "phone": phone,
         "subject": subject,
-        "body": body,
+        "body": rendered_body,
     }
 
 

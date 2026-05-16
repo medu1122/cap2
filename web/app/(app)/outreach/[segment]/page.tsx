@@ -406,15 +406,14 @@ export default function OutreachSegmentPage() {
 
   // Restore emails from localStorage when list/segment changes
   useEffect(() => {
-    if (!activeListId || !segment) return;
+    if (!activeListId || !segment || !analysis) return;
     const key = `outreach_drafts_${activeListId}_${segment}`;
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem(key);
       if (saved) {
         try {
           const parsed = JSON.parse(saved) as EmailItem[];
-          // Only restore if we have analysis data
-          if (analysis && parsed.length > 0) {
+          if (parsed.length > 0) {
             setEmails(parsed);
           }
         } catch {

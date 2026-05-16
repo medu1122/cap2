@@ -407,14 +407,18 @@ async def execute_campaign_delivery(
     if delivery.get("status") == "sending":
         raise HTTPException(409, "Đang gửi, vui lòng chờ hoàn tất.")
 
-    list_r = await db.execute(
-        select(CustomerList).where(
-            CustomerList.id == body.customer_list_id,
-            CustomerList.user_id == current_user.id,
+    # Validate all customer lists exist and belong to user
+    if not body.customer_list_ids:
+        raise HTTPException(400, "Phải chọn ít nhất 1 danh sách khách hàng.")
+    for list_id in body.customer_list_ids:
+        list_r = await db.execute(
+            select(CustomerList).where(
+                CustomerList.id == list_id,
+                CustomerList.user_id == current_user.id,
+            )
         )
-    )
-    if not list_r.scalar_one_or_none():
-        raise HTTPException(400, "Danh sách khách không hợp lệ.")
+        if not list_r.scalar_one_or_none():
+            raise HTTPException(400, f"Danh sách không hợp lệ: {list_id}")
 
     if body.mode == "email":
         if "email" not in (campaign.channels or []):
@@ -424,49 +428,53 @@ async def execute_campaign_delivery(
                 503,
                 "Chưa cấu hình SMTP. Điền SMTP_HOST, SMTP_USER, SMTP_PASSWORD, SMTP_FROM_EMAIL trong .env.",
             )
-    batch_id = uuid.uuid4()
-    now = datetime.now(timezone.utc).isoformat()
-    await merge_campaign_delivery(
-        db,
-        campaign,
-        {
-            "status": "sending",
-            "mode": body.mode,
-            "customer_list_id": str(body.customer_list_id),
-            "last_batch_id": str(batch_id),
-            "started_at": now,
-            "last_error": None,
-        },
-    )
 
-    if body.mode == "email":
-        background_tasks.add_task(
-            run_email_delivery,
-            campaign_id,
-            body.customer_list_id,
-            current_user.id,
-            batch_id,
-            body.ab_test,
+    batch_ids: list[str] = []
+    for list_id in body.customer_list_ids:
+        batch_id = uuid.uuid4()
+        batch_ids.append(str(batch_id))
+        now = datetime.now(timezone.utc).isoformat()
+        await merge_campaign_delivery(
+            db,
+            campaign,
+            {
+                "status": "sending",
+                "mode": body.mode,
+                "customer_list_id": str(list_id),
+                "last_batch_id": str(batch_id),
+                "started_at": now,
+                "last_error": None,
+            },
         )
-    else:
-        hint = (
-            (campaign.offer_or_hook or "")
-            or (campaign.objective or "")
-            or (campaign.campaign_name or "")
-        )[:200]
-        background_tasks.add_task(
-            run_sms_simulation,
-            campaign_id,
-            body.customer_list_id,
-            current_user.id,
-            batch_id,
-            hint,
-        )
+
+        if body.mode == "email":
+            background_tasks.add_task(
+                run_email_delivery,
+                campaign_id,
+                list_id,
+                current_user.id,
+                batch_id,
+                body.ab_test,
+            )
+        else:
+            hint = (
+                (campaign.offer_or_hook or "")
+                or (campaign.objective or "")
+                or (campaign.campaign_name or "")
+            )[:200]
+            background_tasks.add_task(
+                run_sms_simulation,
+                campaign_id,
+                list_id,
+                current_user.id,
+                batch_id,
+                hint,
+            )
 
     return {
         "message": "Đã bắt đầu gửi",
         "campaign_id": str(campaign_id),
-        "batch_id": str(batch_id),
+        "batch_ids": batch_ids,
         "status": "sending",
     }
 

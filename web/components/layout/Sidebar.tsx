@@ -20,9 +20,9 @@ import { cn } from "@/lib/utils";
 
 const USER_NAV = [
   { href: "/dashboard", label: "Tổng quan", icon: LayoutDashboard },
+  { href: "/customer-lists", label: "Danh sách khách", icon: Users },
   { href: "/campaigns", label: "Chiến dịch", icon: Megaphone },
   { href: "/calendar", label: "Lịch marketing", icon: CalendarDays },
-  { href: "/customer-lists", label: "Danh sách khách", icon: Users },
   { href: "/insights", label: "Hỗ trợ phân tích", icon: BarChart3 },
 ];
 

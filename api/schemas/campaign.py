@@ -131,7 +131,7 @@ class CampaignDetail(BaseModel):
 
 class CampaignExecuteRequest(BaseModel):
     mode: Literal["email", "sms_demo"]
-    customer_list_id: uuid.UUID
+    customer_list_ids: list[uuid.UUID] = Field(default_factory=list, description="Danh sách ID của các list cần gửi")
     ab_test: bool = False
 
 

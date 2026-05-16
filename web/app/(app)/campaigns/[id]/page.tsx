@@ -654,7 +654,7 @@ export default function CampaignDetailPage() {
   const [deliverySummary, setDeliverySummary] = useState<DeliverySummary | null>(null);
   const [deliveryLoading, setDeliveryLoading] = useState(false);
   const [deliveryError, setDeliveryError] = useState("");
-  const [listId, setListId] = useState("");
+  const [selectedListIds, setSelectedListIds] = useState<string[]>([]);
   const [execBusy, setExecBusy] = useState(false);
   const [execError, setExecError] = useState("");
   const [showRevenueModal, setShowRevenueModal] = useState(false);
@@ -745,8 +745,10 @@ export default function CampaignDetailPage() {
   }, [sendingDelivery, loadDelivery]);
 
   useEffect(() => {
-    if (!listId && customerLists.length > 0) setListId(customerLists[0].id);
-  }, [customerLists, listId]);
+    if (selectedListIds.length === 0 && customerLists.length > 0) {
+      setSelectedListIds([customerLists[0].id]);
+    }
+  }, [customerLists, selectedListIds]);
 
   useEffect(() => {
     const isProcessing = campaign?.status === "running" || campaign?.status === "pending_agent";
@@ -805,11 +807,11 @@ export default function CampaignDetailPage() {
   }
 
   async function runCampaignExecution() {
-    if (!id || !listId) { setExecError("Chọn danh sách."); return; }
+    if (!id || selectedListIds.length === 0) { setExecError("Chọn ít nhất 1 danh sách."); return; }
     setExecError("");
     setExecBusy(true);
     try {
-      await api.post(`/campaigns/${id}/execute`, { mode: "email", customer_list_id: listId, ab_test: false });
+      await api.post(`/campaigns/${id}/execute`, { mode: "email", customer_list_ids: selectedListIds, ab_test: false });
       window.open(`/campaigns/${id}/sending`, "_blank");
     } catch (e: unknown) {
       const msg = e && typeof e === "object" && "message" in e ? String((e as { message: string }).message) : "Không thể chạy.";
@@ -1125,15 +1127,54 @@ export default function CampaignDetailPage() {
 
                     {/* Customer lists */}
                     {!customerListsLoading && customerListsError === "" && (
-                      <div className="flex items-center gap-2">
-                        <label className="text-[11px] text-gray-600 font-semibold w-20 shrink-0">Danh sách</label>
-                        <select className="input text-[11px] flex-1 bg-white" value={listId} onChange={(e) => setListId(e.target.value)}>
-                          {customerLists.length === 0 ? (
-                            <option value="">Chưa có danh sách</option>
-                          ) : customerLists.map((l) => (
-                            <option key={l.id} value={l.id}>{l.list_name}</option>
-                          ))}
-                        </select>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <label className="text-[11px] text-gray-600 font-semibold w-20 shrink-0">Danh sách</label>
+                          <select
+                            className="input text-[11px] flex-1 bg-white"
+                            value=""
+                            onChange={(e) => {
+                              if (e.target.value && !selectedListIds.includes(e.target.value)) {
+                                setSelectedListIds([...selectedListIds, e.target.value]);
+                              }
+                            }}
+                          >
+                            <option value="">+ Thêm danh sách...</option>
+                            {customerLists
+                              .filter((l) => !selectedListIds.includes(l.id))
+                              .map((l) => (
+                                <option key={l.id} value={l.id}>
+                                  {l.list_name} ({l.valid_records} khách)
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+                        {selectedListIds.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pl-[84px]">
+                            {selectedListIds.map((listId) => {
+                              const list = customerLists.find((l) => l.id === listId);
+                              return (
+                                <span
+                                  key={listId}
+                                  className="inline-flex items-center gap-1 px-2 py-1 bg-[#377D73]/10 border border-[#377D73]/30 text-[#377D73] text-[10px] font-medium rounded-full"
+                                >
+                                  {list?.list_name ?? listId}
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedListIds(selectedListIds.filter((id) => id !== listId))}
+                                    className="hover:text-red-500 transition-colors ml-0.5"
+                                    title="Xoá khỏi danh sách gửi"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {selectedListIds.length === 0 && (
+                          <p className="text-[10px] text-gray-400 pl-[84px]">Chưa chọn danh sách nào</p>
+                        )}
                       </div>
                     )}
 
@@ -1141,7 +1182,7 @@ export default function CampaignDetailPage() {
 
                     <div className="flex items-center gap-2">
                       <div className="w-20 shrink-0" />
-                      <button type="button" onClick={runCampaignExecution} disabled={execBusy || sendingDelivery || !listId || !hasEmailChannel}
+                      <button type="button" onClick={runCampaignExecution} disabled={execBusy || sendingDelivery || selectedListIds.length === 0 || !hasEmailChannel}
                         className="btn-primary text-[12px] py-2 px-5 font-semibold shadow-lg shadow-[#377D73]/30 flex items-center gap-2">
                         {execBusy || sendingDelivery ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
                         Chạy chiến dịch
