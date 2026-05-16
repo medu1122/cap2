@@ -1,13 +1,14 @@
 "use client";
 
-import Link from "next/link";
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Activity,
   BarChart3,
   CalendarDays,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Megaphone,
@@ -24,6 +25,7 @@ const USER_NAV = [
   { href: "/campaigns", label: "Chiến dịch", icon: Megaphone },
   { href: "/calendar", label: "Lịch marketing", icon: CalendarDays },
   { href: "/insights", label: "Hỗ trợ phân tích", icon: BarChart3 },
+  { href: "/account", label: "Tài khoản", icon: KeyRound },
 ];
 
 const ADMIN_NAV = [
@@ -31,6 +33,7 @@ const ADMIN_NAV = [
   { href: "/admin#users", label: "Người dùng", icon: Users },
   { href: "/admin#activity", label: "Hoạt động hệ thống", icon: Activity },
   { href: "/admin#settings", label: "Thiết lập", icon: Settings },
+  { href: "/account", label: "Tài khoản", icon: KeyRound },
 ];
 
 interface CurrentUser {

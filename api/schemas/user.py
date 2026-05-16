@@ -33,3 +33,10 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str
     user: UserOut
+
+
+class RegisterResponse(BaseModel):
+    email: str
+    message: str
+    email_sent: bool
+    expires_in_minutes: int

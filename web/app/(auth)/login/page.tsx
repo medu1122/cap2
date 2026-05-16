@@ -1,7 +1,8 @@
 "use client";
-import { useState } from "react";
+
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { api, setToken } from "@/lib/api-client";
 
 export default function LoginPage() {
@@ -32,7 +33,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <Image
@@ -40,14 +41,13 @@ export default function LoginPage() {
             alt="AIMAP"
             width={152}
             height={64}
-            className="mx-auto w-auto max-w-full object-contain"
-            style={{ height: "auto" }}
+            className="mx-auto h-auto w-auto max-w-full object-contain"
             priority
           />
-          <p className="text-sm text-gray-500 mt-2">AI-Powered Marketing Automation</p>
+          <p className="mt-2 text-sm text-gray-500">AI-Powered Marketing Automation</p>
         </div>
         <div className="card">
-          <h2 className="text-base font-semibold mb-6">Đăng nhập</h2>
+          <h2 className="mb-6 text-base font-semibold">Đăng nhập</h2>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="label">Email</label>
@@ -76,9 +76,11 @@ export default function LoginPage() {
               {loading ? "Đang đăng nhập..." : "Đăng nhập"}
             </button>
           </form>
-          <p className="mt-4 text-sm text-gray-500 text-center">
+          <p className="mt-4 text-center text-sm text-gray-500">
             Chưa có tài khoản?{" "}
-            <a href="/register" className="text-blue-600 hover:underline">Đăng ký</a>
+            <a href="/register" className="text-blue-600 hover:underline">
+              Đăng ký
+            </a>
           </p>
         </div>
       </div>
