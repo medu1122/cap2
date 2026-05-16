@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Clock, Users, Check, ChevronDown, Link2, Plus, Trash2, Copy, CheckCircle2 } from "lucide-react";
 import { api } from "@/lib/api-client";
@@ -15,6 +15,8 @@ interface Props {
   onTrackingLinksChange: (links: TrackingLinkInput[]) => void;
   onClose: () => void;
 }
+
+const VALID_CHANNELS = ["facebook_post", "email", "video_script"];
 
 const CHANNEL_OPTIONS = [
   { value: "email", label: "Email", icon: "📧" },
@@ -74,6 +76,12 @@ export default function StepPreview({
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [createdCampaignId, setCreatedCampaignId] = useState<string>("");
 
+  // Channels đã validated — chỉ gồm giá trị hợp lệ
+  const validChannels = useMemo(
+    () => (brief.channels || []).filter((c: string) => VALID_CHANNELS.includes(c)),
+    [brief.channels]
+  );
+
   // Auto-generate brief when entering this step
   useEffect(() => {
     if (!suggestion || genDone || brief.title) return;
@@ -119,7 +127,8 @@ export default function StepPreview({
 
   async function handleCreateAndBuild() {
     if (!suggestion || !genDone) return;
-    if (!brief.title.trim() || brief.channels.length === 0) {
+
+    if (!brief.title.trim() || validChannels.length === 0) {
       setError("Vui lòng điền tên chiến dịch và chọn ít nhất một kênh nội dung.");
       return;
     }
@@ -151,12 +160,12 @@ export default function StepPreview({
       });
       console.log("[StepPreview] CampaignIdea created:", ideaRes.id);
 
-      // 2. Create Campaign in DB with actual dates
+      // 2. Create Campaign in DB — strip invalid channels to prevent 422
       const campaignPayload: Record<string, unknown> = {
         brand_id: brandId,
         campaign_name: brief.title,
         objective: brief.objective,
-        channels: brief.channels,
+        channels: validChannels,
         product_or_service: brief.hook,
         deadline,
         additional_notes: brief.image_required
@@ -437,7 +446,7 @@ export default function StepPreview({
               className="accent-[#377D73] mt-0.5"
             />
             <div>
-              <p className="text-sm text-gray-800">Hệ thống hỗ trợ AI tạo ảnh giúp đăng kèm luôn</p>
+              <p className="text-sm text-gray-800">Hỗ trợ tạo ảnh bằng AI</p>
               <p className="text-[10px] text-gray-500 mt-0.5">Bật tùy chọn này, ảnh sẽ được tạo và gắn kèm tự động vào email và bài đăng</p>
             </div>
           </label>
@@ -532,7 +541,7 @@ export default function StepPreview({
       {/* Action button */}
       <button
         onClick={handleCreateAndBuild}
-        disabled={creating || !genDone || brief.channels.length === 0}
+        disabled={creating || !genDone || validChannels.length === 0}
         className="w-full btn-primary py-3 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
         {creating ? (

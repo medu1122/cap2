@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { Lightbulb, ChevronRight, Check } from "lucide-react";
 import { api } from "@/lib/api-client";
 import type { SuggestionItem } from "../CampaignAssistantModal";
@@ -59,10 +59,6 @@ export default function StepSuggestions({
     }
   }
 
-  function selectSuggestion(s: SuggestionItem) {
-    onSelectSuggestion(s);
-  }
-
   // Chưa load lần nào
   if (suggestions.length === 0 && !loading) {
     return (
@@ -82,7 +78,7 @@ export default function StepSuggestions({
     );
   }
 
-  // Loading
+  // Loading lần đầu (chưa có gì)
   if (loading) {
     return (
       <div className="space-y-3 text-center py-12">
@@ -95,16 +91,7 @@ export default function StepSuggestions({
     );
   }
 
-  // Loading more
-  if (loadingMore) {
-    return (
-      <div className="space-y-3 text-center py-8">
-        <div className="w-8 h-8 rounded-full border-2 border-[#377D73] border-t-transparent animate-spin mx-auto" />
-        <p className="text-xs text-gray-400">Đang thêm ý tưởng...</p>
-      </div>
-    );
-  }
-
+  // Đã load rồi → luôn render danh sách, spinner inline dưới cùng
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -112,12 +99,14 @@ export default function StepSuggestions({
         <h3 className="text-sm font-semibold text-gray-700">
           {suggestions.length} ý tưởng
         </h3>
-        <button
-          onClick={loadMoreSuggestions}
-          className="text-xs text-[#377D73] hover:text-[#2d6860] font-medium transition-colors"
-        >
-          Xem thêm
-        </button>
+        {!loadingMore && (
+          <button
+            onClick={loadMoreSuggestions}
+            className="text-xs text-[#377D73] hover:text-[#2d6860] font-medium transition-colors"
+          >
+            Xem thêm
+          </button>
+        )}
       </div>
 
       {error && (
@@ -131,7 +120,7 @@ export default function StepSuggestions({
           return (
             <button
               key={s.id}
-              onClick={() => selectSuggestion(s)}
+              onClick={() => onSelectSuggestion(s)}
               className={`w-full text-left p-3.5 rounded-xl border transition-all ${
                 isSelected
                   ? "border-[#377D73] bg-[#377D73]/5 shadow-sm"
@@ -170,6 +159,14 @@ export default function StepSuggestions({
             </button>
           );
         })}
+
+        {/* Spinner inline khi đang load thêm */}
+        {loadingMore && (
+          <div className="flex items-center gap-2 py-3 px-3.5 text-xs text-gray-400">
+            <div className="w-4 h-4 rounded-full border-2 border-[#377D73] border-t-transparent animate-spin shrink-0" />
+            <span>Đang thêm ý tưởng...</span>
+          </div>
+        )}
       </div>
 
       {/* Chọn */}
