@@ -1,7 +1,27 @@
 "use client";
 import { useState, useMemo } from "react";
-import { ChevronLeft, ChevronRight, X, CalendarDays, Mail, Facebook, Video } from "lucide-react";
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, addMonths, subMonths, isSameMonth, isToday, parseISO } from "date-fns";
+import {
+  ChevronLeft,
+  ChevronRight,
+  X,
+  CalendarDays,
+  Mail,
+  Facebook,
+  Video,
+} from "lucide-react";
+import {
+  format,
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
+  startOfWeek,
+  endOfWeek,
+  addMonths,
+  subMonths,
+  isSameMonth,
+  isToday,
+  parseISO,
+} from "date-fns";
 import { vi } from "date-fns/locale";
 import { CHANNEL_LABELS } from "@/lib/utils";
 
@@ -45,10 +65,14 @@ function ChannelDot({ channel }: { channel: string }) {
   );
 }
 
-export default function CalendarPreviewModal({ contentItems, isOpen, onClose }: CalendarPreviewModalProps) {
+export default function CalendarPreviewModal({
+  contentItems,
+  isOpen,
+  onClose,
+}: CalendarPreviewModalProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
 
-  // Chuyển content_items thành calendar preview items
+  // Chuyển content_items thành calendar preview items..
   const calendarItems = useMemo(() => {
     return contentItems
       .filter((item) => item.scheduled_date)
@@ -56,13 +80,16 @@ export default function CalendarPreviewModal({ contentItems, isOpen, onClose }: 
         const c = item.content_json || {};
         let preview = "";
         if (item.channel === "email") preview = (c.subject as string) || "";
-        else if (item.channel === "facebook_post") preview = (c.copy as string) || (c.body as string) || "";
-        else if (item.channel === "video_script") preview = (c.hook as string) || "";
-        
+        else if (item.channel === "facebook_post")
+          preview = (c.copy as string) || (c.body as string) || "";
+        else if (item.channel === "video_script")
+          preview = (c.hook as string) || "";
+
         return {
           date: item.scheduled_date!,
           channel: item.channel,
-          contentPreview: preview.slice(0, 50) + (preview.length > 50 ? "..." : ""),
+          contentPreview:
+            preview.slice(0, 50) + (preview.length > 50 ? "..." : ""),
         };
       })
       .sort((a, b) => a.date.localeCompare(b.date));
@@ -92,7 +119,10 @@ export default function CalendarPreviewModal({ contentItems, isOpen, onClose }: 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
       <div
         className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
@@ -104,8 +134,12 @@ export default function CalendarPreviewModal({ contentItems, isOpen, onClose }: 
               <CalendarDays size={20} className="text-white" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Xem trước lịch đăng bài</h2>
-              <p className="text-xs text-gray-500">Lịch trình nội dung của chiến dịch</p>
+              <h2 className="text-lg font-bold text-gray-900">
+                Xem trước lịch đăng bài
+              </h2>
+              <p className="text-xs text-gray-500">
+                Lịch trình nội dung của chiến dịch
+              </p>
             </div>
           </div>
           <button
@@ -118,13 +152,22 @@ export default function CalendarPreviewModal({ contentItems, isOpen, onClose }: 
 
         {/* Calendar Navigation */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/50">
-          <button onClick={prevMonth} className="w-8 h-8 rounded-lg hover:bg-gray-200 flex items-center justify-center transition-colors">
+          <button
+            onClick={prevMonth}
+            className="w-8 h-8 rounded-lg hover:bg-gray-200 flex items-center justify-center transition-colors"
+          >
             <ChevronLeft size={18} className="text-gray-600" />
           </button>
           <h3 className="text-sm font-semibold text-gray-800">
-            {format(currentDate, "MMMM yyyy", { locale: vi }).replace(/^\w/, (c) => c.toUpperCase())}
+            {format(currentDate, "MMMM yyyy", { locale: vi }).replace(
+              /^\w/,
+              (c) => c.toUpperCase(),
+            )}
           </h3>
-          <button onClick={nextMonth} className="w-8 h-8 rounded-lg hover:bg-gray-200 flex items-center justify-center transition-colors">
+          <button
+            onClick={nextMonth}
+            className="w-8 h-8 rounded-lg hover:bg-gray-200 flex items-center justify-center transition-colors"
+          >
             <ChevronRight size={18} className="text-gray-600" />
           </button>
         </div>
@@ -134,7 +177,10 @@ export default function CalendarPreviewModal({ contentItems, isOpen, onClose }: 
           {/* Weekday headers */}
           <div className="grid grid-cols-7 gap-1 mb-2">
             {["T2", "T3", "T4", "T5", "T6", "T7", "CN"].map((day) => (
-              <div key={day} className="text-center text-[10px] font-semibold text-gray-500 py-1 uppercase tracking-wider">
+              <div
+                key={day}
+                className="text-center text-[10px] font-semibold text-gray-500 py-1 uppercase tracking-wider"
+              >
                 {day}
               </div>
             ))}
@@ -157,18 +203,27 @@ export default function CalendarPreviewModal({ contentItems, isOpen, onClose }: 
                     ${isCurrentDay ? "ring-2 ring-[#377D73] ring-offset-1" : ""}
                   `}
                 >
-                  <div className={`text-center font-medium mb-1 ${isCurrentDay ? "w-6 h-6 bg-[#377D73] text-white rounded-full flex items-center justify-center mx-auto" : "text-gray-700"}`}>
+                  <div
+                    className={`text-center font-medium mb-1 ${isCurrentDay ? "w-6 h-6 bg-[#377D73] text-white rounded-full flex items-center justify-center mx-auto" : "text-gray-700"}`}
+                  >
                     {format(day, "d")}
                   </div>
                   <div className="space-y-0.5">
                     {dayItems.slice(0, 2).map((item, idx) => (
-                      <div key={idx} className="flex items-center gap-1 text-[9px] bg-gray-50 rounded px-1 py-0.5 truncate">
+                      <div
+                        key={idx}
+                        className="flex items-center gap-1 text-[9px] bg-gray-50 rounded px-1 py-0.5 truncate"
+                      >
                         <ChannelDot channel={item.channel} />
-                        <span className="truncate text-gray-600">{item.contentPreview}</span>
+                        <span className="truncate text-gray-600">
+                          {item.contentPreview}
+                        </span>
                       </div>
                     ))}
                     {dayItems.length > 2 && (
-                      <div className="text-[9px] text-gray-400 text-center">+{dayItems.length - 2} khác</div>
+                      <div className="text-[9px] text-gray-400 text-center">
+                        +{dayItems.length - 2} khác
+                      </div>
                     )}
                   </div>
                 </div>
@@ -195,7 +250,9 @@ export default function CalendarPreviewModal({ contentItems, isOpen, onClose }: 
 
         {/* Footer hint */}
         <div className="p-3 border-t border-gray-100 bg-gray-50/50 text-center">
-          <p className="text-[10px] text-gray-400">Đây là lịch xem trước. Chỉ hiển thị nội dung đã được lên lịch.</p>
+          <p className="text-[10px] text-gray-400">
+            Đây là lịch xem trước. Chỉ hiển thị nội dung đã được lên lịch.
+          </p>
         </div>
       </div>
     </div>
