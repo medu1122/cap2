@@ -235,6 +235,24 @@ function generateId(): string {
   return Math.random().toString(36).slice(2, 11);
 }
 
+function createTempChatMessage(content: string): ChatMessage {
+  return {
+    id: `temp-${Date.now()}-${generateId()}`,
+    role: "user",
+    content,
+    created_at: new Date().toISOString(),
+  };
+}
+
+function formatChatTime(value?: string): string {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function parseCsvText(text: string): { headers: string[]; rows: TableRow[] } {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (lines.length < 2) throw new Error("File CSV không có dữ liệu hợp lệ.");
@@ -2076,10 +2094,7 @@ function ChatPanel({
                           : "text-gray-400"
                       }`}
                     >
-                      {new Date(msg.created_at).toLocaleTimeString("vi-VN", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      {formatChatTime(msg.created_at)}
                     </p>
                   </div>
                 </div>
@@ -2378,6 +2393,17 @@ const [partialResult, setPartialResult] = useState<Partial<DeepAnalysisResult> |
         });
       }
 
+      let chatId: string | null = null;
+      try {
+        const chat = await api.post<{ id: string }>("/insights/chats", null, {
+          params: { data_source_id: sourceId },
+        });
+        chatId = chat.id;
+        await loadChatSession(chat.id);
+      } catch (chatError) {
+        console.warn("Chat session could not be created before analysis", chatError);
+      }
+
       // Run analysis
       const raw = await postNdjsonStream("/insights/a2a/deep-analysis-stream", {
         business_name: tableName,
@@ -2400,12 +2426,19 @@ const [partialResult, setPartialResult] = useState<Partial<DeepAnalysisResult> |
 
       setStreamProgress((p) => ({ ...p, success: true }));
 
-      // Create a chat session linked to this analysis result.
-      const chat = await api.post<{ id: string }>("/insights/chats", null, {
-        params: { data_source_id: sourceId, insight_run_id: result.run_id ?? "" },
-      });
-
-      await loadChatSession(chat.id);
+      if (!chatId) {
+        try {
+          const chat = await api.post<{ id: string }>("/insights/chats", null, {
+            params: { data_source_id: sourceId, insight_run_id: result.run_id ?? "" },
+          });
+          chatId = chat.id;
+          await loadChatSession(chat.id);
+        } catch (chatError) {
+          console.warn("Chat session could not be created after analysis", chatError);
+          setChatSession(null);
+          setError("Phân tích đã hoàn tất, nhưng chưa tạo được phiên chat. Vui lòng đăng nhập đúng tài khoản và chọn lại bảng đã lưu.");
+        }
+      }
 
       // Refresh data sources
       await loadDataSources();
@@ -2428,6 +2461,12 @@ const [partialResult, setPartialResult] = useState<Partial<DeepAnalysisResult> |
 
   async function handleSendMessage(content: string) {
     if (!chatSession) return;
+    const tempMessage = createTempChatMessage(content);
+    setChatSession((prev) => prev ? {
+      ...prev,
+      messages: [...prev.messages, tempMessage],
+    } : null);
+
     try {
       const result = await api.post<{
         user_message: ChatMessage;
@@ -2440,12 +2479,16 @@ const [partialResult, setPartialResult] = useState<Partial<DeepAnalysisResult> |
       setChatSession((prev) => prev ? {
         ...prev,
         messages: [
-          ...prev.messages,
+          ...prev.messages.filter((msg) => msg.id !== tempMessage.id),
           result.user_message,
           result.assistant_message,
         ],
       } : null);
     } catch (e) {
+      setChatSession((prev) => prev ? {
+        ...prev,
+        messages: prev.messages.filter((msg) => msg.id !== tempMessage.id),
+      } : null);
       setError(e instanceof Error ? e.message : "Không gửi được tin nhắn.");
     }
   }
