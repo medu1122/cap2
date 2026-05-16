@@ -323,12 +323,8 @@ export default function NewCampaignPage() {
       {showLinkDialog && (
         <YesNoLinkDialog
           onClose={() => setShowLinkDialog(false)}
-          onYes={() => {
-            // Đóng dialog → mở form nhập link
-            setShowLinkDialog(false);
-            setTimeout(() => setShowLinkModal(true), 50);
-          }}
-          onNo={(urls: string[]) => executeCreateCampaign(urls)}
+          onGoToLinks={() => setShowLinkModal(true)}
+          onSkip={() => executeCreateCampaign([])}
         />
       )}
 
@@ -343,88 +339,17 @@ export default function NewCampaignPage() {
   );
 }
 
-function YesNoLinkDialog({ onClose, onYes, onNo }: YesNoLinkDialogProps) {
-  const [step, setStep] = useState<"ask" | "links">("ask");
-  const [urls, setUrls] = useState<string[]>([]);
-  const [currentUrl, setCurrentUrl] = useState("");
-  const [urlError, setUrlError] = useState("");
+// ── Dialog hỏi có nhập link không ────────────────────────────────────────────
 
-  useEffect(() => {
-    if (isOpen) {
-      setStep("ask");
-      setUrls([]);
-      setCurrentUrl("");
-      setUrlError("");
-    }
-  }, [isOpen]);
+// ── Dialog hỏi có nhập link không ────────────────────────────────────────────
 
-  if (!isOpen) return null;
+interface YesNoLinkDialogProps {
+  onClose: () => void;
+  onGoToLinks: () => void;
+  onSkip: () => void;
+}
 
-  // Bước 2: nhập link
-  if (step === "links") {
-    function addUrl() {
-      const trimmed = currentUrl.trim();
-      if (!trimmed) { setUrlError("Nhập URL"); return; }
-      if (!trimmed.startsWith("http")) { setUrlError("URL phải bắt đầu bằng http:// hoặc https://"); return; }
-      if (urls.includes(trimmed)) { setUrlError("URL này đã thêm"); return; }
-      setUrls([...urls, trimmed]);
-      setCurrentUrl("");
-      setUrlError("");
-    }
-
-    return (
-      <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-        <div className="absolute inset-0 bg-black/50" onClick={() => { setStep("ask"); onClose(); }} />
-        <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-            <h2 className="font-semibold text-gray-900">Nhập link đích</h2>
-            <button onClick={() => { setStep("ask"); onClose(); }} className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-400">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
-            </button>
-          </div>
-          <div className="p-6 space-y-3">
-            {urls.length > 0 && (
-              <div className="space-y-1.5">
-                {urls.map((url, i) => (
-                  <div key={i} className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg">
-                    <span className="text-[10px] text-gray-400 font-mono shrink-0">#{i + 1}</span>
-                    <p className="text-[11px] text-gray-700 truncate flex-1">{url}</p>
-                    <button onClick={() => setUrls(urls.filter((_, j) => j !== i))} className="text-gray-300 hover:text-red-500 shrink-0">
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="flex gap-2">
-              <input
-                type="url"
-                value={currentUrl}
-                onChange={(e) => { setCurrentUrl(e.target.value); setUrlError(""); }}
-                onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addUrl())}
-                placeholder="https://yoursite.com/landing"
-                className="input text-[12px] flex-1"
-              />
-              <button type="button" onClick={addUrl} className="px-3 text-xs font-medium text-white bg-[#377D73] rounded-lg hover:bg-[#2d635c] shrink-0">
-                Thêm
-              </button>
-            </div>
-            {urlError && <p className="text-[10px] text-red-500">{urlError}</p>}
-          </div>
-          <div className="px-6 py-4 border-t border-gray-200 flex gap-3 justify-end">
-            <button onClick={() => { setStep("ask"); onClose(); }} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors">
-              Hủy
-            </button>
-            <button onClick={() => onNo(urls)} className="px-4 py-2 text-sm font-medium text-white bg-[#377D73] rounded-lg hover:bg-[#2d635c] transition-colors">
-              {urls.length > 0 ? `Tạo với ${urls.length} link` : "Tiếp tục không có link"}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Bước 1: hỏi yes/no
+function YesNoLinkDialog({ onClose, onGoToLinks, onSkip }: YesNoLinkDialogProps) {
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
@@ -440,13 +365,13 @@ function YesNoLinkDialog({ onClose, onYes, onNo }: YesNoLinkDialogProps) {
         </div>
         <div className="flex gap-3 p-4 border-t border-gray-100">
           <button
-            onClick={() => { onNo([]); onClose(); }}
+            onClick={() => { onSkip(); onClose(); }}
             className="flex-1 py-2.5 text-sm text-gray-600 hover:text-gray-800 border border-gray-200 rounded-lg transition-colors"
           >
             Không, bỏ qua
           </button>
           <button
-            onClick={() => setStep("links")}
+            onClick={() => { onGoToLinks(); onClose(); }}
             className="flex-1 py-2.5 text-sm font-medium text-white bg-[#377D73] hover:bg-[#2d635c] rounded-lg transition-colors"
           >
             Có, nhập link
@@ -456,3 +381,4 @@ function YesNoLinkDialog({ onClose, onYes, onNo }: YesNoLinkDialogProps) {
     </div>
   );
 }
+
