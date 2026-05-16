@@ -148,10 +148,29 @@ class CampaignOrchestrator:
                 # Collect all final content so we can feed it to Qwen later
                 written_content: list[tuple[str, dict]] = []  # (channel, content_json)
 
+                # Lấy tracking links của chiến dịch
+                try:
+                    tracking_resp = await client.get(f"{API_BASE}/internal/campaigns/{campaign_id}/tracking-links")
+                    tracking_resp.raise_for_status()
+                    all_tracking_links = tracking_resp.json()
+                except Exception:
+                    all_tracking_links = []
+
                 for idx, deliverable in enumerate(active_deliverables):
                     channel = deliverable["channel"]
 
-                    draft = await self.writer.run(campaign_id, deliverable, plan, brand_vault, step)
+                    # Lọc tracking links theo kênh
+                    if channel == "email":
+                        links = [l for l in all_tracking_links if l["link_type"] in ("email_click", None)]
+                    elif channel == "facebook_post":
+                        links = [l for l in all_tracking_links if l["link_type"] == "facebook_post"]
+                    else:
+                        links = []
+
+                    draft = await self.writer.run(
+                        campaign_id, deliverable, plan, brand_vault, step,
+                        tracking_links=links,
+                    )
                     step += 1
 
                     final = await self.critic.run(campaign_id, deliverable, draft, brand_vault, plan, step)

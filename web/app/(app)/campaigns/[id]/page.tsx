@@ -5,7 +5,8 @@ import Link from "next/link";
 import {
   ChevronLeft, Loader2, ImagePlus, Upload, Wand2, Mail, CalendarDays, Trash2, Calendar,
   Target, TrendingUp, Users, Megaphone, Clock, CheckCircle2, XCircle, AlertCircle,
-  Play, Pause, Send, BarChart3, Sparkles, FileText, Zap, Star, Award, Gift, Facebook, Video
+  Play, Pause, Send, BarChart3, Sparkles, FileText, Zap, Star, Award, Gift, Facebook, Video,
+  ExternalLink
 } from "lucide-react";
 import { API_BASE, api } from "@/lib/api-client";
 import { STATUS_LABELS, STATUS_COLORS, CHANNEL_LABELS, formatDate, cn } from "@/lib/utils";
@@ -13,6 +14,7 @@ import PerformanceSection from "@/components/campaign/PerformanceSection";
 import RevenueUploadModal from "@/components/campaign/RevenueUploadModal";
 import TrackingLinksManager from "@/components/campaign/TrackingLinksManager";
 import VideoScriptContent from "@/components/campaign/VideoScriptContent";
+import FacebookPostContent from "@/components/campaign/FacebookPostContent";
 
 interface AgentLog {
   id: string;
@@ -341,7 +343,7 @@ function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpda
 
 // ── ContentCard ───────────────────────────────────────────────────────────────
 
-function ContentCard({ item, onAction }: { item: ContentItem; onAction: () => void }) {
+function ContentCard({ item, campaignId, onAction }: { item: ContentItem; campaignId: string; onAction: () => void }) {
   const [rejectNote, setRejectNote] = useState("");
   const [showReject, setShowReject] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -449,117 +451,16 @@ function ContentCard({ item, onAction }: { item: ContentItem; onAction: () => vo
       </div>
 
       {item.channel === "facebook_post" && (
-        <div>
-          {editing ? (
-            <textarea
-              className="w-full text-xs text-gray-600 border border-blue-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#377D73]/30 bg-blue-50/30 resize-none leading-relaxed"
-              rows={5}
-              value={(d.copy as string) || ""}
-              onChange={(e) => setDraft({ ...draft, copy: e.target.value })}
-              placeholder="Nhập nội dung bài đăng..."
-            />
-          ) : (
-            <p
-              className="text-xs text-gray-600 whitespace-pre-line leading-relaxed cursor-text hover:bg-gray-50 rounded px-1 -mx-1 py-0.5 transition-colors"
-              onClick={isPending ? undefined : startEdit}
-              title={!isPending ? "Nhấn để chỉnh sửa" : undefined}
-            >{c.copy as string}</p>
-          )}
-          {editing ? (
-            <div className="mt-2">
-              <p className="text-[9px] text-gray-400 uppercase mb-1">Hashtags</p>
-              <textarea
-                className="w-full text-xs text-gray-600 border border-blue-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#377D73]/30 bg-blue-50/30 resize-none leading-relaxed"
-                rows={2}
-                value={((d.hashtags as string[]) || []).join(", ")}
-                onChange={(e) => setDraft({ ...draft, hashtags: e.target.value.split(",").map((h) => h.trim()).filter(Boolean) })}
-                placeholder="#hashtag1, #hashtag2, ..."
-              />
-              <div className="mt-2">
-                <p className="text-[9px] text-gray-400 uppercase mb-1">Link đích (cta_url)</p>
-                <input
-                  type="url"
-                  className="w-full text-xs text-gray-600 border border-blue-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#377D73]/30 bg-blue-50/30"
-                  value={(d.cta_url as string) || ""}
-                  onChange={(e) => setDraft({ ...draft, cta_url: e.target.value })}
-                  placeholder="https://..."
-                />
-              </div>
-              <div className="mt-2">
-                <p className="text-[9px] text-gray-400 uppercase mb-1">Link bài đăng Facebook (fb_post_url)</p>
-                <input
-                  type="url"
-                  className="w-full text-xs text-gray-600 border border-blue-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#377D73]/30 bg-blue-50/30"
-                  value={(d.fb_post_url as string) || ""}
-                  onChange={(e) => setDraft({ ...draft, fb_post_url: e.target.value })}
-                  placeholder="https://www.facebook.com/.../posts/..."
-                />
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1.5">
-                {(c.hashtags as string[] || []).map((h: string) => (
-                  <span key={h} className="text-[10px] text-[#377D73]">#{h.replace("#", "")}</span>
-                ))}
-              </div>
-              {/* fb_post_url — link bài đăng thực tế */}
-              {(c.fb_post_url as string) ? (
-                <div className="mt-2 pt-2 border-t border-indigo-100 flex items-center gap-2 bg-indigo-50/50 rounded px-2 py-1.5">
-                  <span className="text-[9px] text-indigo-600 uppercase tracking-wide font-semibold shrink-0">🔗 Facebook Post</span>
-                  <a
-                    href={(c.fb_post_url as string)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[10px] text-indigo-600 hover:underline truncate max-w-[200px]"
-                  >
-                    {(c.fb_post_url as string)}
-                  </a>
-                  <span className="ml-auto text-[9px] text-gray-400 shrink-0">↗</span>
-                </div>
-              ) : null}
-
-              {/* cta_url — link đích */}
-              {(c.cta_url as string) ? (
-                <div className="mt-2 pt-2 border-t border-gray-100 flex items-center gap-2">
-                  <span className="text-[9px] text-gray-400 uppercase tracking-wide font-medium shrink-0">Link</span>
-                  <a
-                    href={(c.cta_url as string)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[11px] text-blue-600 hover:underline truncate max-w-[220px]"
-                  >
-                    {(c.cta_url as string)}
-                  </a>
-                  <span className="ml-auto text-[9px] text-gray-400 shrink-0">↗</span>
-                </div>
-              ) : null}
-
-              {/* Ảnh đính kèm */}
-              {Array.isArray(c.images) && (c.images as string[]).length > 0 && (
-                <div className="mt-2 pt-2 border-t border-gray-100">
-                  <p className="text-[9px] text-gray-400 uppercase tracking-wide font-medium mb-1.5">Ảnh đính kèm</p>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {(c.images as string[]).map((url, idx) => (
-                      <div key={idx} className="relative group aspect-square rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={url}
-                          alt={`Ảnh ${idx + 1}`}
-                          className="w-full h-full object-cover cursor-pointer"
-                          onClick={() => window.open(url, "_blank")}
-                        />
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
-                          <span className="text-white opacity-0 group-hover:opacity-100 text-[9px] font-medium transition-opacity">Xem</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </div>
+        <FacebookPostContent
+          contentId={item.id}
+          campaignId={campaignId}
+          content={c}
+          editing={editing}
+          draft={draft}
+          setDraft={setDraft}
+          isPending={isPending}
+          startEdit={startEdit}
+        />
       )}
 
       {item.channel === "email" && (
@@ -1056,7 +957,7 @@ export default function CampaignDetailPage() {
                 {campaign.content_items.length > 0 && (
                   <div className="space-y-2">
                     {campaign.content_items.map((item) => (
-                      <ContentCard key={item.id} item={item} onAction={load} />
+                      <ContentCard key={item.id} item={item} campaignId={id as string} onAction={load} />
                     ))}
                   </div>
                 )}

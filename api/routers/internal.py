@@ -10,7 +10,9 @@ from sqlalchemy import select, func
 from core.database import get_db
 from models.campaign import Campaign
 from models.content_item import ContentItem
+from models.campaign_tracking_link import CampaignTrackingLink
 from models.agent_run_log import AgentRunLog
+from core.config import settings
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -324,3 +326,20 @@ async def create_log_internal(
     await db.commit()
     await db.refresh(log)
     return {"id": str(log.id)}
+
+
+@router.get("/campaigns/{campaign_id}/tracking-links")
+async def get_tracking_links_internal(
+    campaign_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Lấy tracking links của chiến dịch (gọi bởi agent service)."""
+    result = await db.execute(
+        select(CampaignTrackingLink).where(CampaignTrackingLink.campaign_id == campaign_id)
+    )
+    links = result.scalars().all()
+    base = settings.TRACKING_PUBLIC_BASE_URL or "https://aimap.vn"
+    return [
+        {"name": link.name, "url": f"{base}/r/{link.short_code}", "link_type": link.link_type}
+        for link in links
+    ]

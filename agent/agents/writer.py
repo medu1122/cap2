@@ -17,11 +17,13 @@ Thông điệp chính: {key_messages}
 Mục tiêu nội dung: {content_goal}
 Hướng giọng văn: {tone_hint}
 Call-to-action: {cta}
+{tracking_links_instruction}
 
 Trả về JSON:
 {{
-  "copy": "Nội dung bài đăng đầy đủ bằng tiếng Việt, 100-200 từ, dùng xuống dòng cho dễ đọc",
-  "hashtags": ["hashtag1", "hashtag2", "hashtag3", "hashtag4", "hashtag5"]
+  "copy": "Nội dung bài đăng đầy đủ bằng tiếng Việt, 100-200 từ, dùng xuống dòng cho dễ đọc. Nếu có tracking link, gắn trực tiếp vào trong copy (VD: 'Xem chi tiết tại đây: https://...')",
+  "hashtags": ["hashtag1", "hashtag2", "hashtag3", "hashtag4", "hashtag5"],
+  "cta_url": "https://..." hoặc "{tracking_link_url}" nếu có
 }}"""
 
 EMAIL_TEMPLATE = """<brand_context>
@@ -35,11 +37,14 @@ Thông điệp chính: {key_messages}
 Mục tiêu nội dung: {content_goal}
 Hướng giọng văn: {tone_hint}
 Call-to-action: {cta}
+{tracking_links_instruction}
 
 Trả về JSON:
 {{
   "subject": "Tiêu đề email, 40-60 ký tự, tiếng Việt",
-  "body": "Nội dung email đầy đủ tiếng Việt, 150-300 từ, dùng \\n\\n để xuống đoạn, có lời chào và ký tên"
+  "body": "Nội dung email đầy đủ tiếng Việt, 150-300 từ, dùng \\n\\n để xuống đoạn, có lời chào và ký tên. Nếu có tracking link, gắn trực tiếp vào body email (VD: '<a href=\"https://...\">Xem chi tiết</a>')",
+  "cta_text": "Text nút bấm (VD: Nhấn vào đây)",
+  "cta_url": "https://..." hoặc "{tracking_link_url}" nếu có
 }}"""
 
 VIDEO_SCRIPT_TEMPLATE = """<brand_context>
@@ -54,6 +59,7 @@ Thông điệp chính: {key_messages}
 Mục tiêu: {content_goal}
 Hướng giọng văn: {tone_hint}
 CTA: {cta}
+{tracking_links_instruction}
 
 ═ YÊU CẦU NGHIÊM NGẶT ═
 
@@ -187,10 +193,30 @@ TEMPLATES = {
 
 
 class WriterAgent:
-    async def run(self, campaign_id: str, deliverable: dict, plan: dict, brand_vault: dict, step: int) -> dict:
+    async def run(
+        self,
+        campaign_id: str,
+        deliverable: dict,
+        plan: dict,
+        brand_vault: dict,
+        step: int,
+        tracking_links: list[dict] | None = None,
+    ) -> dict:
         channel = deliverable["channel"]
         template = TEMPLATES.get(channel, FACEBOOK_TEMPLATE)
         brand_context = build_brand_context_block(brand_vault)
+
+        # Xây dựng tracking links instruction
+        tracking_instruction = ""
+        tracking_url = ""
+        if tracking_links:
+            lines = ["Các link theo dõi có sẵn (CHỈ dùng một trong các link bên dưới):"]
+            for link in tracking_links:
+                lines.append(f'  - {link["name"]}: {link["url"]}')
+                if not tracking_url:
+                    tracking_url = link["url"]
+            lines.append("Gắn link vào trong copy bài đăng, không dùng link gốc.")
+            tracking_instruction = "\n" + "\n".join(lines)
 
         user_prompt = template.format(
             brand_context=brand_context,
@@ -199,6 +225,8 @@ class WriterAgent:
             content_goal=deliverable.get("content_goal", ""),
             tone_hint=deliverable.get("tone_hint", ""),
             cta=deliverable.get("cta", ""),
+            tracking_links_instruction=tracking_instruction,
+            tracking_link_url=tracking_url,
         )
 
         raw, _ = await timed_agent_call(
