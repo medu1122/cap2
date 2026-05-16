@@ -534,6 +534,29 @@ function ContentCard({ item, onAction }: { item: ContentItem; onAction: () => vo
                   <span className="ml-auto text-[9px] text-gray-400 shrink-0">↗</span>
                 </div>
               ) : null}
+
+              {/* Ảnh đính kèm */}
+              {Array.isArray(c.images) && (c.images as string[]).length > 0 && (
+                <div className="mt-2 pt-2 border-t border-gray-100">
+                  <p className="text-[9px] text-gray-400 uppercase tracking-wide font-medium mb-1.5">Ảnh đính kèm</p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(c.images as string[]).map((url, idx) => (
+                      <div key={idx} className="relative group aspect-square rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={url}
+                          alt={`Ảnh ${idx + 1}`}
+                          className="w-full h-full object-cover cursor-pointer"
+                          onClick={() => window.open(url, "_blank")}
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                          <span className="text-white opacity-0 group-hover:opacity-100 text-[9px] font-medium transition-opacity">Xem</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -608,6 +631,29 @@ function ContentCard({ item, onAction }: { item: ContentItem; onAction: () => vo
               )}
             </div>
           ) : null}
+
+          {/* Ảnh đính kèm */}
+          {Array.isArray(c.images) && (c.images as string[]).length > 0 && (
+            <div className="mt-2 pt-2 border-t border-gray-100">
+              <p className="text-[9px] text-gray-400 uppercase tracking-wide font-medium mb-1.5">Ảnh đính kèm</p>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(c.images as string[]).map((url, idx) => (
+                  <div key={idx} className="relative group aspect-square rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={url}
+                      alt={`Ảnh ${idx + 1}`}
+                      className="w-full h-full object-cover cursor-pointer"
+                      onClick={() => window.open(url, "_blank")}
+                    />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                      <span className="text-white opacity-0 group-hover:opacity-100 text-[9px] font-medium transition-opacity">Xem</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -159,6 +159,9 @@ export default function StepPreview({
         channels: brief.channels,
         product_or_service: brief.hook,
         deadline,
+        additional_notes: brief.image_required
+          ? "[IMAGE_REQUIRED] Người dùng yêu cầu hỗ trợ AI tạo ảnh đăng kèm cho chiến dịch."
+          : "",
       };
       if (userPrefs.start_date) campaignPayload.start_date = userPrefs.start_date;
       const campaignRes = await api.post<{ id: string }>("/campaigns", campaignPayload);
@@ -201,7 +204,7 @@ export default function StepPreview({
     }
   }
 
-  function updateBrief(key: keyof BriefForm, value: string | string[]) {
+  function updateBrief(key: keyof BriefForm, value: string | string[] | boolean) {
     onBriefChange({ ...brief, [key]: value });
   }
 
@@ -422,6 +425,22 @@ export default function StepPreview({
               </label>
             ))}
           </div>
+        </div>
+
+        {/* Hỗ trợ AI tạo ảnh */}
+        <div className="border border-gray-200 rounded-xl p-4 bg-gray-50">
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={brief.image_required}
+              onChange={(e) => onBriefChange({ ...brief, image_required: e.target.checked })}
+              className="accent-[#377D73] mt-0.5"
+            />
+            <div>
+              <p className="text-sm text-gray-800">Hệ thống hỗ trợ AI tạo ảnh giúp đăng kèm luôn</p>
+              <p className="text-[10px] text-gray-500 mt-0.5">Bật tùy chọn này, ảnh sẽ được tạo và gắn kèm tự động vào email và bài đăng</p>
+            </div>
+          </label>
         </div>
       </div>
 

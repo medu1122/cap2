@@ -139,6 +139,74 @@ async def create_tracking_link(
     return TrackingLinkResponse.model_validate(link)
 
 
+class BulkTrackingLinksCreate(BaseModel):
+    """Tạo tracking links từ danh sách destination URL.
+    Mỗi URL tạo 2 link: email_click và facebook_post."""
+    destination_urls: list[str]
+
+
+@router.post("/{campaign_id}/tracking-links/bulk", response_model=list[TrackingLinkResponse], status_code=status.HTTP_201_CREATED)
+async def create_tracking_links_bulk(
+    campaign_id: UUID,
+    data: BulkTrackingLinksCreate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Tạo tracking links từ danh sách destination URL.
+    Mỗi URL tạo 2 short links: email_click và facebook_post."""
+    # Verify campaign belongs to user
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.user_id == current_user.id)
+    )
+    campaign = result.scalar_one_or_none()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Không tìm thấy chiến dịch")
+
+    created_links = []
+
+    for idx, dest_url in enumerate(data.destination_urls):
+        dest_url = dest_url.strip().rstrip("/")
+        if not dest_url:
+            continue
+        if not dest_url.startswith(("http://", "https://")):
+            raise HTTPException(status_code=400, detail=f"URL không hợp lệ: {dest_url}")
+
+        # Tạo 2 links cho mỗi destination: email_click và facebook_post
+        for link_type in ("email_click", "facebook_post"):
+            short_code = generate_short_code()
+            while True:
+                exists = await db.execute(
+                    select(CampaignTrackingLink).where(CampaignTrackingLink.short_code == short_code)
+                )
+                if not exists.scalar_one_or_none():
+                    break
+                short_code = generate_short_code()
+
+            link_name = f"Link #{idx + 1}"
+            if link_type == "email_click":
+                link_name = f"Link #{idx + 1} (Email)"
+            else:
+                link_name = f"Link #{idx + 1} (Facebook)"
+
+            link = CampaignTrackingLink(
+                campaign_id=campaign_id,
+                name=link_name,
+                destination_url=dest_url,
+                short_code=short_code,
+                click_count=0,
+                link_type=link_type,
+            )
+            db.add(link)
+            created_links.append(link)
+
+    await db.commit()
+    # Refresh all to get their IDs and created_at
+    for link in created_links:
+        await db.refresh(link)
+
+    return [TrackingLinkResponse.model_validate(link) for link in created_links]
+
+
 @router.put("/{campaign_id}/tracking-links/{link_id}", response_model=TrackingLinkResponse)
 async def update_tracking_link(
     campaign_id: UUID,

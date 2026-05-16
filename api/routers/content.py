@@ -1,9 +1,11 @@
+import asyncio
+import io
 import json
+import os
 import re
 import uuid
-import os
-from datetime import date
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import date, datetime, timezone
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update as sql_update
 from openai import AsyncOpenAI
@@ -17,6 +19,38 @@ from models.campaign_tracking_link import CampaignTrackingLink
 from schemas.campaign import ContentItemOut
 from core.config import settings
 from pydantic import BaseModel
+
+_openai = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
+
+_CLOUDINARY_ENABLED = bool(settings.CLOUDINARY_CLOUD_NAME and settings.CLOUDINARY_API_KEY and settings.CLOUDINARY_API_SECRET)
+_CLOUDINARY_FOLDER = settings.CLOUDINARY_FOLDER or "aimap/campaigns"
+_UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static", "uploads")
+_STATIC_BASE_URL = settings.STATIC_BASE_URL or "http://localhost:8000/static/uploads"
+
+
+async def _upload_to_cloudinary(content: bytes, public_id: str, filename: str) -> str:
+    def _do() -> dict:
+        file_obj = io.BytesIO(content)
+        file_obj.name = filename
+        import cloudinary.uploader  # type: ignore
+        return cloudinary.uploader.upload(
+            file_obj,
+            folder=_CLOUDINARY_FOLDER,
+            public_id=public_id,
+            overwrite=True,
+            resource_type="image",
+        )
+    result = await asyncio.to_thread(_do)
+    return str(result.get("secure_url") or result.get("url"))
+
+
+async def _save_local_image(content_id: str, content: bytes, extension: str) -> str:
+    os.makedirs(_UPLOAD_DIR, exist_ok=True)
+    filename = f"{content_id}_{int(datetime.now().timestamp())}.{extension}"
+    filepath = os.path.join(_UPLOAD_DIR, filename)
+    with open(filepath, "wb") as f:
+        f.write(content)
+    return f"{_STATIC_BASE_URL}/{filename}"
 
 _openai = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 
@@ -398,3 +432,76 @@ async def regenerate_content(
     await db.commit()
     await db.refresh(item)
     return item
+
+
+# ── Content Image Upload ────────────────────────────────────────────────────────
+
+async def _get_content_item_or_404(content_id: uuid.UUID, db: AsyncSession) -> ContentItem:
+    result = await db.execute(select(ContentItem).where(ContentItem.id == content_id))
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Content item not found")
+    return item
+
+
+@router.post("/{content_id}/images", response_model=dict)
+async def upload_content_image(
+    content_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    file: UploadFile = File(...),
+):
+    """Upload 1 hoặc nhiều ảnh và gắn vào content item (email hoặc facebook_post).
+    Mỗi file tối đa 10MB, chỉ chấp nhận image/*."""
+    item = await _get_content_item_or_404(content_id, db)
+    camp_result = await db.execute(
+        select(Campaign).where(Campaign.id == item.campaign_id, Campaign.user_id == current_user.id)
+    )
+    campaign = camp_result.scalar_one_or_none()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Content item not found")
+
+    if not (file.content_type or "").startswith("image/"):
+        raise HTTPException(400, "Chỉ chấp nhận file ảnh (jpg, png, webp...)")
+
+    allowed = {"jpg", "jpeg", "png", "webp", "gif"}
+    raw_name = file.filename or "upload"
+    ext = raw_name.rsplit(".", 1)[-1].lower() if "." in raw_name else "jpg"
+    if ext not in allowed:
+        raise HTTPException(400, f"Định dạng không hỗ trợ: .{ext}")
+
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(400, "File ảnh tối đa 10MB")
+
+    public_id = f"{content_id}_{int(datetime.now().timestamp())}"
+    if _CLOUDINARY_ENABLED:
+        image_url = await _upload_to_cloudinary(content, public_id, f"{public_id}.{ext}")
+    else:
+        image_url = await _save_local_image(str(content_id), content, ext)
+
+    existing_images: list[str] = list(item.content_json.get("images") or [])
+    existing_images.append(image_url)
+    item.content_json["images"] = existing_images
+    await db.commit()
+
+    return {"image_url": image_url, "images": existing_images, "storage": "cloudinary" if _CLOUDINARY_ENABLED else "local"}
+
+
+@router.delete("/{content_id}/images", response_model=dict)
+async def delete_content_image(
+    content_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Xóa toàn bộ ảnh của một content item."""
+    item = await _get_content_item_or_404(content_id, db)
+    camp_result = await db.execute(
+        select(Campaign).where(Campaign.id == item.campaign_id, Campaign.user_id == current_user.id)
+    )
+    if not camp_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Content item not found")
+
+    item.content_json["images"] = []
+    await db.commit()
+    return {"images": []}

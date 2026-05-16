@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, date
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 VALID_CHANNELS = ["facebook_post", "email", "video_script"]
 VALID_STATUSES = ["pending_agent", "running", "pending_approval", "approved", "partially_approved", "failed"]

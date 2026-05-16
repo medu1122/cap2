@@ -45,6 +45,7 @@ export type BriefForm = {
   hook: string;
   timing: string;
   customer_segment: string;
+  image_required: boolean;
 };
 
 const STEPS = ["intro", "suggestions", "userprefs", "preview"] as const;
@@ -78,6 +79,7 @@ export default function CampaignAssistantModal({ onClose }: Props) {
     hook: "",
     timing: "",
     customer_segment: "",
+    image_required: false,
   });
   const [trackingLinks, setTrackingLinks] = useState<TrackingLinkInput[]>([]);
 

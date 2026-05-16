@@ -24,6 +24,12 @@ interface TrackingLinkInput {
   destination_url: string;
 }
 
+interface CreatedLinkInfo {
+  short_code: string;
+  name: string;
+  link_type: string;
+}
+
 export default function NewCampaignPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -47,7 +53,7 @@ export default function NewCampaignPage() {
   const [loadingBrands, setLoadingBrands] = useState(true);
   const [suggesting, setSuggesting] = useState(false);
   const [showLinkModal, setShowLinkModal] = useState(false);
-  const [trackingLinks, setTrackingLinks] = useState<TrackingLinkInput[]>([]);
+  const [destUrls, setDestUrls] = useState<string[]>([]);
 
   useEffect(() => {
     api.get<BrandOption[]>("/brands")
@@ -129,12 +135,11 @@ export default function NewCampaignPage() {
     }));
   }
 
-  function confirmCreateLinks(links: TrackingLinkInput[]) {
-    setTrackingLinks(links);
-    executeCreateCampaign(links);
+  function confirmCreateLinks(urls: string[]) {
+    executeCreateCampaign(urls);
   }
 
-  async function executeCreateCampaign(links: TrackingLinkInput[]) {
+  async function executeCreateCampaign(urls: string[]) {
     setLoading(true);
     try {
       const normalizedSegment = form.source_customer_segment.trim().toLowerCase();
@@ -145,18 +150,17 @@ export default function NewCampaignPage() {
         source_customer_segment: segmentAllowed ? normalizedSegment : undefined,
         additional_notes: [
           form.additional_notes?.trim() || "",
-          form.image_required ? "[IMAGE_REQUIRED] Người dùng yêu cầu gợi ý prompt tạo ảnh cho chiến dịch." : "",
+          form.image_required ? "[IMAGE_REQUIRED] Người dùng yêu cầu hỗ trợ AI tạo ảnh đăng kèm cho chiến dịch." : "",
         ]
           .filter(Boolean)
           .join("\n"),
       };
       const res = await api.post<{ id: string }>("/campaigns", payload);
 
-      // Tạo tracking links nếu có
-      for (const link of links) {
-        await api.post(`/campaigns/${res.id}/tracking-links`, {
-          name: link.name,
-          destination_url: link.destination_url,
+      // Tạo tracking links bulk (email_click + facebook_post cho mỗi URL)
+      if (urls.length > 0) {
+        await api.post(`/campaigns/${res.id}/tracking-links/bulk`, {
+          destination_urls: urls,
         });
       }
 
@@ -308,14 +312,17 @@ export default function NewCampaignPage() {
         </div>
 
         <div className="border border-gray-200 bg-gray-50/60 p-3 rounded-none">
-          <label className="flex items-center gap-2 cursor-pointer">
+          <label className="flex items-start gap-2 cursor-pointer">
             <input
               type="checkbox"
               checked={form.image_required}
               onChange={toggleImageRequired}
-              className="accent-blue-600"
+              className="accent-[#377D73] mt-0.5"
             />
-            <span className="text-sm text-gray-800">Cần hệ thống gợi ý prompt tạo ảnh</span>
+            <div>
+              <span className="text-sm text-gray-800">Hệ thống hỗ trợ AI tạo ảnh giúp đăng kèm luôn</span>
+              <p className="text-[10px] text-gray-500 mt-0.5">Bật tùy chọn này, ảnh sẽ được tạo và gắn kèm tự động vào email và bài đăng</p>
+            </div>
           </label>
         </div>
 
@@ -343,7 +350,6 @@ export default function NewCampaignPage() {
         onClose={() => setShowLinkModal(false)}
         onConfirm={confirmCreateLinks}
         onSkip={() => confirmCreateLinks([])}
-        existingLinks={trackingLinks}
       />
     </div>
   );
