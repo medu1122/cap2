@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, select
+from sqlalchemy import delete, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -837,6 +837,28 @@ async def create_data_source(
         "id": str(source.id),
         "name": source.name,
     }
+
+
+@router.delete("/data-sources/{source_id}")
+async def delete_data_source(
+    source_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(InsightDataSource).where(
+            InsightDataSource.id == source_id,
+            InsightDataSource.user_id == current_user.id,
+        )
+    )
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(404, "Data source not found")
+
+    await db.execute(delete(InsightDataSource).where(InsightDataSource.id == source.id))
+    await db.commit()
+
+    return {"success": True, "id": str(source_id)}
 
 
 # =========================================================

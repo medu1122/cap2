@@ -2137,10 +2137,12 @@ function DataSourcePills({
   dataSources,
   activeSourceId,
   onSelect,
+  onDelete,
 }: {
   dataSources: DataSource[];
   activeSourceId: string | null;
   onSelect: (ds: DataSource) => void;
+  onDelete: (ds: DataSource) => void;
 }) {
   if (dataSources.length === 0) return null;
 
@@ -2148,19 +2150,37 @@ function DataSourcePills({
     <div className="flex flex-wrap gap-2 mb-4">
       <span className="text-sm font-medium text-gray-500 py-1">Bảng đã lưu:</span>
       {dataSources.map((ds) => (
-        <button
+        <div
           key={ds.id}
-          onClick={() => onSelect(ds)}
-          className={`text-sm px-3 py-1.5 rounded-lg border transition-all flex items-center gap-2 ${
+          className={`inline-flex items-center overflow-hidden rounded-lg border transition-all ${
             activeSourceId === ds.id
               ? "border-blue-500 bg-blue-50 text-blue-700"
               : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
           }`}
         >
-          <Table2 className="w-3.5 h-3.5" />
-          {ds.name}
-          <span className="text-xs text-gray-400">({ds.row_count})</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => onSelect(ds)}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm"
+          >
+            <Table2 className="w-3.5 h-3.5" />
+            <span>{ds.name}</span>
+            <span className="text-xs text-gray-400">({ds.row_count})</span>
+          </button>
+          <button
+            type="button"
+            aria-label={`Xóa bảng ${ds.name}`}
+            title="Xóa bảng"
+            onClick={() => onDelete(ds)}
+            className={`border-l px-2 py-2 transition-colors ${
+              activeSourceId === ds.id
+                ? "border-blue-100 text-blue-500 hover:bg-blue-100 hover:text-blue-700"
+                : "border-gray-100 text-gray-400 hover:bg-red-50 hover:text-red-600"
+            }`}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
       ))}
     </div>
   );
@@ -2493,6 +2513,36 @@ const [partialResult, setPartialResult] = useState<Partial<DeepAnalysisResult> |
     }
   }
 
+  async function handleDeleteDataSource(ds: DataSource) {
+    const confirmed = window.confirm(`Xóa bảng "${ds.name}"? Các đoạn chat liên quan cũng sẽ bị xóa.`);
+    if (!confirmed) return;
+
+    setError(null);
+    try {
+      await api.delete<{ success: boolean }>(`/insights/data-sources/${ds.id}`);
+      setDataSources((prev) => prev.filter((item) => item.id !== ds.id));
+      try {
+        localStorage.removeItem(`insights_result_${ds.id}`);
+      } catch {
+        // Ignore localStorage errors.
+      }
+
+      if (activeSourceId === ds.id) {
+        setActiveSourceId(null);
+        setColumns([]);
+        setRows([]);
+        setTableName("Bảng dữ liệu mới");
+        setTableSourceType("manual");
+        setAnalysisResult(null);
+        setPartialResult(null);
+        setChatSession(null);
+        setAppStep("input");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Không xóa được bảng đã lưu.");
+    }
+  }
+
   async function handleSelectDataSource(ds: DataSource) {
     setActiveSourceId(ds.id);
     setTableName(ds.name);
@@ -2551,6 +2601,7 @@ const [partialResult, setPartialResult] = useState<Partial<DeepAnalysisResult> |
           dataSources={dataSources}
           activeSourceId={activeSourceId}
           onSelect={handleSelectDataSource}
+          onDelete={handleDeleteDataSource}
         />
 
         {/* Input Step */}
