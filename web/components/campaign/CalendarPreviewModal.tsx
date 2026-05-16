@@ -72,7 +72,7 @@ export default function CalendarPreviewModal({
 }: CalendarPreviewModalProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
 
-  // Chuyển content_items thành calendar preview items.
+  // Chuyển content_items thành calendar preview items
   const calendarItems = useMemo(() => {
     return contentItems
       .filter((item) => item.scheduled_date)
