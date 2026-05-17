@@ -17,6 +17,7 @@ import VideoScriptContent from "@/components/campaign/VideoScriptContent";
 import FacebookPostContent from "@/components/campaign/FacebookPostContent";
 import { CampaignBuildingProgress } from "@/components/campaign/CampaignBuildingProgress";
 
+import CampaignDeploymentSection from "@/components/campaign/CampaignDeploymentSection";
 interface AgentLog {
   id: string;
   agent_name: string;
@@ -71,47 +72,6 @@ interface WorkflowCustomerList {
   total_records: number;
   valid_records: number;
 }
-
-interface ExecutionLogRow {
-  id: string;
-  batch_id: string;
-  recipient_name: string | null;
-  recipient_email: string | null;
-  recipient_phone: string | null;
-  channel: string;
-  status: string;
-  opened_at: string | null;
-  clicked_at: string | null;
-  sent_at: string | null;
-  ab_variant: string | null;
-  error_message: string | null;
-}
-
-interface DeliverySummary {
-  delivery: Record<string, unknown> | null;
-  metrics: {
-    total: number;
-    sent: number;
-    failed: number;
-    skipped: number;
-    opened: number;
-    clicked: number;
-    open_rate: number;
-    click_rate: number;
-    ab_summary: Record<string, Record<string, number>> | null;
-  };
-  logs: ExecutionLogRow[];
-  latest_batch_id: string | null;
-}
-
-const RECIPIENT_STATUS_LABELS: Record<string, string> = {
-  pending: "Đang chờ",
-  sent: "Đã gửi",
-  failed: "Thất bại",
-  skipped_no_email: "Bỏ qua",
-  skipped_no_phone: "Bỏ qua",
-};
-
 
 // ── Delete Confirmation Modal ─────────────────────────────────────────────────
 
@@ -694,9 +654,6 @@ export default function CampaignDetailPage() {
   const [customerLists, setCustomerLists] = useState<WorkflowCustomerList[]>([]);
   const [customerListsLoading, setCustomerListsLoading] = useState(true);
   const [customerListsError, setCustomerListsError] = useState("");
-  const [deliverySummary, setDeliverySummary] = useState<DeliverySummary | null>(null);
-  const [deliveryLoading, setDeliveryLoading] = useState(false);
-  const [deliveryError, setDeliveryError] = useState("");
   const [selectedListIds, setSelectedListIds] = useState<string[]>([]);
   const [execBusy, setExecBusy] = useState(false);
   const [execError, setExecError] = useState("");
@@ -739,19 +696,6 @@ export default function CampaignDetailPage() {
     api.get<Campaign>(`/campaigns/${id}`).then(setCampaign).catch(() => setCampaign(null));
   }, [id]);
 
-  const loadDelivery = useCallback(() => {
-    if (!id) return;
-    setDeliveryLoading(true);
-    setDeliveryError("");
-    api.get<DeliverySummary>(`/campaigns/${id}/delivery-summary`)
-      .then(setDeliverySummary)
-      .catch((e) => {
-        setDeliverySummary(null);
-        setDeliveryError("Không tải được dữ liệu gửi");
-      })
-      .finally(() => setDeliveryLoading(false));
-  }, [id]);
-
   const loadCustomerLists = useCallback(() => {
     setCustomerListsLoading(true);
     setCustomerListsError("");
@@ -775,17 +719,8 @@ export default function CampaignDetailPage() {
   useEffect(() => {
     const isProc = campaign?.status === "running" || campaign?.status === "pending_agent";
     if (isProc) return;
-    loadDelivery();
-  }, [campaign?.status, loadDelivery]);
-
-  const deliveryState = deliverySummary?.delivery as { status?: string; mode?: string; sms_preview?: string; last_error?: string } | undefined;
-  const sendingDelivery = deliveryState?.status === "sending";
-
-  useEffect(() => {
-    if (!sendingDelivery) return;
-    const t = setInterval(loadDelivery, 2000);
-    return () => clearInterval(t);
-  }, [sendingDelivery, loadDelivery]);
+    loadCustomerLists();
+  }, [campaign?.status, loadCustomerLists]);
 
   useEffect(() => {
     if (selectedListIds.length === 0 && customerLists.length > 0) {
@@ -1050,211 +985,12 @@ export default function CampaignDetailPage() {
 
             {/* RIGHT COLUMN - Actions & Stats */}
             <div className="lg:col-span-2 space-y-5">
-              {/* Triển khai */}
-              <div className="bg-gradient-to-br from-blue-50/50 via-white to-cyan-50/30 rounded-xl p-4 border border-blue-200/50 shadow-md">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="flex items-center justify-center w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-xl shadow-lg shadow-blue-200">
-                      <Send size={20} className="text-white" />
-                    </div>
-                    <h2 className="text-base font-bold text-gray-900">Triển khai</h2>
-                  </div>
-
-                  {/* Loading state */}
-                  {deliveryLoading && (
-                    <div className="space-y-3 animate-pulse">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="h-20 bg-gray-100 rounded-xl" />
-                        <div className="h-20 bg-gray-100 rounded-xl" />
-                        <div className="h-20 bg-gray-100 rounded-xl" />
-                        <div className="h-20 bg-gray-100 rounded-xl" />
-                      </div>
-                      <div className="h-32 bg-gray-100 rounded-xl" />
-                    </div>
-                  )}
-
-                  {/* Error state */}
-                  {deliveryError && !deliveryLoading && (
-                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
-                      <p className="text-sm text-red-600 font-medium">{deliveryError}</p>
-                      <button onClick={loadDelivery} className="mt-2 text-xs text-red-500 hover:underline">Thử lại</button>
-                    </div>
-                  )}
-
-                  {/* Metrics */}
-                  {!deliveryLoading && deliveryError === "" && deliverySummary && deliverySummary.metrics.total > 0 ? (
-                    <div className="grid grid-cols-2 gap-3 mb-4">
-                      <div className="bg-white rounded-xl p-4 text-center border-2 border-gray-100 shadow-sm">
-                        <p className="text-2xl font-bold text-gray-900">{deliverySummary.metrics.total}</p>
-                        <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Tổng</p>
-                      </div>
-                      <div className="bg-gradient-to-br from-[#377D73] to-[#2d6a61] rounded-xl p-4 text-center shadow-lg shadow-[#377D73]/30">
-                        <p className="text-2xl font-bold text-white">{deliverySummary.metrics.sent}</p>
-                        <p className="text-[10px] text-white/80 uppercase tracking-wider font-semibold">Đã gửi</p>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {/* Logs table moved to analytics page */}
-                  {/* !deliveryLoading && deliveryError === "" && deliverySummary && deliverySummary.logs.length > 0 ? (
-                    <div className="overflow-x-auto rounded-xl border border-blue-100/50 mb-4 bg-white shadow-sm">
-                      <table className="w-full text-[11px]">
-                        <thead>
-                          <tr className="bg-gradient-to-r from-blue-50 to-cyan-50 text-left text-gray-600">
-                            <th className="p-3 font-bold">Tên</th>
-                            <th className="p-3 font-bold">Liên hệ</th>
-                            <th className="p-3 font-bold">Trạng thái</th>
-                            <th className="p-3 font-bold text-center">Mở</th>
-                            <th className="p-3 font-bold text-center">Click</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {deliverySummary.logs.map((row) => (
-                            <tr key={row.id} className="border-t border-gray-100 hover:bg-blue-50/30 transition-colors">
-                              <td className="p-3 font-medium text-gray-900">{row.recipient_name ?? "—"}</td>
-                              <td className="p-3 text-gray-600 truncate max-w-[80px]">{row.channel === "sms_simulated" ? row.recipient_phone ?? "—" : row.recipient_email ?? "—"}</td>
-                              <td className="p-3">
-                                <span className={cn(
-                                  "badge text-[9px] font-semibold",
-                                  row.status === "sent" && "bg-[#377D73] text-white",
-                                  row.status === "failed" && "bg-red-100 text-red-700",
-                                  row.status === "pending" && "bg-amber-100 text-amber-700",
-                                  (row.status === "skipped_no_email" || row.status === "skipped_no_phone") && "bg-gray-100 text-gray-600",
-                                )}>
-                                  {RECIPIENT_STATUS_LABELS[row.status] ?? row.status}
-                                </span>
-                              </td>
-                              <td className="p-3 text-center">
-                                {row.opened_at ? <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#377D73]/10 text-[#377D73] font-bold">✓</span> : <span className="text-gray-300">—</span>}
-                              </td>
-                              <td className="p-3 text-center">
-                                {row.clicked_at ? <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#377D73]/10 text-[#377D73] font-bold">✓</span> : <span className="text-gray-300">—</span>}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : null */}
-
-                  {/* Execute form */}
-                  <div className="space-y-3 bg-white/60 rounded-xl p-4 border border-blue-100/50">
-                    {/* Customer lists loading */}
-                    {customerListsLoading && (
-                      <div className="flex items-center gap-2">
-                        <div className="w-20 shrink-0">
-                          <div className="h-4 bg-gray-200 rounded animate-pulse" />
-                        </div>
-                        <div className="flex-1 h-8 bg-gray-100 rounded animate-pulse" />
-                      </div>
-                    )}
-
-                    {/* Customer lists error */}
-                    {customerListsError && !customerListsLoading && (
-                      <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-2">
-                        <span className="text-[10px] text-red-600 flex-1">{customerListsError}</span>
-                        <button onClick={loadCustomerLists} className="text-[10px] text-red-500 hover:underline">Thử lại</button>
-                      </div>
-                    )}
-
-                    {/* Customer lists */}
-                    {!customerListsLoading && customerListsError === "" && (
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <label className="text-[11px] text-gray-600 font-semibold w-20 shrink-0">Danh sách</label>
-                          <select
-                            className="input text-[11px] flex-1 bg-white"
-                            value=""
-                            onChange={(e) => {
-                              if (e.target.value && !selectedListIds.includes(e.target.value)) {
-                                setSelectedListIds([...selectedListIds, e.target.value]);
-                              }
-                            }}
-                          >
-                            <option value="">+ Thêm danh sách...</option>
-                            {customerLists
-                              .filter((l) => !selectedListIds.includes(l.id))
-                              .map((l) => (
-                                <option key={l.id} value={l.id}>
-                                  {l.list_name} ({l.valid_records} khách)
-                                </option>
-                              ))}
-                          </select>
-                        </div>
-                        {selectedListIds.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 pl-[84px]">
-                            {selectedListIds.map((listId) => {
-                              const list = customerLists.find((l) => l.id === listId);
-                              return (
-                                <span
-                                  key={listId}
-                                  className="inline-flex items-center gap-1 px-2 py-1 bg-[#377D73]/10 border border-[#377D73]/30 text-[#377D73] text-[10px] font-medium rounded-full"
-                                >
-                                  {list?.list_name ?? listId}
-                                  <button
-                                    type="button"
-                                    onClick={() => setSelectedListIds(selectedListIds.filter((id) => id !== listId))}
-                                    className="hover:text-red-500 transition-colors ml-0.5"
-                                    title="Xoá khỏi danh sách gửi"
-                                  >
-                                    ×
-                                  </button>
-                                </span>
-                              );
-                            })}
-                          </div>
-                        )}
-                        {selectedListIds.length === 0 && (
-                          <p className="text-[10px] text-gray-400 pl-[84px]">Chưa chọn danh sách nào</p>
-                        )}
-                      </div>
-                    )}
-
-                    {!hasEmailChannel && <p className="text-[10px] text-amber-600 font-medium">Chiến dịch chưa gồm kênh Email.</p>}
-                    {!allContentApproved && campaign.content_items.length > 0 && (
-                      <p className="text-[10px] text-red-500 font-medium">
-                        Cần duyệt tất cả nội dung trước khi chạy chiến dịch.
-                      </p>
-                    )}
-
-                    <div className="flex items-center gap-2">
-                      <div className="w-20 shrink-0" />
-                      {!allContentApproved && campaign.content_items.length > 0 ? (
-                        <button type="button" onClick={() => router.push(`/campaigns/${id}`)}
-                          className="btn-secondary text-[12px] py-2 px-5 font-semibold flex items-center gap-2">
-                          <FileText size={12} />
-                          Duyệt nội dung
-                        </button>
-                      ) : (
-                        <button type="button" onClick={runCampaignExecution}
-                          disabled={execBusy || sendingDelivery || selectedListIds.length === 0 || !hasEmailChannel}
-                          className="btn-primary text-[12px] py-2 px-5 font-semibold shadow-lg shadow-[#377D73]/30 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
-                          {execBusy || sendingDelivery ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
-                          Chạy chiến dịch
-                        </button>
-                      )}
-                      {execError && <span className="text-[10px] text-red-500 font-medium">{execError}</span>}
-                    </div>
-
-                    {/* Auto schedule */}
-                    <div className="flex items-center justify-between pt-3 border-t border-blue-100/50">
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center justify-center w-8 h-8 bg-amber-100 rounded-lg">
-                          <Calendar size={14} className="text-amber-600" />
-                        </div>
-                        <span className="text-[12px] text-gray-700 font-semibold">Gửi tự động</span>
-                      </div>
-                      <button onClick={handleScheduleToggle} disabled={scheduling || !hasEmailChannel}
-                        className={cn("relative w-11 h-6 rounded-full transition-all duration-300 shadow-inner",
-                          autoSchedule ? "bg-[#377D73]" : "bg-gray-300",
-                          (!hasEmailChannel || scheduling) && "opacity-50"
-                        )}
-                      >
-                        <span className={cn("absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-lg transition-all duration-300", autoSchedule && "translate-x-5")} />
-                      </button>
-                    </div>
-                    {scheduleMsg && <p className="text-[10px] text-[#377D73] font-semibold text-right">{scheduleMsg}</p>}
-                  </div>
-                </div>
+              <CampaignDeploymentSection
+                campaignId={id as string}
+                channels={campaign.channels}
+                contentItems={campaign.content_items}
+                onNavigate={(path) => router.push(path)}
+              />
 
               {/* Ảnh */}
               <div className="bg-gradient-to-br from-orange-50/50 via-white to-amber-50/30 rounded-xl p-4 border border-orange-200/50 shadow-md">

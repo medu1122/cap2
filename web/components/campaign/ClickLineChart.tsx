@@ -1,8 +1,15 @@
 "use client";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  Cell,
 } from "recharts";
-import { formatDate } from "@/lib/utils";
 
 interface DataPoint {
   date: string;
@@ -16,42 +23,27 @@ interface Props {
 }
 
 export default function ClickLineChart({ data, loading }: Props) {
-  if (loading) {
-    return (
-      <div className="h-52 flex items-center justify-center">
-        <div className="text-gray-400 text-sm">Đang tải biểu đồ...</div>
-      </div>
-    );
-  }
-
-  if (data.length === 0) {
-    return (
-      <div className="h-52 flex items-center justify-center bg-gray-50 rounded-xl border border-gray-100">
-        <div className="text-center">
-          <div className="text-gray-300 text-3xl mb-2">📊</div>
-          <p className="text-sm text-gray-400">Chưa có dữ liệu click theo thời gian</p>
-        </div>
-      </div>
-    );
-  }
-
-  const chartData = data.map((d) => ({
-    ...d,
-    label: (() => {
-      try {
-        const [y, m, day] = d.date.split("-");
-        return `${day}/${m}`;
-      } catch {
-        return d.date;
-      }
-    })(),
-  }));
+  const chartData = data.length > 0
+    ? data.map((d) => ({
+        ...d,
+        label: (() => {
+          try {
+            const [y, m, day] = d.date.split("-");
+            return `${day}/${m}`;
+          } catch {
+            return d.date;
+          }
+        })(),
+      }))
+    : [
+        { date: "", label: "—", email_clicks: 0, facebook_clicks: 0 },
+      ];
 
   return (
     <div className="h-52 w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+        <BarChart data={chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }} barGap={4}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
           <XAxis
             dataKey="label"
             tick={{ fontSize: 10, fill: "#9ca3af" }}
@@ -65,6 +57,7 @@ export default function ClickLineChart({ data, loading }: Props) {
             allowDecimals={false}
           />
           <Tooltip
+            cursor={{ fill: "rgba(0,0,0,0.04)" }}
             contentStyle={{
               background: "#fff",
               border: "1px solid #e5e7eb",
@@ -82,9 +75,11 @@ export default function ClickLineChart({ data, loading }: Props) {
             labelFormatter={(_, payload) => {
               if (payload && payload[0]) {
                 const d = payload[0].payload as DataPoint & { label: string };
+                if (!d.date) return "Chưa có dữ liệu";
                 try {
                   const [y, m, day] = d.date.split("-");
-                  return `${formatDate(`${y}-${m}-${day}`)}`;
+                  const formatted = new Date(`${y}-${m}-${day}`).toLocaleDateString("vi-VN");
+                  return formatted;
                 } catch {
                   return d.date;
                 }
@@ -102,23 +97,9 @@ export default function ClickLineChart({ data, loading }: Props) {
               return labels[value] || value;
             }}
           />
-          <Line
-            type="monotone"
-            dataKey="email_clicks"
-            stroke="#7EB5A6"
-            strokeWidth={2}
-            dot={{ r: 3, fill: "#7EB5A6" }}
-            activeDot={{ r: 5 }}
-          />
-          <Line
-            type="monotone"
-            dataKey="facebook_clicks"
-            stroke="#93C5FD"
-            strokeWidth={2}
-            dot={{ r: 3, fill: "#93C5FD" }}
-            activeDot={{ r: 5 }}
-          />
-        </LineChart>
+          <Bar dataKey="email_clicks" fill="#7EB5A6" radius={[4, 4, 0, 0]} maxBarSize={32} />
+          <Bar dataKey="facebook_clicks" fill="#93C5FD" radius={[4, 4, 0, 0]} maxBarSize={32} />
+        </BarChart>
       </ResponsiveContainer>
     </div>
   );
