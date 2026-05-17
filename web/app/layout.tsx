@@ -9,7 +9,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="vi">
-      <body>{children}</body>
+      <body className="bg-cover bg-center bg-no-repeat bg-fixed" style={{ backgroundImage: "url('/images/bg-main.png')" }}>
+        {children}
+      </body>
     </html>
   );
 }

@@ -364,7 +364,7 @@ export default function CampaignAnalyticsPage() {
         api.get<PerformanceResponse>(`/campaigns/${selectedCampaignId}/performance`),
         api.get<Array<{ date: string; email_clicks: number; facebook_clicks: number }>>(
           `/campaigns/${selectedCampaignId}/performance/clicks-timeseries`
-        ).catch(() => [] as typeof tsData),
+        ).catch(() => [] as Array<{ date: string; email_clicks: number; facebook_clicks: number }>),
       ]);
       setSelectedPerformance(perfData.metrics);
       setClicksTimeSeries(tsData);
