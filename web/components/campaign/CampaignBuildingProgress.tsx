@@ -1,4 +1,5 @@
 "use client";
+import { useEffect, useState } from "react";
 import { Loader2, Check, Sparkles, Mail, Facebook, Video, ImagePlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +28,24 @@ export function CampaignBuildingProgress({ channels, agent_logs, campaign_plan_j
   const plan = campaign_plan_json || {};
   const planDone = agent_logs.some(l => l.agent_name === "strategist" && l.status === "success");
   const imageDone = !!(plan.image_prompt_final && plan.image_prompt_qwen);
+
+  // Theo dõi thời gian trôi qua
+  const [startTime] = useState(() => Date.now());
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startTime) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [startTime]);
+
+  function fmt(s: number) {
+    if (s < 60) return `${s}s`;
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return sec > 0 ? `${m}m ${sec}s` : `${m}m`;
+  }
 
   type StepKey = "plan" | "email" | "facebook_post" | "video_script" | "image";
 
@@ -80,6 +99,9 @@ export function CampaignBuildingProgress({ channels, agent_logs, campaign_plan_j
         <Loader2 size={14} className="text-[#377D73] animate-spin shrink-0" />
         <span className="text-sm font-medium text-[#377D73]">
           {allDone ? "Hoàn tất!" : "AI đang xây dựng chiến dịch..."}
+        </span>
+        <span className="ml-auto text-[11px] text-[#377D73]/60 font-mono tabular-nums">
+          {fmt(elapsed)}
         </span>
       </div>
       <div className="px-4 py-3 space-y-1.5">

@@ -92,6 +92,7 @@ _qwen = AsyncOpenAI(
 _openai = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 QWEN_MODEL   = os.getenv("QWEN_MODEL", "qwen2.5:14b")
 QWEN_TIMEOUT = int(os.getenv("QWEN_TIMEOUT", "180"))
+IMAGE_MODEL  = os.getenv("IMAGE_MODEL", "gpt-image-1")
 
 
 class SuggestRequest(BaseModel):
@@ -516,10 +517,18 @@ async def send_single_email(
         raise HTTPException(503, "Chưa cấu hình SMTP.")
 
     # Generate tracking token
+    # Lấy ảnh campaign để đính kèm
+    plan_images: list[str] = []
+    raw_images = campaign.campaign_plan_json.get("images") if campaign.campaign_plan_json else None
+    if isinstance(raw_images, list):
+        plan_images = [u for u in raw_images if u]
+    elif campaign.campaign_plan_json and campaign.campaign_plan_json.get("image_url"):
+        plan_images = [str(campaign.campaign_plan_json["image_url"])]
+
     token = secrets.token_urlsafe(24)
     from services.campaign_delivery_service import tracking_urls
     open_u, click_u = tracking_urls(token, None)
-    text_part, html_part = build_email_html(body.body, open_u, click_u, None, "Xem chi tiết")
+    text_part, html_part = build_email_html(body.body, open_u, click_u, None, "Xem chi tiết", image_urls=plan_images)
 
     await asyncio.to_thread(
         send_smtp_sync,
@@ -530,6 +539,7 @@ async def send_single_email(
         from_name=brand_name,
         from_addr=brand_reply_to,
         reply_to=brand_reply_to,
+        image_urls=plan_images,
     )
 
     return {"status": "sent", "to": body.to}
@@ -727,11 +737,35 @@ async def toggle_auto_schedule(
 
 # ── Image helpers ──────────────────────────────────────────────────────────────
 
+def _get_campaign_images(plan: dict | None) -> list[str]:
+    """Get images list from campaign plan, supporting both legacy single image and new array."""
+    if not plan:
+        return []
+    imgs = plan.get("images", [])
+    # Legacy: single image stored as image_url
+    legacy = plan.get("image_url")
+    if imgs and isinstance(imgs, list):
+        return [u for u in imgs if u]
+    if legacy:
+        return [legacy]
+    return []
+
+
+def _set_campaign_images(plan: dict, images: list[str]) -> dict:
+    """Set images array in plan, removing legacy image_url for consistency."""
+    plan["images"] = images
+    # Keep image_url for backward compat with existing code
+    plan["image_url"] = images[0] if images else None
+    return plan
+
+
 async def _save_campaign_image_url(campaign: Campaign, url: str, db: AsyncSession) -> None:
-    """Persist image_url into campaign_plan_json without losing existing keys."""
+    """Append a new image to campaign's images list."""
     current = dict(campaign.campaign_plan_json or {})
-    current["image_url"] = url
-    campaign.campaign_plan_json = current
+    images = _get_campaign_images(current)
+    if url not in images:
+        images.append(url)
+    campaign.campaign_plan_json = _set_campaign_images(current, images)
     await db.commit()
 
 
@@ -902,22 +936,33 @@ async def generate_campaign_image(
         campaign.campaign_plan_json = current_plan
         await db.commit()
 
-    # Generate image with DALL-E 3 (HD quality for best results)
+    # Generate image with gpt-image-1 (GPT Image 2)
     try:
         dall_e_response = await _openai.images.generate(
-            model="dall-e-3",
+            model=IMAGE_MODEL,
             prompt=dalle_prompt,
             size="1024x1024",
-            quality="hd",
+            quality="high",
             n=1,
         )
-        temp_url = dall_e_response.data[0].url
-        model_used = "dall-e-3"
+        # gpt-image-1 returns base64; DALL-E returns URL
+        first_img = dall_e_response.data[0]
+        if first_img.url:
+            temp_url = first_img.url
+        elif first_img.b64_json:
+            import base64
+            image_bytes = base64.b64decode(first_img.b64_json)
+            # Save directly without downloading
+        else:
+            raise HTTPException(503, "Không nhận được ảnh từ API")
+        model_used = IMAGE_MODEL
 
-        # Download image
-        async with httpx.AsyncClient(timeout=60) as client:
-            img_resp = await client.get(temp_url)
-            image_bytes = img_resp.content
+        if first_img.url:
+            # Download image from URL (DALL-E path)
+            async with httpx.AsyncClient(timeout=60) as client:
+                img_resp = await client.get(temp_url)
+                image_bytes = img_resp.content
+        # else: image_bytes already decoded from base64 above
     except Exception as exc:
         raise HTTPException(503, f"Không thể tạo ảnh: {exc}")
 
@@ -974,7 +1019,89 @@ async def upload_campaign_image(
 
     await _save_campaign_image_url(campaign, image_url, db)
     storage = "cloudinary" if _CLOUDINARY_ENABLED else "local"
-    return {"image_url": image_url, "storage": storage}
+    images = _get_campaign_images(campaign.campaign_plan_json)
+    return {"image_url": image_url, "images": images, "storage": storage}
+
+
+@router.post("/{campaign_id}/images/bulk-upload", response_model=dict)
+async def upload_campaign_images_bulk(
+    campaign_id: uuid.UUID,
+    files: list[UploadFile] = File(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload multiple images from the user's device and attach them to the campaign."""
+    allowed = {"jpg", "jpeg", "png", "webp", "gif"}
+    uploaded_urls: list[str] = []
+
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.user_id == current_user.id)
+    )
+    campaign = result.scalar_one_or_none()
+    if not campaign:
+        raise HTTPException(404, "Không tìm thấy chiến dịch")
+
+    for file in files:
+        content_type = file.content_type or ""
+        if not content_type.startswith("image/"):
+            continue
+        ext = (file.filename or "upload").rsplit(".", 1)[-1].lower()
+        if ext not in allowed:
+            ext = "jpg"
+        content = await file.read()
+        public_id = f"{campaign_id}_{int(datetime.now().timestamp())}_{len(uploaded_urls)}"
+        if _CLOUDINARY_ENABLED:
+            image_url = await _upload_to_cloudinary(content, public_id=public_id, filename=f"{public_id}.{ext}")
+        else:
+            image_url = await _save_local_image(campaign_id, content, ext)
+        await _save_campaign_image_url(campaign, image_url, db)
+        uploaded_urls.append(image_url)
+
+    storage = "cloudinary" if _CLOUDINARY_ENABLED else "local"
+    return {"images": uploaded_urls, "count": len(uploaded_urls), "storage": storage}
+
+
+@router.delete("/{campaign_id}/images/{index}", response_model=dict)
+async def delete_campaign_image_by_index(
+    campaign_id: uuid.UUID,
+    index: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Xóa 1 ảnh khỏi danh sách images của chiến dịch theo index."""
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.user_id == current_user.id)
+    )
+    campaign = result.scalar_one_or_none()
+    if not campaign:
+        raise HTTPException(404, "Không tìm thấy chiến dịch")
+
+    current = dict(campaign.campaign_plan_json or {})
+    images = _get_campaign_images(current)
+    if index < 0 or index >= len(images):
+        raise HTTPException(400, "Index không hợp lệ")
+
+    removed = images.pop(index)
+    campaign.campaign_plan_json = _set_campaign_images(current, images)
+    await db.commit()
+    return {"removed": removed, "images": images}
+
+
+@router.get("/{campaign_id}/images", response_model=dict)
+async def get_campaign_images(
+    campaign_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lấy danh sách ảnh của chiến dịch."""
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.user_id == current_user.id)
+    )
+    campaign = result.scalar_one_or_none()
+    if not campaign:
+        raise HTTPException(404, "Không tìm thấy chiến dịch")
+    images = _get_campaign_images(campaign.campaign_plan_json)
+    return {"images": images}
 
 
 # ── Performance & Revenue APIs ──────────────────────────────────────────────────
@@ -1075,6 +1202,52 @@ async def get_campaign_performance(
     )
 
     return CampaignPerformanceResponse(metrics=metrics, revenues=revenues)
+
+
+class ClickTimeSeriesPoint(BaseModel):
+    date: str  # ISO date string "YYYY-MM-DD"
+    email_clicks: int
+    facebook_clicks: int
+
+
+@router.get("/{campaign_id}/performance/clicks-timeseries", response_model=list[ClickTimeSeriesPoint])
+async def get_campaign_clicks_timeseries(
+    campaign_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Trả về số click theo ngày, phân tách email vs facebook link."""
+    result = await db.execute(
+        select(Campaign).where(Campaign.id == campaign_id, Campaign.user_id == current_user.id)
+    )
+    campaign = result.scalar_one_or_none()
+    if not campaign:
+        raise HTTPException(404, "Không tìm thấy chiến dịch")
+
+    logs_result = await db.execute(
+        select(CampaignExecutionLog).where(CampaignExecutionLog.campaign_id == campaign_id)
+    )
+    logs = list(logs_result.scalars().all())
+
+    # Group by date (date only, ignoring time)
+    from collections import defaultdict
+    daily: dict[str, dict[str, int]] = defaultdict(lambda: {"email_clicks": 0, "facebook_clicks": 0})
+
+    for log in logs:
+        if log.clicked_at is None:
+            continue
+        date_key = log.clicked_at.strftime("%Y-%m-%d")
+        if log.channel == "facebook":
+            daily[date_key]["facebook_clicks"] += 1
+        else:
+            daily[date_key]["email_clicks"] += 1
+
+    # Sort by date
+    sorted_dates = sorted(daily.keys())
+    return [
+        ClickTimeSeriesPoint(date=d, email_clicks=daily[d]["email_clicks"], facebook_clicks=daily[d]["facebook_clicks"])
+        for d in sorted_dates
+    ]
 
 
 @router.post("/{campaign_id}/revenue", status_code=201)

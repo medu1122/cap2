@@ -1,8 +1,10 @@
 "use client";
-import { Video } from "lucide-react";
+import { Loader2, Video } from "lucide-react";
 
+// VideoScriptContent receives parent props for its own loading state
 interface Props {
   content: Record<string, unknown>;
+  isPending?: boolean;
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -13,7 +15,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function VideoScriptContent({ content: d }: Props) {
+export default function VideoScriptContent({ content: d, isPending }: Props) {
   // Cấu trúc mới từ writer agent
   const scenes = d.scenes as Record<string, unknown>[] | undefined;
   const hooks = d.hooks as Record<string, string> | undefined;
@@ -34,7 +36,45 @@ export default function VideoScriptContent({ content: d }: Props) {
   const effectiveScenes = (Array.isArray(scenes) && scenes.length > 0) ? scenes : null;
   const effectiveOldScenes = (Array.isArray(oldScenes) && oldScenes.length > 0 && isOldFormat) ? oldScenes : null;
 
-  if (!effectiveScenes && !effectiveOldScenes && !hooks && !caption) {
+  const hasContent = !!(effectiveScenes || effectiveOldScenes || caption);
+
+  if (isPending && !hasContent) {
+    return (
+      <div className="space-y-3">
+        <div className="flex gap-2 animate-pulse">
+          <div className="h-5 w-16 bg-gray-200 rounded-full" />
+          <div className="h-5 w-12 bg-gray-200 rounded-full" />
+        </div>
+        <div className="border border-amber-200 bg-amber-50/40 rounded-lg p-2.5 space-y-2">
+          <div className="flex gap-2">
+            <div className="h-4 w-4 bg-amber-200 rounded" />
+            <div className="h-3 w-20 bg-amber-200 rounded" />
+          </div>
+          <div className="h-8 bg-amber-100 rounded" />
+        </div>
+        <div className="space-y-2">
+          {[1, 2].map((i) => (
+            <div key={i} className="border border-gray-200 bg-gray-50/60 rounded-lg p-3 space-y-2">
+              <div className="flex gap-2">
+                <div className="h-4 w-12 bg-[#377D73]/20 rounded" />
+                <div className="h-4 w-16 bg-gray-200 rounded" />
+              </div>
+              <div className="h-3 bg-gray-100 rounded w-3/4" />
+              <div className="h-3 bg-gray-100 rounded w-1/2" />
+            </div>
+          ))}
+        </div>
+        <div className="text-center">
+          <div className="inline-flex items-center gap-1.5 text-[11px] text-gray-400">
+            <Loader2 size={12} className="animate-spin" />
+            AI đang soạn kịch bản...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasContent) {
     return (
       <div className="text-center py-4">
         <Video size={20} className="text-gray-300 mx-auto mb-1" />
@@ -44,7 +84,7 @@ export default function VideoScriptContent({ content: d }: Props) {
   }
 
   // ─── RENDER: Format mới từ writer agent ─────────────────────────────────
-  if (effectiveScenes || hooks) {
+  if (effectiveScenes) {
     return (
       <div className="space-y-4">
 
@@ -62,49 +102,6 @@ export default function VideoScriptContent({ content: d }: Props) {
             </span>
           )}
         </div>
-
-        {/* Hooks */}
-        {hooks && (
-          <div>
-            <SectionLabel>Lựa chọn Hook (0-5s)</SectionLabel>
-            <div className="space-y-1.5">
-              {(["A", "B", "C"] as const).map((key) => {
-                const hookType = hooks[`${key}_type`] as string | undefined;
-                const hookText = hooks[`${key}_text`] as string | undefined;
-                const hookOverlay = hooks[`${key}_text_overlay`] as string | undefined;
-                const hookWhy = hooks[`${key}_why_viral`] as string | undefined;
-                if (!hookText) return null;
-                return (
-                  <div key={key} className="border border-amber-200 bg-amber-50/40 rounded-lg p-2.5">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                        key === "A" ? "bg-amber-200 text-amber-800" :
-                        key === "B" ? "bg-rose-100 text-rose-700" :
-                        "bg-blue-100 text-blue-700"
-                      }`}>
-                        {key}
-                      </span>
-                      {hookType && (
-                        <span className="text-[9px] text-gray-500 italic">{hookType}</span>
-                      )}
-                      {hookWhy && (
-                        <span className="text-[9px] text-green-600 ml-auto">✓ {hookWhy}</span>
-                      )}
-                    </div>
-                    {hookText && (
-                      <p className="text-xs text-gray-700 leading-relaxed">{hookText}</p>
-                    )}
-                    {hookOverlay && (
-                      <p className="text-[10px] text-gray-500 mt-1 italic">
-                        Overlay: <span className="text-gray-600 not-italic">{hookOverlay}</span>
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
         {/* Scenes */}
         {effectiveScenes && (
@@ -183,33 +180,6 @@ export default function VideoScriptContent({ content: d }: Props) {
                   </div>
                 );
               })}
-            </div>
-          </div>
-        )}
-
-        {/* CTA */}
-        {ctaSection && (
-          <div>
-            <SectionLabel>Call-to-action</SectionLabel>
-            <div className="grid grid-cols-2 gap-2">
-              {ctaSection.soft && (
-                <div className="border border-gray-200 bg-gray-50 rounded-lg p-2.5">
-                  <p className="text-[9px] text-gray-400 uppercase tracking-wide font-semibold mb-1">Soft CTA</p>
-                  <p className="text-[11px] text-gray-700 leading-relaxed">{ctaSection.soft}</p>
-                  {ctaSection.soft_text_overlay && (
-                    <p className="text-[10px] text-gray-400 mt-1">Overlay: {ctaSection.soft_text_overlay}</p>
-                  )}
-                </div>
-              )}
-              {ctaSection.hard && (
-                <div className="border border-[#377D73]/30 bg-[#377D73]/5 rounded-lg p-2.5">
-                  <p className="text-[9px] text-[#377D73] uppercase tracking-wide font-semibold mb-1">Hard CTA</p>
-                  <p className="text-[11px] text-gray-800 font-medium leading-relaxed">{ctaSection.hard}</p>
-                  {ctaSection.hard_text_overlay && (
-                    <p className="text-[10px] text-gray-400 mt-1">Overlay: {ctaSection.hard_text_overlay}</p>
-                  )}
-                </div>
-              )}
             </div>
           </div>
         )}

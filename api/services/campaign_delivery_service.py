@@ -11,6 +11,7 @@ import uuid
 from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.mime.image import MIMEImage
 from typing import Any
 
 from sqlalchemy import select
@@ -43,6 +44,7 @@ def build_email_html(
     click_url: str,
     ab_variant: str | None,
     cta_text: str = "Xem chi tiết ưu đãi",
+    image_urls: list[str] | None = None,
 ) -> tuple[str, str]:
     import re
     clean_body = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", body_text or "").strip()
@@ -63,10 +65,21 @@ def build_email_html(
       </a>
     </p>"""
     pixel = f'<img src="{html.escape(open_url)}" width="1" height="1" alt="" style="display:block;border:0" />'
+
+    # Ảnh đính kèm campaign
+    images_html = ""
+    if image_urls:
+        img_tags = "\n".join(
+            f'<img src="{html.escape(url)}" alt="Hình ảnh" style="max-width:100%;height:auto;border-radius:8px;margin:16px 0;display:block;" />'
+            for url in image_urls
+        )
+        images_html = f'<div style="margin: 16px 0;">{img_tags}</div>'
+
     html_part = f"""<!DOCTYPE html>
 <html><body>
 {ab_note}
 <div>{safe_body_html}</div>
+{images_html}
 {cta}
 {pixel}
 </body></html>"""
@@ -74,6 +87,8 @@ def build_email_html(
     if plain:
         plain += "\n\n"
     plain += f"{cta_text}: {click_url}\n"
+    if image_urls:
+        plain += "\nHình ảnh: " + "\n".join(image_urls) + "\n"
     return plain, html_part
 
 
@@ -92,6 +107,7 @@ def send_smtp_sync(
     from_name: str | None = None,
     from_addr: str | None = None,
     reply_to: str | None = None,
+    image_urls: list[str] | None = None,
 ) -> None:
     if not settings.SMTP_HOST or not settings.SMTP_USER:
         raise RuntimeError("Chưa cấu hình SMTP (SMTP_HOST / SMTP_USER).")
@@ -100,7 +116,7 @@ def send_smtp_sync(
         sender_addr = _parse_email(from_addr)
     else:
         sender_addr = _parse_email(settings.SMTP_FROM_EMAIL or settings.SMTP_USER)
-    msg = MIMEMultipart("alternative")
+    msg = MIMEMultipart("mixed")
     msg["Subject"] = subject
     # Custom display name: "Brand Name" <brand@email.com>
     if from_name:
@@ -111,8 +127,29 @@ def send_smtp_sync(
     # Reply-To = email thật của user (để khách reply đúng chỗ)
     if reply_to:
         msg["Reply-To"] = reply_to
-    msg.attach(MIMEText(text_body, "plain", "utf-8"))
-    msg.attach(MIMEText(html_body, "html", "utf-8"))
+
+    # Part 1: text + html
+    msg_alternative = MIMEMultipart("alternative")
+    msg_alternative.attach(MIMEText(text_body, "plain", "utf-8"))
+    msg_alternative.attach(MIMEText(html_body, "html", "utf-8"))
+    msg.attach(msg_alternative)
+
+    # Part 2: inline images (fetched from URL and embedded)
+    if image_urls:
+        import urllib.request
+        for idx, img_url in enumerate(image_urls):
+            try:
+                req = urllib.request.Request(img_url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    img_data = resp.read()
+                    content_type = resp.headers.get_content_type() or "image/jpeg"
+                img_part = MIMEImage(img_data, name=f"image_{idx}.jpg", _subtype=content_type.split("/")[-1])
+                img_part.add_header("Content-ID", f"<img_{idx}>")
+                img_part.add_header("Content-Disposition", "inline", filename=f"image_{idx}.jpg")
+                msg.attach(img_part)
+            except Exception:
+                # Nếu không fetch được ảnh, bỏ qua (không crash email)
+                pass
 
     with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=60) as smtp:
         smtp.starttls()
@@ -208,6 +245,14 @@ async def run_email_delivery(
             cta_text = str(cj.get("cta_text") or "Xem chi tiết ưu đãi")
             cta_url = str(cj.get("cta_url") or "").strip()
 
+            # Lấy ảnh campaign để đính kèm email
+            plan_images: list[str] = []
+            raw_images = campaign.campaign_plan_json.get("images") if campaign.campaign_plan_json else None
+            if isinstance(raw_images, list):
+                plan_images = [u for u in raw_images if u]
+            elif campaign.campaign_plan_json and campaign.campaign_plan_json.get("image_url"):
+                plan_images = [str(campaign.campaign_plan_json["image_url"])]
+
             # Lấy tracking links email_click của campaign (chỉ dùng cho CTA trong email)
             tracking_links_r = await db.execute(
                 select(CampaignTrackingLink)
@@ -263,7 +308,7 @@ async def run_email_delivery(
 
                 token = secrets.token_urlsafe(24)
                 open_u, click_u = tracking_urls(token, tracking_link.short_code if tracking_link else None)
-                text_part, html_part = build_email_html(body_use, open_u, click_u, ab_var, cta_text)
+                text_part, html_part = build_email_html(body_use, open_u, click_u, ab_var, cta_text, image_urls=plan_images)
 
                 log = CampaignExecutionLog(
                     batch_id=batch_id,
@@ -291,6 +336,7 @@ async def run_email_delivery(
                         from_name=brand_name,
                         from_addr=brand.contact_email if brand else None,
                         reply_to=brand_reply_to,
+                        image_urls=plan_images,
                     )
                     log.status = "sent"
                     log.sent_at = datetime.now(timezone.utc)

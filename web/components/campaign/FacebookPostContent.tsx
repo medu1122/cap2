@@ -19,6 +19,7 @@ interface Props {
   setDraft: (d: Record<string, unknown>) => void;
   isPending: boolean;
   startEdit: () => void;
+  campaignImages?: string[];
 }
 
 export default function FacebookPostContent({
@@ -30,8 +31,10 @@ export default function FacebookPostContent({
   setDraft,
   isPending,
   startEdit,
+  campaignImages = [],
 }: Props) {
   const [fbLinks, setFbLinks] = useState<TrackingLink[]>([]);
+  const [lightboxImg, setLightboxImg] = useState<string | null>(null);
 
   useEffect(() => {
     if (!campaignId) return;
@@ -113,7 +116,7 @@ export default function FacebookPostContent({
                 href={`${baseUrl}/r/${fbLinks[0].short_code}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[11px] text-[#377D73] hover:underline truncate flex items-center gap-1"
+                className="text-[11px] text-[#377D73] hover:underline flex items-center gap-1 break-all"
               >
                 {baseUrl}/r/{fbLinks[0].short_code}
                 <ExternalLink size={9} />
@@ -130,7 +133,7 @@ export default function FacebookPostContent({
                 href={(c.fb_post_url as string)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[11px] text-blue-600 hover:underline truncate flex items-center gap-1"
+                className="text-[11px] text-blue-600 hover:underline flex items-center gap-1 break-all"
               >
                 {(c.fb_post_url as string)}
                 <ExternalLink size={9} />
@@ -146,7 +149,7 @@ export default function FacebookPostContent({
                 href={(c.cta_url as string)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[11px] text-blue-600 hover:underline truncate flex items-center gap-1"
+                className="text-[11px] text-blue-600 hover:underline flex items-center gap-1 break-all"
               >
                 {(c.cta_url as string)}
                 <ExternalLink size={9} />
@@ -154,20 +157,81 @@ export default function FacebookPostContent({
             </div>
           ) : null}
 
-          {/* Ảnh đính kèm */}
-          {Array.isArray(c.images) && (c.images as string[]).length > 0 && (
+          {/* Ảnh đính kèm - style Facebook thật */}
+          {campaignImages.length > 0 && !editing && (
             <div className="mt-2 pt-2 border-t border-gray-100">
-              <p className="text-[9px] text-gray-400 uppercase tracking-wide font-medium mb-1.5">Ảnh đính kèm</p>
+              {campaignImages.length === 1 && (
+                <div
+                  className="relative rounded-lg overflow-hidden border border-gray-200 bg-gray-50 cursor-pointer group"
+                  onClick={() => setLightboxImg(campaignImages[0])}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={campaignImages[0]} alt="Hình ảnh chiến dịch"
+                    className="w-full object-cover bg-gray-100"
+                    style={{ maxHeight: 320 }}
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                </div>
+              )}
+              {campaignImages.length === 2 && (
+                <div className="grid grid-cols-2 gap-0.5 rounded-lg overflow-hidden border border-gray-200">
+                  {campaignImages.map((url, idx) => (
+                    <div key={idx} className="relative cursor-pointer group" onClick={() => setLightboxImg(url)}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={url} alt={`Ảnh ${idx + 1}`} className="w-full object-cover bg-gray-100"
+                        style={{ height: 200 }}
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                    </div>
+                  ))}
+                </div>
+              )}
+              {campaignImages.length >= 3 && (
+                <div className="grid grid-cols-3 gap-0.5 rounded-lg overflow-hidden border border-gray-200">
+                  {campaignImages.slice(0, 3).map((url, idx) => (
+                    <div key={idx} className="relative cursor-pointer group"
+                      style={{ height: idx === 0 ? 200 : 100, gridRow: idx === 0 ? "span 2" : "span 1" }}
+                      onClick={() => setLightboxImg(url)}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={url} alt={`Ảnh ${idx + 1}`} className="w-full h-full object-cover bg-gray-100"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                      {idx === 2 && campaignImages.length > 3 && (
+                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                          <span className="text-white font-bold text-lg">+{campaignImages.length - 3}</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {lightboxImg && (
+                <div className="fixed inset-0 z-[300] bg-black/80 flex items-center justify-center p-4"
+                  onClick={() => setLightboxImg(null)}>
+                  <button className="absolute top-4 right-4 p-2 text-white hover:bg-white/10 rounded-full"
+                    onClick={() => setLightboxImg(null)}>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={lightboxImg} alt="Xem ảnh"
+                    className="max-w-full max-h-full object-contain rounded-lg"
+                    onClick={(e) => e.stopPropagation()} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Ảnh từ content (legacy) */}
+          {campaignImages.length === 0 && Array.isArray(c.images) && (c.images as string[]).length > 0 && !editing && (
+            <div className="mt-2 pt-2 border-t border-gray-100">
               <div className="grid grid-cols-3 gap-1.5">
                 {(c.images as string[]).map((url, idx) => (
                   <div key={idx} className="relative group aspect-square rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={url}
-                      alt={`Ảnh ${idx + 1}`}
-                      className="w-full h-full object-cover cursor-pointer"
-                      onClick={() => window.open(url, "_blank")}
-                    />
+                    <img src={url} alt={`Ảnh ${idx + 1}`} className="w-full h-full object-cover cursor-pointer"
+                      onClick={() => setLightboxImg(url)} />
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
                       <span className="text-white opacity-0 group-hover:opacity-100 text-[9px] font-medium transition-opacity">Xem</span>
                     </div>

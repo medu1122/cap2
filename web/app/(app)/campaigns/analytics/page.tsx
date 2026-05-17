@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { STATUS_LABELS, CHANNEL_LABELS, formatDate } from "@/lib/utils";
+import ClickLineChart from "@/components/campaign/ClickLineChart";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
@@ -119,7 +120,7 @@ function ChannelSection({
   openRate,
   clickRate,
   iconBg,
-  iconColor,
+  unit = "email",
 }: {
   label: string;
   icon: React.ReactNode;
@@ -130,7 +131,7 @@ function ChannelSection({
   openRate: number;
   clickRate: number;
   iconBg: string;
-  iconColor: string;
+  unit?: string;
 }) {
   const empty = sent === 0;
 
@@ -143,7 +144,7 @@ function ChannelSection({
         </div>
         <div>
           <p className="text-sm font-bold text-gray-800">{label}</p>
-          <p className="text-[10px] text-gray-400">{sent} email</p>
+          <p className="text-[10px] text-gray-400">{sent} {unit}</p>
         </div>
       </div>
 
@@ -221,6 +222,108 @@ function ChannelSection({
   );
 }
 
+function FacebookSection({
+  sent,
+  opened,
+  clicked,
+  linkClicks,
+  openRate,
+  clickRate,
+}: {
+  sent: number;
+  opened: number;
+  clicked: number;
+  linkClicks: number;
+  openRate: number;
+  clickRate: number;
+}) {
+  const empty = sent === 0;
+
+  return (
+    <div className="border border-[#377D73]/20 rounded-xl overflow-hidden">
+      {/* Section Header - Facebook style */}
+      <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-blue-50/50 to-transparent">
+        <div className="w-9 h-9 rounded-full flex items-center justify-center bg-blue-100">
+          <Facebook size={16} className="text-blue-600" />
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-bold text-gray-800">Facebook</p>
+          <p className="text-[10px] text-gray-400">{sent} post</p>
+        </div>
+        {sent > 0 && (
+          <span className="text-[10px] font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+            Đang chạy
+          </span>
+        )}
+      </div>
+
+      {empty ? (
+        <div className="px-5 py-8 text-center">
+          <p className="text-xs text-gray-400">Chưa có dữ liệu post</p>
+        </div>
+      ) : (
+        <div className="px-5 py-4 space-y-4">
+          {/* KPI Row */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-gray-50 rounded-lg p-3 text-center border border-gray-100">
+              <p className="text-xl font-bold text-gray-700">{sent.toLocaleString()}</p>
+              <p className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Post</p>
+            </div>
+            <div className="bg-blue-50 rounded-lg p-3 text-center border border-blue-100">
+              <p className="text-xl font-bold text-blue-600">{opened.toLocaleString()}</p>
+              <p className="text-[9px] text-blue-400 uppercase tracking-wider font-semibold">Lượt xem</p>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3 text-center border border-gray-100">
+              <p className="text-xl font-bold text-gray-700">{clicked.toLocaleString()}</p>
+              <p className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Click</p>
+            </div>
+          </div>
+
+          {/* Open Rate Bar */}
+          <div>
+            <div className="flex justify-between text-[11px] text-gray-500 mb-1.5">
+              <span>Tỷ lệ xem</span>
+              <span className="font-semibold text-blue-500">{openRate.toFixed(1)}%</span>
+            </div>
+            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-full bg-blue-400 rounded-full transition-all" style={{ width: `${Math.min(openRate, 100)}%` }} />
+            </div>
+          </div>
+
+          {/* Click Rate Bar */}
+          <div>
+            <div className="flex justify-between text-[11px] text-gray-500 mb-1.5">
+              <span>Tỷ lệ click</span>
+              <span className="font-semibold text-blue-500">{clickRate.toFixed(1)}%</span>
+            </div>
+            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-full bg-blue-300 rounded-full transition-all" style={{ width: `${Math.min(clickRate, 100)}%` }} />
+            </div>
+          </div>
+
+          {/* Funnel */}
+          <div className="pt-2 space-y-2">
+            <FunnelBar label="Đã post" value={sent} total={sent} color="bg-gray-300" />
+            <FunnelBar label="Lượt xem" value={opened} total={sent} color="bg-blue-400" />
+            <FunnelBar label="Click" value={clicked} total={sent} color="bg-blue-300" />
+          </div>
+
+          {/* Link Clicks */}
+          {linkClicks > 0 && (
+            <div className="flex items-center justify-between px-3 py-2 bg-blue-50 rounded-lg border border-blue-100">
+              <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                <Link2 size={11} className="text-blue-500" />
+                <span>Link clicks</span>
+              </div>
+              <span className="text-sm font-bold text-blue-600">{linkClicks.toLocaleString()}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Main Page ─────────────────────────────────────────────────────────── */
 
 export default function CampaignAnalyticsPage() {
@@ -230,6 +333,8 @@ export default function CampaignAnalyticsPage() {
   const [loadingPerformance, setLoadingPerformance] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [clicksTimeSeries, setClicksTimeSeries] = useState<Array<{ date: string; email_clicks: number; facebook_clicks: number }>>([]);
+  const [loadingTimeSeries, setLoadingTimeSeries] = useState(false);
 
   useEffect(() => {
     const fetchCampaigns = async () => {
@@ -252,18 +357,25 @@ export default function CampaignAnalyticsPage() {
   const fetchPerformance = useCallback(async () => {
     if (!selectedCampaignId) return;
     setLoadingPerformance(true);
+    setLoadingTimeSeries(true);
     setError(null);
     try {
-      const data = await api.get<PerformanceResponse>(
-        `/campaigns/${selectedCampaignId}/performance`
-      );
-      setSelectedPerformance(data.metrics);
+      const [perfData, tsData] = await Promise.all([
+        api.get<PerformanceResponse>(`/campaigns/${selectedCampaignId}/performance`),
+        api.get<Array<{ date: string; email_clicks: number; facebook_clicks: number }>>(
+          `/campaigns/${selectedCampaignId}/performance/clicks-timeseries`
+        ).catch(() => [] as typeof tsData),
+      ]);
+      setSelectedPerformance(perfData.metrics);
+      setClicksTimeSeries(tsData);
     } catch (err) {
       console.error("Failed to fetch performance:", err);
       setError("Không thể tải dữ liệu hiệu quả");
       setSelectedPerformance(null);
+      setClicksTimeSeries([]);
     } finally {
       setLoadingPerformance(false);
+      setLoadingTimeSeries(false);
     }
   }, [selectedCampaignId]);
 
@@ -479,22 +591,39 @@ export default function CampaignAnalyticsPage() {
                             openRate={email?.open_rate || 0}
                             clickRate={email?.click_rate || 0}
                             iconBg="bg-[#377D73]/10"
-                            iconColor="text-[#377D73]"
+                            unit="email"
                           />
 
                           {/* Facebook */}
-                          <ChannelSection
-                            label="Facebook"
-                            icon={<Facebook size={16} className="text-[#377D73]" />}
+                          <FacebookSection
                             sent={fb?.sent || 0}
                             opened={fb?.opened || 0}
                             clicked={fb?.clicked || 0}
                             linkClicks={fb?.link_clicks || 0}
                             openRate={fb?.open_rate || 0}
                             clickRate={fb?.click_rate || 0}
-                            iconBg="bg-[#377D73]/10"
-                            iconColor="text-[#377D73]"
                           />
+                        </div>
+
+                        {/* Biểu đồ đường - Click theo thời gian */}
+                        <div className="bg-white rounded-xl border border-gray-200 p-5">
+                          <div className="flex items-center justify-between mb-4">
+                            <div>
+                              <h3 className="text-sm font-semibold text-gray-800">Lượt click theo thời gian</h3>
+                              <p className="text-[11px] text-gray-400 mt-0.5">So sánh click Email vs Facebook</p>
+                            </div>
+                            <div className="flex items-center gap-4 text-[11px]">
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-3 h-0.5 rounded-full bg-[#7EB5A6] inline-block" />
+                                <span className="text-gray-500">Email</span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-3 h-0.5 rounded-full bg-[#93C5FD] inline-block" />
+                                <span className="text-gray-500">Facebook</span>
+                              </div>
+                            </div>
+                          </div>
+                          <ClickLineChart data={clicksTimeSeries} loading={loadingTimeSeries} />
                         </div>
 
                         {/* Footer */}

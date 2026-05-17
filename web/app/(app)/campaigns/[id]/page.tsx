@@ -6,7 +6,7 @@ import {
   ChevronLeft, Loader2, ImagePlus, Upload, Wand2, Mail, CalendarDays, Trash2, Calendar,
   Target, TrendingUp, Users, Megaphone, Clock, CheckCircle2, XCircle, AlertCircle,
   Play, Pause, Send, BarChart3, Sparkles, FileText, Zap, Star, Award, Gift, Facebook, Video,
-  ExternalLink
+  ExternalLink, X
 } from "lucide-react";
 import { API_BASE, api } from "@/lib/api-client";
 import { STATUS_LABELS, STATUS_COLORS, CHANNEL_LABELS, formatDate, cn } from "@/lib/utils";
@@ -145,21 +145,6 @@ function DeleteConfirmModal({ campaignName, onConfirm, onCancel, deleting }: {
   );
 }
 
-// ── Image Lightbox ─────────────────────────────────────────────────────────────
-
-function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm" onClick={onClose}>
-      <button onClick={onClose} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors">
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
-      <img src={src} alt={alt} className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl" onClick={(e) => e.stopPropagation()} />
-    </div>
-  );
-}
-
 // ── AI Processing Banner ────────────────────────────────────────────────────────
 
 // ── Channel Icon ────────────────────────────────────────────────────────────────
@@ -179,6 +164,18 @@ function ChannelIcon({ channel, size = 14 }: { channel: string; size?: number })
 
 // ── CampaignImageCard ─────────────────────────────────────────────────────────
 
+function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[300] bg-black/80 flex items-center justify-center p-4" onClick={onClose}>
+      <button className="absolute top-4 right-4 p-2 text-white hover:bg-white/10 rounded-full transition-colors" onClick={onClose}>
+        <X size={20} />
+      </button>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt={alt} className="max-w-full max-h-full object-contain rounded-lg" onClick={(e) => e.stopPropagation()} />
+    </div>
+  );
+}
+
 function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpdated: () => void }) {
   const [generating, setGenerating] = useState(false);
   const [genPhase, setGenPhase] = useState(0);
@@ -187,24 +184,29 @@ function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpda
   const [customPrompt, setCustomPrompt] = useState("");
   const [showPrompt, setShowPrompt] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [images, setImages] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [deletingIdx, setDeletingIdx] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const plan = campaign.campaign_plan_json || {};
-  const imageUrl = plan.image_url as string | undefined;
+
+  // Sync images from plan
+  useEffect(() => {
+    const imgs = (plan.images as string[] | undefined) || [];
+    const legacy = plan.image_url as string | undefined;
+    setImages(imgs.length ? imgs : (legacy ? [legacy] : []));
+  }, [plan]);
+
   const savedPrompt = plan.image_prompt_final as string | undefined;
   const lastPrompt = useRef<string | null>(null);
 
-  // Tự động trigger tạo ảnh khi: có prompt nhưng chưa có ảnh, và chưa từng trigger
-  const hasPendingImage = !!savedPrompt && !imageUrl && !generating;
+  const hasPendingImage = !!savedPrompt && images.length === 0 && !generating;
   const [readyAuto, setReadyAuto] = useState(false);
 
   useEffect(() => {
     if (hasPendingImage && !autoTriggered) {
-      // Delay ngắn để user thấy UI đã load xong rồi mới bắt đầu loading
-      const t = setTimeout(() => {
-        setAutoTriggered(true);
-        setReadyAuto(true);
-      }, 1500);
+      const t = setTimeout(() => { setAutoTriggered(true); setReadyAuto(true); }, 1500);
       return () => clearTimeout(t);
     }
   }, [hasPendingImage, autoTriggered]);
@@ -212,86 +214,89 @@ function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpda
   useEffect(() => {
     if (!readyAuto) return;
     const doGenerate = async () => {
-      setGenerating(true);
-      setGenPhase(0);
-      setError("");
+      setGenerating(true); setGenPhase(0); setError("");
       try {
-        await new Promise((r) => setTimeout(r, 500));
-        setGenPhase(1);
-        const res = await api.post<{ image_url: string; prompt_used: string }>(
-          `/campaigns/${campaign.id}/image/generate`,
-          {}
-        );
+        await new Promise((r) => setTimeout(r, 500)); setGenPhase(1);
+        const res = await api.post<{ image_url: string; prompt_used: string }>(`/campaigns/${campaign.id}/image/generate`, {});
         lastPrompt.current = res.prompt_used;
         setGenPhase(2);
-        await new Promise((r) => setTimeout(r, 500));
-        setGenPhase(3);
+        await new Promise((r) => setTimeout(r, 500)); setGenPhase(3);
         onUpdated();
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : "Tạo ảnh thất bại");
         setGenPhase(-1);
       } finally {
-        setTimeout(() => {
-          setGenerating(false);
-          setGenPhase(0);
-          setReadyAuto(false);
-        }, 800);
+        setTimeout(() => { setGenerating(false); setGenPhase(0); setReadyAuto(false); }, 800);
       }
     };
     doGenerate();
   }, [readyAuto]);
 
   const handleGenerate = async () => {
-    setGenerating(true);
-    setGenPhase(0);
-    setError("");
-
+    setGenerating(true); setGenPhase(0); setError("");
     try {
-      await new Promise((r) => setTimeout(r, 500));
-      setGenPhase(1);
-
+      await new Promise((r) => setTimeout(r, 500)); setGenPhase(1);
       const res = await api.post<{ image_url: string; prompt_used: string }>(
         `/campaigns/${campaign.id}/image/generate`,
         { ...(customPrompt ? { prompt: customPrompt } : {}) }
       );
-
       lastPrompt.current = res.prompt_used;
       setGenPhase(2);
-
-      await new Promise((r) => setTimeout(r, 500));
-      setGenPhase(3);
-
+      await new Promise((r) => setTimeout(r, 500)); setGenPhase(3);
       onUpdated();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Tạo ảnh thất bại");
       setGenPhase(-1);
     } finally {
-      setTimeout(() => {
-        setGenerating(false);
-        setGenPhase(0);
-      }, 800);
+      setTimeout(() => { setGenerating(false); setGenPhase(0); }, 800);
     }
   };
 
-  const handleUpload = async (file: File) => {
-    const form = new FormData();
-    form.append("file", file);
+  async function handleBulkUpload(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setUploading(true); setError("");
     try {
-      const uploadUrl = API_BASE ? `${API_BASE}/campaigns/${campaign.id}/image/upload` : `/campaigns/${campaign.id}/image/upload`;
-      const res = await fetch(uploadUrl, {
+      const form = new FormData();
+      Array.from(files).forEach((f) => form.append("files", f));
+      const token = localStorage.getItem("aimap_token") || "";
+      const res = await fetch(`${API_BASE || ""}/campaigns/${campaign.id}/images/bulk-upload`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${localStorage.getItem("aimap_token") || ""}` },
+        headers: { Authorization: `Bearer ${token}` },
         body: form,
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || "Upload thất bại");
-      }
+      if (!res.ok) throw new Error("Upload thất bại");
       onUpdated();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Upload thất bại");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
     }
-  };
+  }
+
+  async function handleDelete(idx: number) {
+    setDeletingIdx(idx); setError("");
+    try {
+      const token = localStorage.getItem("aimap_token") || "";
+      const res = await fetch(`${API_BASE || ""}/campaigns/${campaign.id}/images/${idx}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Xóa ảnh thất bại");
+      setImages((prev) => prev.filter((_, i) => i !== idx));
+      onUpdated();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Xóa ảnh thất bại");
+    } finally {
+      setDeletingIdx(null);
+    }
+  }
+
+  function handleDownload(url: string, filename: string) {
+    fetch(url).then((r) => r.blob()).then((blob) => {
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename; a.click(); URL.revokeObjectURL(a.href);
+    });
+  }
 
   const phaseLabels = autoTriggered
     ? ["Đang chuẩn bị...", "AI đang tạo ảnh bằng AI...", "Đang lưu...", "Hoàn tất!"]
@@ -307,6 +312,9 @@ function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpda
         <div className="flex items-center gap-2">
           <ImagePlus size={14} className="text-[#377D73]" />
           <h3 className="text-sm font-medium text-gray-800">Ảnh</h3>
+          {images.length > 0 && (
+            <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">{images.length} ảnh</span>
+          )}
           <button onClick={() => setShowPrompt(!showPrompt)} className="ml-auto text-[9px] text-[#377D73] hover:underline flex items-center gap-1">
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -338,10 +346,9 @@ function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpda
           </div>
         )}
 
-        {/* Image preview */}
+        {/* Loading skeleton */}
         {generating ? (
           <div className="relative rounded-lg overflow-hidden bg-gradient-to-br from-gray-100 to-gray-50 border border-gray-100" style={{ minHeight: 180 }}>
-            {imageUrl && <img src={imageUrl} alt="Preview" className="w-full object-cover blur-sm opacity-30" style={{ height: 180 }} />}
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm">
               <Loader2 size={24} className="text-[#377D73] animate-spin mb-2" />
               <p className="text-xs font-medium text-gray-700">{phaseLabels[genPhase] || "Đang xử lý..."}</p>
@@ -352,14 +359,50 @@ function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpda
               </div>
             </div>
           </div>
-        ) : imageUrl ? (
-          <div className="relative cursor-pointer group rounded-lg overflow-hidden border border-gray-100" onClick={() => setLightboxSrc(imageUrl)}>
-            <img src={imageUrl} alt="Campaign" className="w-full object-cover bg-gray-50" style={{ maxHeight: 180 }} />
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
-              <svg className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
-              </svg>
-            </div>
+        ) : images.length > 0 ? (
+          /* Grid nhiều ảnh */
+          <div className="grid grid-cols-2 gap-2">
+            {images.map((url, idx) => (
+              <div key={idx} className="relative group aspect-square rounded-lg overflow-hidden border border-gray-100 bg-gray-50">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={url}
+                  alt={`Ảnh ${idx + 1}`}
+                  className="w-full h-full object-cover cursor-pointer"
+                  onClick={() => setLightboxSrc(url)}
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                />
+                {/* Overlay actions */}
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
+                  <button
+                    onClick={() => setLightboxSrc(url)}
+                    className="p-1.5 bg-white/90 rounded-full text-gray-700 hover:bg-white transition-colors"
+                    title="Xem lớn"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => handleDownload(url, `campaign-${idx + 1}.jpg`)}
+                    className="p-1.5 bg-white/90 rounded-full text-gray-700 hover:bg-white transition-colors"
+                    title="Tải về"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => handleDelete(idx)}
+                    disabled={deletingIdx === idx}
+                    className="p-1.5 bg-white/90 rounded-full text-red-500 hover:bg-white transition-colors disabled:opacity-50"
+                    title="Xóa ảnh"
+                  >
+                    {deletingIdx === idx ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         ) : (
           <div className="border-2 border-dashed border-gray-200 rounded-lg py-6 flex flex-col items-center gap-1.5 text-center bg-gray-50">
@@ -372,15 +415,15 @@ function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpda
         <div className="flex gap-2">
           <button onClick={handleGenerate} disabled={generating} className={cn("btn-primary text-[11px] py-1.5 px-3 flex items-center gap-1 flex-1 justify-center", generating && "opacity-70")}>
             {generating ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
-            {imageUrl ? "Tạo lại" : "Tạo ảnh"}
+            {images.length > 0 ? "Tạo thêm ảnh" : "Tạo ảnh"}
           </button>
-          <button onClick={() => fileRef.current?.click()} disabled={generating} className={cn("btn-secondary text-[11px] py-1.5 px-3 flex items-center gap-1 flex-1 justify-center", generating && "opacity-50")}>
-            <Upload size={11} />
-            Upload
+          <button onClick={() => fileRef.current?.click()} disabled={generating || uploading} className={cn("btn-secondary text-[11px] py-1.5 px-3 flex items-center gap-1 flex-1 justify-center", (generating || uploading) && "opacity-50")}>
+            {uploading ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
+            {uploading ? "Đang upload..." : "Upload"}
           </button>
         </div>
 
-        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0])} />
+        <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleBulkUpload(e.target.files)} />
 
         {error && (
           <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
@@ -395,7 +438,7 @@ function CampaignImageCard({ campaign, onUpdated }: { campaign: Campaign; onUpda
 
 // ── ContentCard ───────────────────────────────────────────────────────────────
 
-function ContentCard({ item, campaignId, onAction }: { item: ContentItem; campaignId: string; onAction: () => void }) {
+function ContentCard({ item, campaignId, onAction, campaignImages }: { item: ContentItem; campaignId: string; onAction: () => void; campaignImages?: string[] }) {
   const [rejectNote, setRejectNote] = useState("");
   const [showReject, setShowReject] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -512,6 +555,7 @@ function ContentCard({ item, campaignId, onAction }: { item: ContentItem; campai
           setDraft={setDraft}
           isPending={isPending}
           startEdit={startEdit}
+          campaignImages={campaignImages || []}
         />
       )}
 
@@ -611,7 +655,7 @@ function ContentCard({ item, campaignId, onAction }: { item: ContentItem; campai
       )}
 
       {item.channel === "video_script" && (
-        <VideoScriptContent content={d} />
+        <VideoScriptContent content={d} isPending={isPending} />
       )}
 
       {showReject && (
@@ -786,6 +830,7 @@ export default function CampaignDetailPage() {
   const isProcessing = campaign.status === "running" || campaign.status === "pending_agent";
   const sourceContext = (campaign.campaign_plan_json?.source_context || null) as SourceContext | null;
   const hasEmailChannel = campaign.channels.includes("email");
+  const allContentApproved = campaign.content_items.every((c) => c.status === "approved");
 
   async function runCampaignExecution() {
     if (!id || selectedListIds.length === 0) { setExecError("Chọn ít nhất 1 danh sách."); return; }
@@ -804,9 +849,6 @@ export default function CampaignDetailPage() {
 
   return (
     <>
-      {isProcessing && (
-        <CampaignBuildingProgress channels={campaign.channels} agent_logs={campaign.agent_logs} campaign_plan_json={campaign.campaign_plan_json ?? undefined} />
-      )}
       {showDeleteConfirm && campaign && (
         <DeleteConfirmModal campaignName={campaign.campaign_name} onConfirm={handleDelete} onCancel={() => setShowDeleteConfirm(false)} deleting={deleting} />
       )}
@@ -877,6 +919,17 @@ export default function CampaignDetailPage() {
               <span className="text-sm text-gray-700">{campaign.product_or_service}</span>
             </div>
           </div>
+
+          {/* Inline progress bar — thời gian chạy hiển thị ngay trong form */}
+          {isProcessing && (
+            <div className="mb-4">
+              <CampaignBuildingProgress
+                channels={campaign.channels}
+                agent_logs={campaign.agent_logs}
+                campaign_plan_json={campaign.campaign_plan_json ?? undefined}
+              />
+            </div>
+          )}
 
           {/* Main 2-column grid */}
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
@@ -987,7 +1040,8 @@ export default function CampaignDetailPage() {
                 {campaign.content_items.length > 0 && (
                   <div className="space-y-2">
                     {campaign.content_items.map((item) => (
-                      <ContentCard key={item.id} item={item} campaignId={id as string} onAction={load} />
+                      <ContentCard key={item.id} item={item} campaignId={id as string} onAction={load}
+                        campaignImages={(campaign.campaign_plan_json?.images as string[]) || []} />
                     ))}
                   </div>
                 )}
@@ -1156,14 +1210,28 @@ export default function CampaignDetailPage() {
                     )}
 
                     {!hasEmailChannel && <p className="text-[10px] text-amber-600 font-medium">Chiến dịch chưa gồm kênh Email.</p>}
+                    {!allContentApproved && campaign.content_items.length > 0 && (
+                      <p className="text-[10px] text-red-500 font-medium">
+                        Cần duyệt tất cả nội dung trước khi chạy chiến dịch.
+                      </p>
+                    )}
 
                     <div className="flex items-center gap-2">
                       <div className="w-20 shrink-0" />
-                      <button type="button" onClick={runCampaignExecution} disabled={execBusy || sendingDelivery || selectedListIds.length === 0 || !hasEmailChannel}
-                        className="btn-primary text-[12px] py-2 px-5 font-semibold shadow-lg shadow-[#377D73]/30 flex items-center gap-2">
-                        {execBusy || sendingDelivery ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
-                        Chạy chiến dịch
-                      </button>
+                      {!allContentApproved && campaign.content_items.length > 0 ? (
+                        <button type="button" onClick={() => router.push(`/campaigns/${id}`)}
+                          className="btn-secondary text-[12px] py-2 px-5 font-semibold flex items-center gap-2">
+                          <FileText size={12} />
+                          Duyệt nội dung
+                        </button>
+                      ) : (
+                        <button type="button" onClick={() => router.push(`/campaigns/${id}/sending`)}
+                          disabled={execBusy || sendingDelivery || selectedListIds.length === 0 || !hasEmailChannel}
+                          className="btn-primary text-[12px] py-2 px-5 font-semibold shadow-lg shadow-[#377D73]/30 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                          {execBusy || sendingDelivery ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                          Chạy chiến dịch
+                        </button>
+                      )}
                       {execError && <span className="text-[10px] text-red-500 font-medium">{execError}</span>}
                     </div>
 

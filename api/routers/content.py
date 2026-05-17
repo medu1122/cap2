@@ -295,6 +295,8 @@ def _regenerate_user_prompt(
     links_hint = _build_tracking_links_instruction(tracking_links or [])
 
     if channel == "facebook_post":
+        has_links = bool(tracking_links)
+        cta_url_schema = '"cta_url": "https://..." hoặc để trống chuỗi rỗng nếu chưa có link đích' if not has_links else '"cta_url": "https://..." (DÙNG tracking link bên trên, không tự tạo link)'
         return (
             f"<brand_context>\n{bc}\n</brand_context>\n\n"
             "Viết một bài đăng Facebook mới (khác nội dung cũ, đổi góc nhìn hoặc cách diễn đạt).\n\n"
@@ -304,7 +306,7 @@ def _regenerate_user_prompt(
             f"Hướng giọng văn: {th}\n"
             f"Call-to-action: {cta}\n"
             f"{links_hint}\n\n"
-            'Trả về JSON:\n{\n  "copy": "...",\n  "hashtags": ["...", "...", "...", "...", "..."],\n  "cta_url": "https://..."\n}'
+            f'Trả về JSON:\n{{\n  "copy": "...",\n  "hashtags": ["...", "...", "...", "...", "..."],\n  {cta_url_schema}\n}}'
             "\nLưu ý: cta_url là link đích (website/landing page) mà người đọc sẽ được chuyển hướng đến khi nhấn vào link bên dưới bài đăng."
             "\nTrường fb_post_url: dán link bài đăng Facebook thực tế (VD: https://www.facebook.com/.../posts/...). Nếu chưa có bài đăng, để trống chuỗi rỗng."
         )
