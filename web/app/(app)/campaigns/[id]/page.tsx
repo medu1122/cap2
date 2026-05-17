@@ -838,7 +838,7 @@ export default function CampaignDetailPage() {
     setExecBusy(true);
     try {
       await api.post(`/campaigns/${id}/execute`, { mode: "email", customer_list_ids: selectedListIds, ab_test: false });
-      window.open(`/campaigns/${id}/sending`, "_blank");
+      router.push(`/campaigns/${id}/sending?lists=${selectedListIds.join(",")}`);
     } catch (e: unknown) {
       const msg = e && typeof e === "object" && "message" in e ? String((e as { message: string }).message) : "Không thể chạy.";
       setExecError(msg);
@@ -1225,7 +1225,7 @@ export default function CampaignDetailPage() {
                           Duyệt nội dung
                         </button>
                       ) : (
-                        <button type="button" onClick={() => router.push(`/campaigns/${id}/sending`)}
+                        <button type="button" onClick={runCampaignExecution}
                           disabled={execBusy || sendingDelivery || selectedListIds.length === 0 || !hasEmailChannel}
                           className="btn-primary text-[12px] py-2 px-5 font-semibold shadow-lg shadow-[#377D73]/30 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                           {execBusy || sendingDelivery ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}

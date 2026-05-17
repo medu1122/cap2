@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   Mail, Send, RefreshCw, Loader2, CheckCircle2, XCircle,
   ChevronLeft, AlertCircle, Users, Inbox, Eye, MousePointerClick,
@@ -97,9 +97,10 @@ function StatusBadge({ status }: { status: string }) {
 export default function CampaignSendingPage() {
   const { id } = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [campaign, setCampaign] = useState<CampaignDetail | null>(null);
-  const [customerListName, setCustomerListName] = useState("");
+  const [customerListNames, setCustomerListNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [summary, setSummary] = useState<DeliverySummary | null>(null);
@@ -107,31 +108,32 @@ export default function CampaignSendingPage() {
   const [isSending, setIsSending] = useState(false);
   const [sendingProgress, setSendingProgress] = useState({ sent: 0, total: 0 });
 
-  // Load campaign info
+  // Load campaign info + resolve list names
   const loadCampaign = useCallback(async () => {
     try {
       const camp = await api.get<CampaignDetail>(`/campaigns/${id}`);
       setCampaign(camp);
 
-      let listId = camp.customer_list_id;
-      if (!listId) {
-        const lists = await api.get<{ id: string; list_name: string }[]>("/workflow/customer-lists");
-        if (lists.length === 0) {
-          setError("Chưa có danh sách khách hàng. Vui lòng tạo danh sách trước.");
-          setLoading(false);
-          return;
-        }
-        listId = lists[0].id;
-        setCustomerListName(lists[0].list_name);
+      const lists = await api.get<{ id: string; list_name: string }[]>("/workflow/customer-lists");
+      const listIdParam = searchParams.get("lists");
+      let targetIds: string[] = [];
+
+      if (listIdParam) {
+        targetIds = listIdParam.split(",").filter(Boolean);
+      } else if (camp.customer_list_id) {
+        targetIds = [camp.customer_list_id];
       } else {
-        const lists = await api.get<{ id: string; list_name: string }[]>("/workflow/customer-lists");
-        const found = lists.find((l) => l.id === listId);
-        setCustomerListName(found?.list_name || "Danh sách khách");
+        targetIds = lists.map((l) => l.id);
       }
+
+      const names = targetIds
+        .map((lid) => lists.find((l) => l.id === lid)?.list_name)
+        .filter(Boolean) as string[];
+      setCustomerListNames(names.length > 0 ? names : ["Danh sách khách"]);
     } catch {
       setError("Không tải được thông tin chiến dịch.");
     }
-  }, [id]);
+  }, [id, searchParams]);
 
   // Load delivery summary (logs + metrics)
   const loadSummary = useCallback(async () => {
@@ -159,6 +161,11 @@ export default function CampaignSendingPage() {
     Promise.all([loadCampaign()]).finally(() => setLoading(false));
   }, [loadCampaign]);
 
+  // Load delivery summary on mount (so previously-executed campaigns show logs immediately)
+  useEffect(() => {
+    loadSummary();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Poll summary every 3s while sending
   useEffect(() => {
     if (!isSending) return;
@@ -178,8 +185,8 @@ export default function CampaignSendingPage() {
   async function handleRunCampaign() {
     if (!campaign) return;
 
-    // Get list id
-    let listId = campaign.customer_list_id;
+    const listIdParam = searchParams.get("lists");
+    let listId = listIdParam ? listIdParam.split(",")[0] : campaign.customer_list_id;
     if (!listId) {
       const lists = await api.get<{ id: string }[]>("/workflow/customer-lists");
       if (lists.length === 0) {
@@ -238,9 +245,9 @@ export default function CampaignSendingPage() {
                 <h1 className="font-semibold text-slate-900 text-sm">
                   {campaign?.campaign_name || "Gửi Email"}
                 </h1>
-                {customerListName && (
+                {customerListNames.length > 0 && (
                   <p className="text-[10px] text-slate-400 flex items-center gap-1">
-                    <Users size={9} />{customerListName}
+                    <Users size={9} />{customerListNames.join(", ")}
                   </p>
                 )}
               </div>
