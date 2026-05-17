@@ -11,7 +11,29 @@ def _to_float(value: object) -> float:
         return 0.0
     if isinstance(value, (int, float)):
         return float(value)
-    text = str(value).strip().replace(" ", "").replace(",", "")
+    # Handle Vietnamese number format: "2.400.000 ₫", "4.000.000đ", "2,400,000" etc.
+    text = str(value).strip()
+    # Strip currency symbols and spaces
+    for sym in ("₫", "đ", "Đ", "VND", "USD", "$", "€", "£"):
+        text = text.replace(sym, "")
+    text = text.strip()
+    # Normalize thousands separators: 2.400.000 → 2400000
+    # Vietnamese uses dot as thousands separator, comma for decimal
+    # Check if text contains dot separators (thousands) vs comma separator (decimal)
+    dot_count = text.count(".")
+    comma_count = text.count(",")
+    if dot_count > 0:
+        # If dots are used as thousands separators, remove them
+        # and convert comma decimal (if any) to dot
+        text = text.replace(".", "")
+        if comma_count == 1 and "," in text:
+            text = text.replace(",", ".")
+    elif comma_count == 1:
+        # Only comma present - could be decimal separator
+        parts = text.split(",")
+        if len(parts) == 2 and len(parts[1]) <= 2:
+            # Likely decimal: "1234,56"
+            text = text.replace(",", ".")
     if not text:
         return 0.0
     try:
@@ -32,17 +54,35 @@ def _to_date(value: object) -> datetime | None:
         return None
     formats = [
         "%Y-%m-%d",
-        "%m/%d/%y",
-        "%m/%d/%Y",
         "%d/%m/%Y",
         "%d/%m/%y",
+        "%d-%m-%Y",
+        "%d-%m-%y",
+        "%d.%m.%Y",
+        "%d.%m.%y",
+        "%m/%d/%y",
+        "%m/%d/%Y",
         "%Y/%m/%d",
+        # Handle DD/M/YY or D/M/YY (Vietnamese format from spreadsheets)
+        "%d/%m/%y",
+        "%d.%m.%y",
     ]
     for fmt in formats:
         try:
             return datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
         except ValueError:
             continue
+    # Try flexible parse for D/M/YY variants
+    import re
+    m = re.match(r"^(\d{1,2})[/\.](\d{1,2})[/\.](\d{2,4})$", raw)
+    if m:
+        d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if y < 100:
+            y += 2000
+        try:
+            return datetime(y, mo, d, tzinfo=timezone.utc)
+        except ValueError:
+            pass
     return None
 
 

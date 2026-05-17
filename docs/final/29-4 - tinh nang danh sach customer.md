@@ -1,260 +1,221 @@
-# Tính năng Gửi Email Hàng Loạt - Tài liệu mô tả
+# Customer Lists & Outreach — Sửa lỗi & Cải thiện
 
-**Ngày tạo:** 29/4/2026
-**Phiên bản:** 1.0
-
----
-
-## 1. Tính năng là gì?
-
-**Tên:** Gửi Email Hàng Loạt (Outreach)
-
-**Công dụng:** Gửi email tự động cho nhiều khách hàng cùng lúc, mỗi người nhận được một email riêng được viết riêng cho họ.
-
-**Ví dụ thực tế:**
-- Gửi email nhắc khách hàng đã lâu không quay lại
-- Gửi email chúc mừng khách hàng mới
-- Gửi email chăm sóc khách VIP
-
-**Đặc điểm:**
-- Không xuất hiện trên menu bên trái
-- Chỉ mở ra khi bấm nút "Gửi email" trong trang phân tích khách hàng
-- AI sẽ tự viết nội dung email phù hợp với từng khách
+**Ngày:** 18/05/2026
+**Tác giả:** AI Agent
+**Trạng thái:** Hoàn thành
 
 ---
 
-## 2. Ai được gửi email?
+## Tổng quan vấn đề
 
-Dựa vào kết quả phân tích, khách hàng được chia thành 4 nhóm:
+Trang `/customer-lists` và `/outreach/[segment]` có nhiều lỗi nghiêm trọng khiến tính năng phân tích và gửi mail không hoạt động đúng.
 
-| Nhóm | Đối tượng | Ví dụ |
-|------|-----------|-------|
-| Khách sắp rời bỏ | 30 ngày chưa mua | "Anh Minh, 2 tháng rồi không ghé shop..." |
-| Khách tiềm năng | Có mua hàng, có tiền | "Chị Hương, shop có sản phẩm mới phù hợp..." |
-| Khách VIP | Mua nhiều, chi tiêu lớn | "Quý khách VIP, cảm ơn đã đồng hành..." |
-| Khách mới | Mới đăng ký | "Chào bạn, rất vui được làm quen..." |
+### Vấn đề phát hiện
+
+| # | Mô tả | Nguyên nhân gốc | Mức độ |
+|---|--------|-----------------|---------|
+| 1 | Phân tích không hiểu số tiền → `total_revenue = 0`, charts trống | `_to_float` không parse được format `"2.400.000 ₫"` | Nghiêm trọng |
+| 2 | Phân tích segmentation sai hoàn toàn | `_to_date` không parse được `"15/2/26"` → mọi `days_since_last = None` | Nghiêm trọng |
+| 3 | Charts revenue/ARPU không hiển thị | Do bug #1 khiến toàn bộ giá trị = 0 | Nghiêm trọng |
+| 4 | Tab Tiềm năng/VIP/Khách mới trong outreach không có email | Bug race condition trong React effect dependencies | Cao |
+| 5 | Email thiếu brand context → nội dung chung chung | `_compose_single_email` gọi LLM không có thông tin thương hiệu | Cao |
+| 6 | Tiêu đề email có "Chúng tôi:" thừa | Code cố tình ghép `brand_name: base_subject` nhưng fallback = "Chúng tôi" | Thấp |
+| 7 | Subject/body có "Tiêu đề:" và `{{HoVaTen}}` thừa | LLM trả kèm meta text + backend không strip | Thấp |
 
 ---
 
-## 3. Luồng hoạt động (đơn giản)
+## Chi tiết từng sửa
 
+### Fix 1: `_to_float` — parse số tiền tiếng Việt
+
+**File:** `api/services/customer_analysis_service.py`
+
+**Vấn đề:** Khi import file Excel/CSV, số tiền có format `"2.400.000 ₫"`. Hàm `_to_float` cũ chỉ `.replace(",", "")` → `"2.400.000"` → parse float thất bại → trả về 0.
+
+**Fix:**
+```python
+# Handle Vietnamese number format: "2.400.000 ₫", "4.000.000đ", "2,400,000" etc.
+text = str(value).strip()
+# Strip currency symbols
+for sym in ("₫", "đ", "Đ", "VND", "USD", "$", "€", "£"):
+    text = text.replace(sym, "")
+text = text.strip()
+# Vietnamese: dot = thousands separator, comma = decimal
+dot_count = text.count(".")
+comma_count = text.count(",")
+if dot_count > 0:
+    # 2.400.000 → 2400000
+    text = text.replace(".", "")
+    if comma_count == 1 and "," in text:
+        text = text.replace(",", ".")
+elif comma_count == 1:
+    # 1234,56 → 1234.56
+    parts = text.split(",")
+    if len(parts) == 2 and len(parts[1]) <= 2:
+        text = text.replace(",", ".")
 ```
-Bước 1: Người dùng vào trang "Danh sách khách"
-         │
-         ▼
-Bước 2: Mở một danh sách khách hàng cụ thể
-         │
-         ▼
-Bước 3: Bấm nút "Phân tích"
-         │                    Hệ thống tự động:
-         ▼                    - Đọc dữ liệu khách
-Bước 4: Xem kết quả phân tích    - Chia khách thành 4 nhóm
-         │                    - Tính toán thông tin
-         ▼
-Bước 5: Chọn nhóm khách muốn gửi
-         │  (Ví dụ: Khách sắp rời bỏ)
-         ▼
-Bước 6: Bấm nút "Gửi email"
-         │
-         ├──► Mở ra trang soạn email riêng
-         │
-         ▼
-Bước 7: Chọn mục đích gửi
-         │  - Nhắc khách quay lại
-         │  - Chăm sóc khách
-         │  - Kích hoạt mua hàng
-         │  - Chào khách mới
-         ▼
-Bước 8: Bấm "AI viết email"
-         │                    AI tự động:
-         ▼                    - Viết email cho từng khách
-Bước 9: Xem danh sách email đã viết   - Mỗi người 1 email riêng
-         │                    - Lấy thông tin khách điền vào
-         ▼
-Bước 10: Sửa email nếu cần
-         │
-         ▼
-Bước 11: Bấm "Gửi tất cả"
-         │                    Email được gửi đi
-         ▼                    thật sự qua Gmail/SMTP
-Bước 12: Xem kết quả
-         │  - Đã gửi thành công
-         │  - Gửi thất bại (sẽ thử lại)
-         ▼
-         XONG
+
+**Kết quả:** `"2.400.000 ₫"` → `2400000.0`
+
+---
+
+### Fix 2: `_to_date` — parse ngày DD/M/YY
+
+**File:** `api/services/customer_analysis_service.py`
+
+**Vấn đề:** Dữ liệu từ Excel có format `"15/2/26"` (DD/M/YY). Code cũ không có format này → trả về `None` → mọi khách có `days_since_last = None` → segmentation hoàn toàn sai.
+
+**Fix:** Thêm các format và regex fallback:
+```python
+# Thêm format:
+"%d/%m/%y",    # 15/2/26
+"%d.%m.%y",    # 15.2.26
+# Regex fallback cho D/M/YY:
+import re
+m = re.match(r"^(\d{1,2})[/\.](\d{1,2})[/\.](\d{2,4})$", raw)
+if m:
+    d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    if y < 100:
+        y += 2000
+    return datetime(y, mo, d, tzinfo=timezone.utc)
 ```
 
 ---
 
-## 4. Sơ đồ tương tác (sequence diagram)
+### Fix 3: Outreach segment switch — race condition
 
-```
-Người dùng          Trang phân tích         Backend AI            Gmail
-    │                       │                     │                   │
-    │── Bấm "Phân tích" ───►│                     │                   │
-    │                       │── Gửi dữ liệu ─────►│                   │
-    │                       │                     │── Phân tích ──────►│
-    │                       │                     │◄── Kết quả ────────│
-    │◄── Hiện kết quả ─────│◄── Trả kết quả ────│                   │
-    │                       │                     │                   │
-    │── Bấm "Gửi email" ───►│                     │                   │
-    │                       │── Mở trang gửi ────►│                   │
-    │◄── Trang soạn email ─│◄── OK ─────────────│                   │
-    │                       │                     │                   │
-    │── Chọn nhóm + mục ───►│                     │                   │
-    │── đích, bấm "AI viết" │                     │                   │
-    │                       │── Gửi danh sách ───►│                   │
-    │                       │   khách + mục đích  │                   │
-    │                       │                     │── Viết email ────►│
-    │                       │                     │   (AI soạn)      │
-    │                       │                     │◄── Email đã soạn ─│
-    │◄── Danh sách email ───│◄── Trả email ──────│                   │
-    │                       │                     │                   │
-    │── Sửa email (nếu muốn)                     │                   │
-    │── Bấm "Gửi tất cả" ──►│                     │                   │
-    │                       │── Gửi từng email ──►│                   │
-    │                       │                     │── Email 1 ──────►│
-    │                       │                     │◄── OK ───────────│
-    │                       │                     │── Email 2 ──────►│
-    │                       │                     │◄── OK ───────────│
-    │                       │◄── Kết quả gửi ────│                   │
-    │◄── Báo thành công ────│                     │                   │
-    │                       │                     │                   │
+**File:** `web/app/(app)/outreach/[segment]/page.tsx`
+
+**Vấn đề:** Khi chuyển tab (churn → potential → vip...), `useEffect([segment, analysis, rows])` tạo emails → nhưng restore effect cũ chạy sau và ghi đè bằng localStorage cũ → emails sai segment.
+
+**Fix:** Thêm `analysis` vào restore effect dependency để chỉ restore khi có đủ dữ liệu:
+```typescript
+// Before (bug):
+useEffect(() => {
+  if (!activeListId || !segment) return;
+  // ...
+}, [activeListId, segment]);
+
+// After (fixed):
+useEffect(() => {
+  if (!activeListId || !segment || !analysis) return;
+  // ...
+}, [activeListId, segment, analysis]);
 ```
 
 ---
 
-## 5. Thông tin chi tiết kỹ thuật
+### Fix 4: Brand context trong outreach email
 
-### 5.1 Các thành phần chính
+**File:** `api/routers/workflow.py` — `_compose_single_email`
+
+**Vấn đề:** Hàm `_compose_single_email` gọi `_smart_contact_compose_text` với `brand_context` nhưng context này có thể `None` nếu user chưa thiết lập Brand Vault → LLM viết email chung chung không đặc thù thương hiệu.
+
+**Fix:**
+1. **Thêm segment-specific context** cho LLM — mỗi nhóm (churn_risk, potential, new, vip) có hướng dẫn riêng về giọng văn và nội dung phù hợp
+2. **Thêm thông tin khách hàng vào user_prompt** để LLM có đủ ngữ cảnh cá nhân hóa
+3. **Mở rộng danh sách subject lines** để mỗi segment có nhiều lựa chọn
+
+---
+
+### Fix 5: Strip "Tiêu đề:" và placeholder trong email
+
+**File:** `api/routers/workflow.py` — `_normalize_smart_contact_compose_output`
+
+**Vấn đề:** LLM trả nội dung kèm "Tiêu đề:" hoặc `{{HoVaTen}}` → hiển thị thừa cho user.
+
+**Fix:**
+1. Thêm `"tiêu đề:"` và `"subject:"` vào danh sách prefix cần strip
+2. Thêm placeholder replacement trong `_compose_single_email` — thay `{{HoVaTen}}`, `{{days_since_last}}`, etc. bằng giá trị thực từ customer data
+
+---
+
+### Fix 6: Bỏ "Chúng tôi:" trong subject
+
+**File:** `api/routers/workflow.py` — `_compose_single_email`
+
+**Vấn đề:** Code cũ ghép `f"{brand_name}: {base_subject}"` → khi không có Brand Vault, `brand_name = "Chúng tôi"` → subject thành `"Chúng tôi: Bạn ơi..."`
+
+**Fix:** Bỏ prefix, chỉ dùng `subject = base_subject`
+
+---
+
+## Kiến trúc dữ liệu phân tích
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Giao diện người dùng                        │
-├─────────────────────────────────────────────────────────────────┤
-│  Trang phân tích khách        Trang gửi email                   │
-│  - Xem kết quả phân tích       - Chọn nhóm khách                │
-│  - Bấm nút gửi email          - Chọn mục đích gửi              │
-│                                - Xem danh sách email             │
-│                                - Sửa & gửi email                │
-└────────────────────┬────────────────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      Backend (FastAPI)                           │
-├─────────────────────────────────────────────────────────────────┤
-│  - Nhận yêu cầu phân tích                                       │
-│  - AI viết email cho từng khách                                 │
-│  - Gửi email qua SMTP (Gmail)                                   │
-└────────────────────┬────────────────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      Database (PostgreSQL)                       │
-├─────────────────────────────────────────────────────────────────┤
-│  customer_lists          │  customers                            │
-│  - Thông tin danh sách   │  - Thông tin từng khách              │
-│  customer_analysis_      │  campaign_execution_logs             │
-│  snapshots               │  - Lịch sử gửi email                 │
-│  - Kết quả phân tích     │                                      │
-└─────────────────────────────────────────────────────────────────┘
+Excel/CSV Import
+     ↓
+customer_analysis_service.analyze_customer_rows()
+     ↓
+_normalize_rows()  → extract: name, spend, repeat_count, days_since_last
+     ↓
+_segment_label()   → churn_risk | vip | potential | new
+     ↓
+segmentation.summary        → count per segment
+segmentation.revenue_by_customer_type  → grouped by LoaiKhachHang (raw column)
+segmentation.arpu_by_segment          → avg spend per segment
+segmentation.customers    → [{name, segment}] per customer
+     ↓
+Snapshot stored in DB
+     ↓
+customer-lists/page.tsx displays:
+  - KPI: total_revenue, customer count
+  - Pie: segmentation distribution
+  - Bar: inactive timeline
+  - Bar: revenue_by_customer_type
+  - Bar: arpu_by_segment
+  - Grid: segment count tiles → outreach links
 ```
 
-### 5.2 Cách thông tin khách được điền vào email
+---
 
-Khi AI viết email, hệ thống sẽ lấy thông tin có sẵn của khách để điền vào:
+## Data format mẫu
 
-| Biến | Ví dụ | Giải thích |
-|------|-------|------------|
-| `{{HoVaTen}}` | Nguyễn Văn A | Tên khách hàng |
-| `{{LanCuoiChiTra}}` | 15/01/2024 | Ngày mua cuối cùng |
-| `{{DichVuLanCuoiSuDung}}` | Massage | Dịch vụ đã dùng |
-| `{{days_since_last}}` | 120 | Bao nhiêu ngày chưa mua |
+Import từ Excel → dữ liệu nên có các cột:
 
-**Ví dụ email thực tế:**
-
-> **Tiêu đề:** Nhắc nhở từ Cửa hàng AIMA
->
-> Chào **Nguyễn Văn A**,
->
-> Đã **120 ngày** rồi bạn không ghé thăm cửa hàng. Chúng mình rất nhớ bạn!
->
-> Lần cuối bạn sử dụng dịch vụ **Massage** vào ngày **15/01/2024**.
->
-> Hôm nay, shop có chương trình **giảm 20%** tất cả dịch vụ cho khách cũ.
->
-> Bạn ơi, quay lại với chúng mình nhé!
->
-> Thân ái,
-> AIMA Shop
-
-### 5.3 Giới hạn sử dụng
-
-| Hạng mục | Giới hạn | Lý do |
-|----------|----------|-------|
-| Số khách mỗi lần gửi | Tối đa 200 | Tránh quá tải server |
-| Số email gửi cùng lúc | 200 | Theo giới hạn của Gmail |
+| Cột | Format | Ví dụ |
+|------|--------|-------|
+| `HoVaTen` | text | Nguyễn Văn A |
+| `SDT` | text | 0912345678 |
+| `Email` | email | email@example.com |
+| `LanCuoiChiTra` | DD/M/YY | 15/2/26 |
+| `TongSoTienDaChiTra` | number + ₫ | 2.400.000 ₫ |
+| `TongSoLanQuayLai` | integer | 4 |
+| `LoaiKhachHang` | text | VIP, Thân thiết |
 
 ---
 
-## 6. Hướng dẫn sử dụng (từng bước)
+### Fix 7: Strip "[Your Name]" placeholder thừa trong email body
 
-### Bước 1: Vào trang danh sách khách
-- Đăng nhập vào hệ thống
-- Chọn menu "Danh sách khách" ở bên trái
+**File:** `api/routers/workflow.py` — `_normalize_smart_contact_compose_output` và `_compose_single_email`
 
-### Bước 2: Chọn danh sách cần gửi
-- Click vào tên danh sách để mở
-- Đảm bảo danh sách có dữ liệu
+**Vấn đề:** LLM hay ghi `[Your Name]` ở cuối email body → hiển thị thừa cho user.
 
-### Bước 3: Chạy phân tích
-- Bấm nút "Phân tích"
-- Đợi hệ thống xử lý (khoảng 10-30 giây tuỳ lượng data)
-- Xem kết quả phân tích
+**Fix:**
+1. `_normalize_smart_contact_compose_output`: Strip các dòng signature lines thừa (regex patterns cho `[Your Name]`, `[Tên của bạn]`, `[Name]`, `Trân trọng`, `Thân ái`, markdown link `[Name](url)`, etc.)
+2. `_compose_single_email._PLACEHOLDER_MAP`: Thêm mapping cho `[Your Name]`, `[Name]`, `[Shop Name]`, etc. → thay bằng tên khách hàng
 
-### Bước 4: Bấm nút gửi email
-- Sau khi xem kết quả phân tích
-- Bấm nút "Gửi email" (xuất hiện trong modal kết quả)
-- Trang soạn email sẽ mở ra
+### Fix 8: Gắn thông tin liên hệ brand vào cuối email & cải thiện prompt
 
-### Bước 5: Chọn nhóm và mục đích
-- **Nhóm khách:** Chọn 1 trong 4 nhóm (sắp rời bỏ, tiềm năng, VIP, mới)
-- **Mục đích:** Nhắc quay lại / Chăm sóc / Kích hoạt / Chào mừng
+**File:** `api/routers/workflow.py` — `_compose_single_email`
 
-### Bước 6: AI viết email
-- Bấm "AI viết email"
-- Đợi AI soạn (5-30 giây)
-- Xem danh sách email đã viết
+**Vấn đề:**
+1. Email không có thông tin liên hệ thương hiệu ở cuối
+2. LLM viết email chung chung, không đúng brand → kể cả khi có brand context trong system prompt
 
-### Bước 7: Sửa và gửi
-- Đọc từng email, sửa nếu cần
-- Bấm "Gửi tất cả" để gửi
-- Hoặc bấm "Gửi" bên cạnh từng email
-
-### Bước 8: Kiểm tra kết quả
-- Xem trạng thái gửi (thành công / thất bại)
-- Email thất bại có thể gửi lại sau
+**Fix:**
+1. Trích `brand_contact_parts` (tên brand, email liên hệ, phone, address) từ `brand_context` → gắn vào cuối `rendered_body`
+2. Thêm brand name vào `recipients_data` block để LLM nhận biết mình đang viết cho brand nào
+3. Thêm block `⚠️ QUAN TRỌNG — ĐÂY LÀ EMAIL TỪ THƯƠNG HIỆU:` trong user prompt, nhấn mạnh 4 quy tắc:
+   - Giữ đúng giọng điệu/tone từ brand profile
+   - Nhắc đúng tên brand, tagline, dịch vụ/sản phẩm đặc trưng
+   - Viết như chính chủ cửa hàng viết tay
+   - Không chung chung
 
 ---
 
-## 7. Xử lý lỗi thường gặp
+## Lưu ý triển khai
 
-### Lỗi: "Chưa có kết quả phân tích"
-- **Nguyên nhân:** Chưa bấm nút "Phân tích"
-- **Cách sửa:** Vào danh sách → Bấm "Phân tích" → Đợi xong → Gửi email
-
-### Lỗi: "Không có khách nào trong nhóm"
-- **Nguyên nhân:** Nhóm này không có khách nào phù hợp
-- **Cách sửa:** Thử chọn nhóm khác
-
-### Lỗi: Email không gửi được
-- **Nguyên nhân:** Cấu hình Gmail chưa đúng
-- **Cách sửa:** Kiểm tra file `.env`, đảm bảo đã điền đúng thông tin Gmail
-
----
-
-## 8. Bảo mật
-
-- Mỗi user chỉ thấy danh sách của mình
-- Email được gửi từ tài khoản đã cấu hình trong hệ thống
-- Không lưu mật khẩu email ở đâu khác ngoài file cấu hình
+- Sau khi fix `_to_float` và `_to_date`, user cần **chạy lại phân tích** (bấm "Phân tích") để cập nhật kết quả đúng
+- Brand Vault cần thiết để email có thông tin thương hiệu — nếu chưa có, email vẫn soạn được nhưng chung chung hơn
+- Outreach page sử dụng `localStorage` để lưu draft email — khi chuyển segment, draft cũ được giữ riêng cho từng segment

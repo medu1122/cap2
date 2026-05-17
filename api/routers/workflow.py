@@ -479,7 +479,31 @@ def _normalize_smart_contact_compose_output(raw: str, mode: str) -> str:
             break
     if mode == "sms" and len(t) > 360:
         t = t[:357].rstrip() + "…"
-    return t.strip()
+
+    # Strip placeholder signature lines LLM hay thêm thừa
+    lines = t.splitlines()
+    SIG_PATTERNS = (
+        r"^\s*\[?\s*[Yy]our\s+[Nn]ame\s*\]?\s*$",
+        r"^\s*\[?\s*[Tt]ên\s*(của\s*)?[Bb]ạn\s*\]?\s*$",
+        r"^\s*\[?\s*[Hh]ọ\s*[Tt]ên\s*\]?\s*$",
+        r"^\s*\[?\s*[Nn]ame\s*\]?\s*$",
+        r"^\s*\[?\s*[Ss]hop\s*[Nn]ame\s*\]?\s*$",
+        r"^\s*\[?\s*[Tt]ên\s*cửa\s*hàng\s*\]?\s*$",
+        r"^\s*Trân trọng\s*,?\s*$",
+        r"^\s*Thân ái\s*,?\s*$",
+        r"^\s*Thân trọng\s*,?\s*$",
+        r"^\s*Hẹn\s+gặp\s+lại\s*,?\s*$",
+        r"^\s*Warmly\s*,?\s*$",
+        r"^\s*Best\s*,?\s*$",
+        r"^\s*Best\s+regards\s*,?\s*$",
+        r"^\s*\[.*?\]\(.*?\)\s*$",  # markdown link [Name](url)
+    )
+    import re
+    sig_re = re.compile("|".join(SIG_PATTERNS))
+    while lines and sig_re.match(lines[-1].strip()):
+        lines.pop()
+    t = "\n".join(lines).strip()
+    return t
 
 
 def _smart_contact_compose_system_prompt(
@@ -1696,8 +1720,81 @@ async def _compose_single_email(
     phone = (customer.get("phone") or "").strip()
     variables: dict[str, str] = customer.get("variables") or {}
 
+    # Tạo brand context fallback nếu không có brand — để LLM luôn có thông tin thương hiệu
+    if not brand_context:
+        brand_context = (
+            f"Tên thương hiệu: {list_name}\n"
+            "Slogan / dòng phụ: (chưa cập nhật)\n"
+            "Giọng điệu (tone_of_voice): thân thiện\n"
+        )
+
+    # Trích xuất thông tin liên hệ brand từ brand_context cho footer
+    brand_contact_parts: list[str] = []
+    if brand_context:
+        for line in brand_context.splitlines():
+            stripped = line.strip()
+            low = stripped.lower()
+            if any(
+                low.startswith(p) for p in
+                ("tên thương hiệu:", "email liên hệ:", "số điện thoại:",
+                 "địa chỉ:", "website:", "fanpage:", "facebook:")
+            ):
+                brand_contact_parts.append(stripped)
+
+    # Trích brand name từ brand_context
+    brand_name = name  # mặc định = tên khách (sai mục đích, fix sau)
+    for line in brand_context.splitlines():
+        low = line.strip().lower()
+        if low.startswith("tên thương hiệu:"):
+            brand_name = line.strip().removeprefix("Tên thương hiệu:").removeprefix("tên thương hiệu:").strip()
+            break
+
+    # Segment-specific context for the LLM
+    segment_context: dict[str, str] = {
+        "churn_risk": (
+            "📌 Nhóm khách: CÓ KHẢ NĂNG RỜI BỎ — đã lâu không quay lại.\n"
+            "  → Email: nhẹ nhàng, gợi kỷ niệm tốt, tạo lý do hấp dẫn để quay lại. "
+            "Nhắc tên thương hiệu, dịch vụ đặc trưng đã dùng."
+        ),
+        "potential": (
+            "📌 Nhóm khách: TIỀM NĂNG — dùng dịch vụ 2+ lần, chi tiêu tốt.\n"
+            "  → Email: thể hiện sự trân trọng, gợi ý dịch vụ khác phù hợp, nhắc tên thương hiệu."
+        ),
+        "new": (
+            "📌 Nhóm khách: KHÁCH MỚI — mới trải nghiệm lần đầu.\n"
+            "  → Email: nồng ấm, cảm ơn, giới thiệu dịch vụ để quay lại sớm, nhắc tên thương hiệu."
+        ),
+        "vip": (
+            "📌 Nhóm khách: VIP — chi tiêu cao, quay lại nhiều lần.\n"
+            "  → Email: trân trọng cao cấp, ưu đãi đặc biệt, nhắc tên thương hiệu."
+        ),
+    }
+    seg_context = segment_context.get(segment, segment_context["potential"])
+
     # Build per-customer data context
-    data_lines = [f"- Khách: {name}"]
+    data_lines: list[str] = []
+
+    # Lấy thông tin brand từ brand_context để đưa vào user prompt
+    brand_name_for_prompt = brand_name
+    brand_tagline_for_prompt = ""
+    brand_products_for_prompt = ""
+    brand_services_for_prompt = ""
+    for line in brand_context.splitlines():
+        low = line.strip().lower()
+        if low.startswith("tên thương hiệu:"):
+            brand_name_for_prompt = line.strip().removeprefix("Tên thương hiệu:").removeprefix("tên thương hiệu:").strip()
+        elif low.startswith("slogan"):
+            brand_tagline_for_prompt = line.strip().removeprefix("Slogan / dòng phụ:").removeprefix("slogan / dòng phụ:").strip()
+        elif low.startswith("dịch vụ / sản phẩm chính"):
+            brand_products_for_prompt = line.strip().removeprefix("Dịch vụ / sản phẩm chính (tham khảo khi viết):").strip()
+
+    data_lines.append(f"→ VIẾT EMAIL CHO THƯƠNG HIỆU: {brand_name_for_prompt}")
+    if brand_tagline_for_prompt:
+        data_lines.append(f"  Slogan: {brand_tagline_for_prompt}")
+    if brand_products_for_prompt:
+        data_lines.append(f"  Dịch vụ/sản phẩm chính: {brand_products_for_prompt}")
+
+    data_lines.append(f"- Khách: {name}")
     for k, v in variables.items():
         if k in ("name", "phone") or not v:
             continue
@@ -1712,47 +1809,60 @@ async def _compose_single_email(
         data_lines.append(f"  - {k_label}: {v}")
     recipients_data = "\n".join(data_lines)
 
-    # Build user prompt
+    # Build user prompt — brand info phải ở ĐÂY (user prompt mạnh hơn system prompt)
     user_prompt = (
         f"{purpose_instruction}\n\n"
-        f"Danh sách khách:\n{recipients_data}"
+        f"{seg_context}\n\n"
+        f"Thông tin khách hàng:\n{recipients_data}\n\n"
+        "QUY TẮC BẮT BUỘC:\n"
+        f"1. VIẾT EMAIL TỪ THƯƠNG HIỆU «{brand_name_for_prompt}» — nhắc tên thương hiệu tự nhiên trong nội dung.\n"
+        "2. Nhắc dịch vụ/sản phẩm đặc trưng của thương hiệu (nếu có), KHÔNG bịa tên.\n"
+        "3. Viết như chính chủ cửa hàng viết tay — không chung chung.\n"
+        "4. Email gửi cho 1 khách hàng cụ thể — cá nhân hóa bằng tên khách và thông tin khách.\n"
+        "5. Không dùng từ cấm của thương hiệu (nếu có trong brand profile).\n"
+        "6. KHÔNG thêm placeholder signature như [Your Name], [Shop Name] — chỉ cần nội dung email thuần túy."
     )
 
     payload = SmartContactComposePayload(
         user_prompt=user_prompt,
         mode="email",
         recipients_data_context=recipients_data,
-        brand_id=None,  # brand resolved server-side
+        brand_id=None,
     )
 
     body = await _smart_contact_compose_text(payload, brand_context=brand_context)
 
-    # Generate professional subject line based on segment and purpose
-    segment_label = {
-        "churn_risk": "khách cũ",
-        "potential": "khách tiềm năng",
-        "new": "khách mới",
-        "vip": "VIP",
-    }.get(segment or "potential", "khách hàng")
-
+    # Generate subject line based on segment and purpose
     purpose_subject = {
-        "nhac_nhe": ["Những kỷ niệm đẹp đang chờ bạn quay lại", "Đã lâu rồi bạn ơi, ghé thăm nhé", "Bạn ơi, chúng tôi nhớ bạn rồi!"],
-        "cham_soc": ["Cảm ơn bạn đã đồng hành cùng chúng tôi", "Hôm nay bạn thế nào?", "Chúng tôi luôn ở đây vì bạn"],
-        "kích_hoạt": ["Đã có gì mới ở nơi của bạn, bạn biết không?", "Bạn ơi, chúng tôi có điều muốn chia sẻ", "Lâu rồi không gặp, có nhiều thứ hay ho lắm!"],
-        "khach_moi": ["Chào mừng bạn đến với gia đình của chúng tôi", "Cảm ơn bạn đã tin tưởng", "Chúng tôi rất vui được gặp bạn!"],
+        "nhac_nhe": [
+            "Những kỷ niệm đẹp đang chờ bạn quay lại",
+            "Đã lâu rồi bạn ơi, ghé thăm nhé",
+            "Bạn ơi, chúng tôi nhớ bạn rồi!",
+            "Có ai nhắn bạn gần đây không?",
+            "Chúng tôi chờ bạn thôi!",
+        ],
+        "cham_soc": [
+            "Cảm ơn bạn đã đồng hành cùng chúng tôi",
+            "Hôm nay bạn thế nào?",
+            "Chúng tôi luôn ở đây vì bạn",
+            "Bạn ơi, khoe chút đi!",
+        ],
+        "kích_hoạt": [
+            "Đã có gì mới ở nơi của bạn, bạn biết không?",
+            "Bạn ơi, chúng tôi có điều muốn chia sẻ",
+            "Lâu rồi không gặp, có nhiều thứ hay ho lắm!",
+            "Bạn ơi, có người đang chờ bạn đấy!",
+        ],
+        "khach_moi": [
+            "Chào mừng bạn đến với gia đình của chúng tôi",
+            "Cảm ơn bạn đã tin tưởng",
+            "Chúng tôi rất vui được gặp bạn!",
+            "Chào bạn mới, rất vui được làm quen!",
+        ],
     }.get(purpose_key, ["Tin nhắn từ chúng tôi"])
 
-    # Try to extract brand name for more personalized subject
-    brand_name = "Chúng tôi"
-    if brand_context:
-        for line in brand_context.splitlines():
-            if line.startswith("Tên thương hiệu:"):
-                brand_name = line.split(":", 1)[1].strip().split()[0] if ":" in line else "Chúng tôi"
-                break
-
     import random
-    base_subject = random.choice(purpose_subject)
-    subject = base_subject
+    subject = random.choice(purpose_subject)
 
     # Replace placeholders in body with actual values
     _PLACEHOLDER_MAP = {
@@ -1764,11 +1874,27 @@ async def _compose_single_email(
         "{{DichVuLanCuoiSuDung}}": variables.get("DichVuLanCuoiSuDung") or "",
         "{{DichVuSuDungNhieuNhat}}": variables.get("DichVuSuDungNhieuNhat") or "",
         "{{TongSoLanQuayLai}}": variables.get("TongSoLanQuayLai") or "",
+        "[Your Name]": "",
+        "[Tên của bạn]": "",
+        "[Your name]": "",
+        "[Name]": "",
+        "[Shop Name]": brand_name_for_prompt,
+        "[Tên cửa hàng]": brand_name_for_prompt,
+        # Thay thế tên brand nếu LLM ghi sai
+        brand_name_for_prompt: brand_name_for_prompt,
     }
     rendered_body = body
     for placeholder, value in _PLACEHOLDER_MAP.items():
         if value:
             rendered_body = rendered_body.replace(placeholder, str(value))
+    # Xóa các placeholder signature còn trống
+    for ph in ["[Your Name]", "[Tên của bạn]", "[Your name]", "[Name]"]:
+        rendered_body = rendered_body.replace(ph, "")
+
+    # Gắn thông tin liên hệ brand vào cuối email
+    if brand_contact_parts:
+        contact_block = "\n\n" + "\n".join(brand_contact_parts)
+        rendered_body += contact_block
 
     return {
         "name": name,
