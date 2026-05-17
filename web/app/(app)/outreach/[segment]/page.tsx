@@ -844,7 +844,7 @@ export default function OutreachSegmentPage() {
   if (!isValidSegment) return null;
 
   return (
-    <div className="flex min-h-screen flex-col bg-amber-50">
+    <div className="flex min-h-screen flex-col bg-transparent">
       {/* ── Header ── */}
       <header className="sticky top-0 z-10 border-b border-amber-200 bg-white shadow-sm">
         <div className="flex items-center justify-between px-6 py-3">

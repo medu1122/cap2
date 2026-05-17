@@ -260,7 +260,7 @@ export default function AdminPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 text-gray-500">
+      <div className="flex min-h-screen items-center justify-center bg-transparent text-gray-500">
         <Loader2 className="mr-2 h-5 w-5 animate-spin" />
         Đang tải dashboard admin...
       </div>
@@ -268,7 +268,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-transparent p-6">
       <div className="mx-auto max-w-7xl space-y-6">
         <section id="overview" className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">

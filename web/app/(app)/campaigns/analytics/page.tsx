@@ -389,7 +389,7 @@ export default function CampaignAnalyticsPage() {
   const totalSent = selectedPerformance?.total_sent || 0;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-transparent">
       {/* Header */}
       <div className="bg-white border-b border-[#377D73]/20 px-6 py-4">
         <div className="max-w-7xl mx-auto">

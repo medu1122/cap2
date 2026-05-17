@@ -448,7 +448,7 @@ const PIPELINE_STEPS = [
 // Hero Section Component
 function HeroSection() {
   return (
-    <div className="bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 rounded-2xl p-6 text-white mb-6">
+    <div className="bg-gradient-to-br from-teal-600 via-teal-700 to-teal-800 rounded-2xl p-6 text-white mb-6">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
@@ -456,7 +456,7 @@ function HeroSection() {
           </div>
           <div>
             <h1 className="text-xl font-bold">AI Analyst</h1>
-            <p className="text-blue-100 text-sm mt-0.5">
+            <p className="text-teal-100 text-sm mt-0.5">
               Phân tích dữ liệu thông minh với AI
             </p>
           </div>
@@ -847,10 +847,10 @@ function ActionCard({ action }: {
   };
 }) {
   return (
-    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-xl p-4 hover:shadow-md transition-shadow cursor-pointer">
+    <div className="bg-gradient-to-r from-teal-50 to-teal-100 border border-teal-200 rounded-xl p-4 hover:shadow-md transition-shadow cursor-pointer">
       <div className="flex items-start gap-3">
-        <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-          <ChevronRight className="w-4 h-4 text-blue-600" />
+        <div className="w-8 h-8 bg-teal-100 rounded-lg flex items-center justify-center">
+          <ChevronRight className="w-4 h-4 text-teal-600" />
         </div>
         <div className="flex-1">
           <h4 className="font-medium text-gray-900 mb-1">{action.title}</h4>
@@ -1283,9 +1283,9 @@ function MetricPopover({ label, value, format, onClose }: {
         <p className="text-xs text-gray-500 mb-0.5">Cách tính:</p>
         <p className="text-xs text-gray-700">{info.how}</p>
       </div>
-      <div className="flex items-start gap-1.5 bg-blue-50 rounded-lg p-2.5">
-        <TrendingUp className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 mt-0.5" />
-        <p className="text-xs text-blue-700">{info.tip}</p>
+      <div className="flex items-start gap-1.5 bg-teal-50 rounded-lg p-2.5">
+        <TrendingUp className="w-3.5 h-3.5 text-teal-600 flex-shrink-0 mt-0.5" />
+        <p className="text-xs text-teal-700">{info.tip}</p>
       </div>
     </div>
   );
@@ -1842,22 +1842,22 @@ function CollapsibleResultsPanel({
       >
         <div className="flex items-center gap-3">
           <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-            analysisResult.report_type === "sales_report" ? "bg-blue-50" :
+            analysisResult.report_type === "sales_report" ? "bg-teal-50" :
             analysisResult.report_type === "expense_report" ? "bg-amber-50" :
             analysisResult.report_type === "payroll_report" ? "bg-green-50" :
-            "bg-indigo-50"
+            "bg-teal-50"
           }`}>
             <BarChart3 className={`w-4 h-4 ${
-              analysisResult.report_type === "sales_report" ? "text-blue-500" :
+              analysisResult.report_type === "sales_report" ? "text-teal-600" :
               analysisResult.report_type === "expense_report" ? "text-amber-500" :
               analysisResult.report_type === "payroll_report" ? "text-green-500" :
-              "text-indigo-500"
+              "text-teal-500"
             }`} />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Kết quả phân tích</span>
-              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700">
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-teal-50 text-teal-700">
                 {REPORT_TYPE_LABEL_VI[analysisResult.report_type ?? ""] || analysisResult.report_type?.replace(/_/g, " ") || "Báo cáo"}
               </span>
               {analysisResult.report_description && (
@@ -2036,7 +2036,7 @@ function ChatPanel({
       {/* Header */}
       <div className="px-5 py-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center">
+          <div className="w-10 h-10 bg-gradient-to-br from-teal-500 to-teal-600 rounded-xl flex items-center justify-center">
             <MessageSquare className="w-5 h-5 text-white" />
           </div>
           <div>
@@ -2064,7 +2064,7 @@ function ChatPanel({
                 <button
                   key={i}
                   onClick={() => setMessage(q)}
-                  className="text-sm text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-lg transition-colors"
+                  className="text-sm text-teal-600 hover:text-teal-700 bg-teal-50 hover:bg-teal-100 px-3 py-2 rounded-lg transition-colors"
                 >
                   {q}
                 </button>
@@ -2081,7 +2081,7 @@ function ChatPanel({
                   <div
                     className={`max-w-[75%] rounded-2xl px-4 py-3 ${
                       msg.role === "user"
-                        ? "bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-br-md ml-auto"
+                        ? "bg-gradient-to-br from-teal-500 to-teal-600 text-white rounded-br-md ml-auto"
                         : "bg-gray-100 text-gray-800 rounded-bl-md"
                     }`}
                   >
@@ -2090,7 +2090,7 @@ function ChatPanel({
                     <p
                       className={`text-xs mt-1 ${
                         msg.role === "user"
-                          ? "text-blue-100 text-right"
+                          ? "text-teal-100 text-right"
                           : "text-gray-400"
                       }`}
                     >
@@ -2112,13 +2112,13 @@ function ChatPanel({
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
             placeholder="Hỏi AI về dữ liệu..."
-            className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
             disabled={sending || !chatSession}
           />
           <button
             onClick={handleSend}
             disabled={sending || !message.trim() || !chatSession}
-            className="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-medium text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            className="px-5 py-2.5 bg-teal-600 text-white rounded-xl font-medium text-sm hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
           >
             {sending ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -2154,7 +2154,7 @@ function DataSourcePills({
           key={ds.id}
           className={`inline-flex items-center overflow-hidden rounded-lg border transition-all ${
             activeSourceId === ds.id
-              ? "border-blue-500 bg-blue-50 text-blue-700"
+              ? "border-teal-500 bg-teal-50 text-teal-700"
               : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
           }`}
         >
@@ -2174,7 +2174,7 @@ function DataSourcePills({
             onClick={() => onDelete(ds)}
             className={`border-l px-2 py-2 transition-colors ${
               activeSourceId === ds.id
-                ? "border-blue-100 text-blue-500 hover:bg-blue-100 hover:text-blue-700"
+                ? "border-teal-100 text-teal-500 hover:bg-teal-100 hover:text-teal-700"
                 : "border-gray-100 text-gray-400 hover:bg-red-50 hover:text-red-600"
             }`}
           >
@@ -2199,8 +2199,8 @@ function AnalysisProgress({ analyzing, streamHint, progress, elapsedSec }: {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md mx-4">
         <div className="text-center mb-6">
-          <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+          <div className="w-16 h-16 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Loader2 className="w-8 h-8 text-teal-600 animate-spin" />
           </div>
           <h3 className="text-lg font-semibold text-gray-900 mb-1">Đang phân tích dữ liệu</h3>
           <p className="text-sm text-gray-500">{streamHint || "Đang khởi tạo..."}</p>
@@ -2210,7 +2210,7 @@ function AnalysisProgress({ analyzing, streamHint, progress, elapsedSec }: {
         <div className="mb-4">
           <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 transition-all duration-500"
+              className="h-full bg-gradient-to-r from-teal-500 to-teal-600 transition-all duration-500"
               style={{ width: `${progress}%` }}
             />
           </div>
@@ -2583,7 +2583,7 @@ const [partialResult, setPartialResult] = useState<Partial<DeepAnalysisResult> |
   }, [streamProgress]);
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-transparent p-6">
       <div className="max-w-6xl mx-auto">
         {/* Hero Section */}
         <HeroSection />
@@ -2633,7 +2633,7 @@ const [partialResult, setPartialResult] = useState<Partial<DeepAnalysisResult> |
                       <button
                         onClick={handleAnalyze}
                         disabled={analyzing || rows.length === 0 || columns.length === 0}
-                        className="px-4 py-2 border border-blue-200 text-blue-600 rounded-lg font-medium text-sm hover:bg-blue-50 transition-all flex items-center gap-2"
+                        className="px-4 py-2 border border-teal-200 text-teal-600 rounded-lg font-medium text-sm hover:bg-teal-50 transition-all flex items-center gap-2"
                       >
                         <Sparkles className="w-4 h-4" />
                         Phân tích lại
@@ -2645,7 +2645,7 @@ const [partialResult, setPartialResult] = useState<Partial<DeepAnalysisResult> |
                       <button
                         onClick={handleAnalyze}
                         disabled={analyzing || rows.length === 0 || columns.length === 0}
-                        className="px-5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg font-medium text-sm hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-lg shadow-blue-500/25"
+                        className="px-5 py-2 bg-gradient-to-r from-teal-600 to-teal-600 text-white rounded-lg font-medium text-sm hover:from-teal-700 hover:to-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-lg shadow-teal-500/25"
                       >
                         <Sparkles className="w-4 h-4" />
                         Phân tích với AI
