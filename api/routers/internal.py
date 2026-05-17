@@ -19,6 +19,14 @@ router = APIRouter()
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def _extract_target_customer(additional_notes: str | None) -> str | None:
+    """Trích target_customer từ additional_notes, format: [TARGET_CUSTOMER: existing]"""
+    if not additional_notes:
+        return None
+    import re
+    m = re.search(r"\[TARGET_CUSTOMER:\s*(\w+)\]", additional_notes)
+    return m.group(1) if m else None
+
 DAYS_BEFORE_DEADLINE = 2  # luôn kết thúc trước deadline 2 ngày
 MIN_GAP_DAYS = 2  # tối thiểu 2 ngày giữa 2 bài cùng kênh
 
@@ -228,6 +236,9 @@ async def get_campaign_detail_internal(
             "deadline": str(campaign.deadline),
             "channels": campaign.channels,
             "additional_notes": campaign.additional_notes,
+            # target_customer: đối tượng khách hàng mục tiêu (existing|new|all)
+            # Được truyền vào additional_notes dạng [TARGET_CUSTOMER: xxx]
+            "target_customer": _extract_target_customer(campaign.additional_notes),
         },
         "brand_vault": {
             "brand_name": brand.brand_name if brand else "",

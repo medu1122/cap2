@@ -69,10 +69,11 @@ interface CustomerAnalysis {
 type OutreachSegment = "churn" | "potential" | "new" | "vip";
 
 const SEGMENT_MAP: Record<string, OutreachSegment> = {
-  churn_risk: "churn",
+  churn: "churn",
   potential: "potential",
   new: "new",
   vip: "vip",
+  churn_risk: "churn",
 };
 
 const SEGMENT_REVERSE_MAP: Record<OutreachSegment, string> = {
@@ -319,8 +320,9 @@ export default function OutreachSegmentPage() {
   const rawSegment = params?.segment as string || "churn";
 
   // Normalize segment
-  const segment: OutreachSegment =
-    SEGMENT_MAP[rawSegment] ?? SEGMENT_REVERSE_MAP[rawSegment as OutreachSegment] ? "churn" : (rawSegment as OutreachSegment);
+  const mapped = SEGMENT_MAP[rawSegment];
+  const reversed = SEGMENT_REVERSE_MAP[rawSegment as OutreachSegment];
+  const segment: OutreachSegment = mapped ?? reversed ?? (rawSegment as OutreachSegment);
 
   // Redirect invalid segment
   const validSegments = ["churn", "potential", "new", "vip"] as const;

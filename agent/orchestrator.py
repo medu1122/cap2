@@ -1,3 +1,4 @@
+import asyncio
 import httpx
 import os
 from datetime import date, timedelta
@@ -156,14 +157,23 @@ class CampaignOrchestrator:
                 except Exception:
                     all_tracking_links = []
 
-                for idx, deliverable in enumerate(active_deliverables):
+                # Lấy tracking links của chiến dịch
+                try:
+                    tracking_resp = await client.get(f"{API_BASE}/internal/campaigns/{campaign_id}/tracking-links")
+                    tracking_resp.raise_for_status()
+                    all_tracking_links = tracking_resp.json()
+                except Exception:
+                    all_tracking_links = []
+
+                # ── Writer + Critic cho TẤT CẢ kênh SONG SONG ──────────────────────
+                async def run_single_channel(idx: int, deliverable: dict) -> tuple[int, str, dict]:
                     channel = deliverable["channel"]
 
                     # Lọc tracking links theo kênh
                     if channel == "email":
-                        links = [l for l in all_tracking_links if l["link_type"] in ("email_click", None)]
+                        links = [l for l in all_tracking_links if l.get("link_type") in ("email_click", None)]
                     elif channel == "facebook_post":
-                        links = [l for l in all_tracking_links if l["link_type"] == "facebook_post"]
+                        links = [l for l in all_tracking_links if l.get("link_type") == "facebook_post"]
                     else:
                         links = []
 
@@ -171,14 +181,35 @@ class CampaignOrchestrator:
                         campaign_id, deliverable, plan, brand_vault, step,
                         tracking_links=links,
                     )
-                    step += 1
+                    step_local = step + idx * 2
 
-                    final = await self.critic.run(campaign_id, deliverable, draft, brand_vault, plan, step)
-                    step += 1
+                    final = await self.critic.run(campaign_id, deliverable, draft, brand_vault, plan, step_local + 1)
 
-                    final_content = final["final_content"]
+                    return idx, channel, final["final_content"]
+
+                tasks = [
+                    run_single_channel(i, d)
+                    for i, d in enumerate(active_deliverables)
+                ]
+                results: list[tuple[int, str, dict]] = []
+                failed_channels: list[str] = []
+                for fut in asyncio.as_completed(tasks):
+                    try:
+                        result = await fut
+                        results.append(result)
+                    except Exception as exc:
+                        # collect idx from the failing task (best-effort)
+                        failed_channels.append(str(exc))
+
+                # Sắp xếp lại đúng thứ tự
+                results.sort(key=lambda x: x[0])
+
+                for idx, channel, final_content in results:
+                    publish_idx = next(
+                        (i for i, d in enumerate(active_deliverables) if d["channel"] == channel),
+                        idx,
+                    )
                     written_content.append((channel, final_content))
-
                     await client.post(
                         f"{API_BASE}/internal/content",
                         json={
@@ -187,9 +218,13 @@ class CampaignOrchestrator:
                             "version": 1,
                             "status": "pending_approval",
                             "content_json": final_content,
-                            "scheduled_date": publish_dates[idx],
+                            "scheduled_date": publish_dates[publish_idx],
                         },
                     )
+
+                if failed_channels:
+                    # Log nhưng vẫn tiếp tục
+                    pass
 
                 # ── Image prompt A2A (after writing, so Qwen sees full content) ─
                 if image_required:

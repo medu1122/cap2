@@ -1727,9 +1727,9 @@ def _build_situations_and_actions(
         suggested_actions.append(
             {
                 "id": "reactivate_inactive_customers",
-                "title": "Chay chuong trinh re-engagement cho nhom inactive",
+                "title": "Chay chuong trinh re-engagement cho nhom churn",
                 "priority": "medium",
-                "target_segment": "inactive",
+                "target_segment": "churn",
                 "reason": "Can kich hoat lai tep khach cu de tang don lap lai",
                 "expected_impact": "Tang repeat orders sau 30-60 ngay",
             }
