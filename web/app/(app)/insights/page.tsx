@@ -235,6 +235,24 @@ function generateId(): string {
   return Math.random().toString(36).slice(2, 11);
 }
 
+function createTempChatMessage(content: string): ChatMessage {
+  return {
+    id: `temp-${Date.now()}-${generateId()}`,
+    role: "user",
+    content,
+    created_at: new Date().toISOString(),
+  };
+}
+
+function formatChatTime(value?: string): string {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function parseCsvText(text: string): { headers: string[]; rows: TableRow[] } {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (lines.length < 2) throw new Error("File CSV không có dữ liệu hợp lệ.");
@@ -2076,10 +2094,7 @@ function ChatPanel({
                           : "text-gray-400"
                       }`}
                     >
-                      {new Date(msg.created_at).toLocaleTimeString("vi-VN", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      {formatChatTime(msg.created_at)}
                     </p>
                   </div>
                 </div>
@@ -2122,10 +2137,12 @@ function DataSourcePills({
   dataSources,
   activeSourceId,
   onSelect,
+  onDelete,
 }: {
   dataSources: DataSource[];
   activeSourceId: string | null;
   onSelect: (ds: DataSource) => void;
+  onDelete: (ds: DataSource) => void;
 }) {
   if (dataSources.length === 0) return null;
 
@@ -2133,19 +2150,37 @@ function DataSourcePills({
     <div className="flex flex-wrap gap-2 mb-4">
       <span className="text-sm font-medium text-gray-500 py-1">Bảng đã lưu:</span>
       {dataSources.map((ds) => (
-        <button
+        <div
           key={ds.id}
-          onClick={() => onSelect(ds)}
-          className={`text-sm px-3 py-1.5 rounded-lg border transition-all flex items-center gap-2 ${
+          className={`inline-flex items-center overflow-hidden rounded-lg border transition-all ${
             activeSourceId === ds.id
               ? "border-blue-500 bg-blue-50 text-blue-700"
               : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
           }`}
         >
-          <Table2 className="w-3.5 h-3.5" />
-          {ds.name}
-          <span className="text-xs text-gray-400">({ds.row_count})</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => onSelect(ds)}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm"
+          >
+            <Table2 className="w-3.5 h-3.5" />
+            <span>{ds.name}</span>
+            <span className="text-xs text-gray-400">({ds.row_count})</span>
+          </button>
+          <button
+            type="button"
+            aria-label={`Xóa bảng ${ds.name}`}
+            title="Xóa bảng"
+            onClick={() => onDelete(ds)}
+            className={`border-l px-2 py-2 transition-colors ${
+              activeSourceId === ds.id
+                ? "border-blue-100 text-blue-500 hover:bg-blue-100 hover:text-blue-700"
+                : "border-gray-100 text-gray-400 hover:bg-red-50 hover:text-red-600"
+            }`}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
       ))}
     </div>
   );
@@ -2378,6 +2413,17 @@ const [partialResult, setPartialResult] = useState<Partial<DeepAnalysisResult> |
         });
       }
 
+      let chatId: string | null = null;
+      try {
+        const chat = await api.post<{ id: string }>("/insights/chats", null, {
+          params: { data_source_id: sourceId },
+        });
+        chatId = chat.id;
+        await loadChatSession(chat.id);
+      } catch (chatError) {
+        console.warn("Chat session could not be created before analysis", chatError);
+      }
+
       // Run analysis
       const raw = await postNdjsonStream("/insights/a2a/deep-analysis-stream", {
         business_name: tableName,
@@ -2400,12 +2446,19 @@ const [partialResult, setPartialResult] = useState<Partial<DeepAnalysisResult> |
 
       setStreamProgress((p) => ({ ...p, success: true }));
 
-      // Create a chat session linked to this analysis result.
-      const chat = await api.post<{ id: string }>("/insights/chats", null, {
-        params: { data_source_id: sourceId, insight_run_id: result.run_id ?? "" },
-      });
-
-      await loadChatSession(chat.id);
+      if (!chatId) {
+        try {
+          const chat = await api.post<{ id: string }>("/insights/chats", null, {
+            params: { data_source_id: sourceId, insight_run_id: result.run_id ?? "" },
+          });
+          chatId = chat.id;
+          await loadChatSession(chat.id);
+        } catch (chatError) {
+          console.warn("Chat session could not be created after analysis", chatError);
+          setChatSession(null);
+          setError("Phân tích đã hoàn tất, nhưng chưa tạo được phiên chat. Vui lòng đăng nhập đúng tài khoản và chọn lại bảng đã lưu.");
+        }
+      }
 
       // Refresh data sources
       await loadDataSources();
@@ -2428,6 +2481,12 @@ const [partialResult, setPartialResult] = useState<Partial<DeepAnalysisResult> |
 
   async function handleSendMessage(content: string) {
     if (!chatSession) return;
+    const tempMessage = createTempChatMessage(content);
+    setChatSession((prev) => prev ? {
+      ...prev,
+      messages: [...prev.messages, tempMessage],
+    } : null);
+
     try {
       const result = await api.post<{
         user_message: ChatMessage;
@@ -2440,13 +2499,47 @@ const [partialResult, setPartialResult] = useState<Partial<DeepAnalysisResult> |
       setChatSession((prev) => prev ? {
         ...prev,
         messages: [
-          ...prev.messages,
+          ...prev.messages.filter((msg) => msg.id !== tempMessage.id),
           result.user_message,
           result.assistant_message,
         ],
       } : null);
     } catch (e) {
+      setChatSession((prev) => prev ? {
+        ...prev,
+        messages: prev.messages.filter((msg) => msg.id !== tempMessage.id),
+      } : null);
       setError(e instanceof Error ? e.message : "Không gửi được tin nhắn.");
+    }
+  }
+
+  async function handleDeleteDataSource(ds: DataSource) {
+    const confirmed = window.confirm(`Xóa bảng "${ds.name}"? Các đoạn chat liên quan cũng sẽ bị xóa.`);
+    if (!confirmed) return;
+
+    setError(null);
+    try {
+      await api.delete<{ success: boolean }>(`/insights/data-sources/${ds.id}`);
+      setDataSources((prev) => prev.filter((item) => item.id !== ds.id));
+      try {
+        localStorage.removeItem(`insights_result_${ds.id}`);
+      } catch {
+        // Ignore localStorage errors.
+      }
+
+      if (activeSourceId === ds.id) {
+        setActiveSourceId(null);
+        setColumns([]);
+        setRows([]);
+        setTableName("Bảng dữ liệu mới");
+        setTableSourceType("manual");
+        setAnalysisResult(null);
+        setPartialResult(null);
+        setChatSession(null);
+        setAppStep("input");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Không xóa được bảng đã lưu.");
     }
   }
 
@@ -2508,6 +2601,7 @@ const [partialResult, setPartialResult] = useState<Partial<DeepAnalysisResult> |
           dataSources={dataSources}
           activeSourceId={activeSourceId}
           onSelect={handleSelectDataSource}
+          onDelete={handleDeleteDataSource}
         />
 
         {/* Input Step */}
