@@ -1752,7 +1752,7 @@ async def _compose_single_email(
 
     import random
     base_subject = random.choice(purpose_subject)
-    subject = f"{brand_name}: {base_subject}"
+    subject = base_subject
 
     # Replace placeholders in body with actual values
     _PLACEHOLDER_MAP = {
