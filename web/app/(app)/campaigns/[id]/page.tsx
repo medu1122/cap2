@@ -651,18 +651,9 @@ function _getContentPreview(item: ContentItem): string {
 export default function CampaignDetailPage() {
   const { id } = useParams();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
-  const [customerLists, setCustomerLists] = useState<WorkflowCustomerList[]>([]);
-  const [customerListsLoading, setCustomerListsLoading] = useState(true);
-  const [customerListsError, setCustomerListsError] = useState("");
-  const [selectedListIds, setSelectedListIds] = useState<string[]>([]);
-  const [execBusy, setExecBusy] = useState(false);
-  const [execError, setExecError] = useState("");
   const [showRevenueModal, setShowRevenueModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [autoSchedule, setAutoSchedule] = useState(false);
-  const [scheduling, setScheduling] = useState(false);
-  const [scheduleMsg, setScheduleMsg] = useState("");
   const router = useRouter();
 
   async function handleDelete() {
@@ -677,56 +668,11 @@ export default function CampaignDetailPage() {
     }
   }
 
-  async function handleScheduleToggle() {
-    if (!id) return;
-    setScheduling(true);
-    setScheduleMsg("");
-    try {
-      await api.post(`/campaigns/${id}/schedule-auto`, { enabled: !autoSchedule });
-      setAutoSchedule(!autoSchedule);
-      setScheduleMsg(!autoSchedule ? "Đã bật gửi tự động" : "Đã tắt gửi tự động");
-    } catch {
-      setScheduleMsg("Lỗi khi cập nhật");
-    } finally {
-      setScheduling(false);
-    }
-  }
-
   const load = useCallback(() => {
     api.get<Campaign>(`/campaigns/${id}`).then(setCampaign).catch(() => setCampaign(null));
   }, [id]);
 
-  const loadCustomerLists = useCallback(() => {
-    setCustomerListsLoading(true);
-    setCustomerListsError("");
-    api.get<WorkflowCustomerList[]>("/workflow/customer-lists")
-      .then(setCustomerLists)
-      .catch(() => {
-        setCustomerLists([]);
-        setCustomerListsError("Không tải được danh sách");
-      })
-      .finally(() => setCustomerListsLoading(false));
-  }, []);
-
   useEffect(() => { load(); }, [load]);
-
-  useEffect(() => {
-    const isProc = campaign?.status === "running" || campaign?.status === "pending_agent";
-    if (isProc) return;
-    loadCustomerLists();
-  }, [campaign?.status, loadCustomerLists]);
-
-  useEffect(() => {
-    const isProc = campaign?.status === "running" || campaign?.status === "pending_agent";
-    if (isProc) return;
-    loadCustomerLists();
-  }, [campaign?.status, loadCustomerLists]);
-
-  useEffect(() => {
-    if (selectedListIds.length === 0 && customerLists.length > 0) {
-      setSelectedListIds([customerLists[0].id]);
-    }
-  }, [customerLists, selectedListIds]);
 
   useEffect(() => {
     const isProcessing = campaign?.status === "running" || campaign?.status === "pending_agent";
@@ -764,23 +710,6 @@ export default function CampaignDetailPage() {
 
   const isProcessing = campaign.status === "running" || campaign.status === "pending_agent";
   const sourceContext = (campaign.campaign_plan_json?.source_context || null) as SourceContext | null;
-  const hasEmailChannel = campaign.channels.includes("email");
-  const allContentApproved = campaign.content_items.every((c) => c.status === "approved");
-
-  async function runCampaignExecution() {
-    if (!id || selectedListIds.length === 0) { setExecError("Chọn ít nhất 1 danh sách."); return; }
-    setExecError("");
-    setExecBusy(true);
-    try {
-      await api.post(`/campaigns/${id}/execute`, { mode: "email", customer_list_ids: selectedListIds, ab_test: false });
-      router.push(`/campaigns/${id}/sending?lists=${selectedListIds.join(",")}`);
-    } catch (e: unknown) {
-      const msg = e && typeof e === "object" && "message" in e ? String((e as { message: string }).message) : "Không thể chạy.";
-      setExecError(msg);
-    } finally {
-      setExecBusy(false);
-    }
-  }
 
   return (
     <>
