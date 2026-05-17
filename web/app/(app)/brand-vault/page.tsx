@@ -338,10 +338,12 @@ export default function BrandVaultPage() {
       const savedBrand = await saveBrandWithDebug(payload);
 
       await loadBrands();
-      hydrateForm(savedBrand);
-      router.replace(`/brand-vault?brandId=${savedBrand.id}`);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      setIsFormOpen(false);
+      if (savedBrand?.id) {
+        router.replace(`/brand-vault?brandId=${savedBrand.id}`);
+      } else {
+        router.replace("/brand-vault");
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Lỗi lưu hồ sơ thương hiệu";
       setError(`${msg}. Mở DevTools để xem log [brand-vault:save:*].`);
@@ -380,13 +382,9 @@ export default function BrandVaultPage() {
     setError("");
     try {
       await api.delete(`/brands/id/${form.id}`);
-      const list = await loadBrands();
-      if (list.length > 0) {
-        hydrateForm(list[0]);
-        router.replace(`/brand-vault?brandId=${list[0].id}`);
-      } else {
-        startNewBrand();
-      }
+      await loadBrands();
+      setIsFormOpen(false);
+      router.replace("/brand-vault");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Không thể xóa thương hiệu");
     } finally {
@@ -496,7 +494,6 @@ export default function BrandVaultPage() {
               className="input"
               value={form.brand_name}
               onChange={(e) => update("brand_name", e.target.value)}
-              placeholder="Cafe Bờ Hồ"
               required
             />
           </div>
@@ -520,7 +517,6 @@ export default function BrandVaultPage() {
               className="input min-h-[80px] resize-none"
               value={form.brand_description}
               onChange={(e) => update("brand_description", e.target.value)}
-              placeholder="Quán cà phê nhỏ ở trung tâm TP.HCM, phục vụ cà phê truyền thống..."
               required
             />
           </div>
@@ -531,13 +527,12 @@ export default function BrandVaultPage() {
               className="input"
               value={form.target_audience}
               onChange={(e) => update("target_audience", e.target.value)}
-              placeholder="Học sinh, sinh viên 18-25 tuổi"
             />
           </div>
 
           <div className="border-t border-gray-100 pt-4 space-y-3">
             <p className="text-xs font-medium text-gray-600">
-              Liên hệ và địa điểm <span className="font-normal text-gray-400">(tuỳ chọn)</span>
+              Liên hệ và địa điểm
             </p>
             <div>
               <label className="label">Email liên hệ</label>
@@ -546,7 +541,6 @@ export default function BrandVaultPage() {
                 className="input"
                 value={form.contact_email ?? ""}
                 onChange={(e) => update("contact_email", e.target.value)}
-                placeholder="hello@thuonghieu.vn"
               />
             </div>
             <div>
@@ -555,7 +549,6 @@ export default function BrandVaultPage() {
                 className="input"
                 value={form.phone ?? ""}
                 onChange={(e) => update("phone", e.target.value)}
-                placeholder="0901 234 567"
               />
             </div>
             <div>
@@ -564,7 +557,6 @@ export default function BrandVaultPage() {
                 className="input min-h-[72px] resize-y text-sm"
                 value={form.address ?? ""}
                 onChange={(e) => update("address", e.target.value)}
-                placeholder="123 Đường ABC, Quận 1, TP.HCM"
               />
             </div>
           </div>
