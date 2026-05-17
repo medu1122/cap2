@@ -40,3 +40,6 @@ class Campaign(Base):
     tracking_links: Mapped[list["CampaignTrackingLink"]] = relationship(
         "CampaignTrackingLink", back_populates="campaign", cascade="all, delete-orphan"
     )
+    click_logs: Mapped[list["CampaignClickLog"]] = relationship(
+        "CampaignClickLog", back_populates="campaign", cascade="all, delete-orphan"
+    )

@@ -6,17 +6,16 @@ import {
   BarChart3,
   Loader2,
   Send,
-  MousePointerClick,
   AlertCircle,
   CheckCircle2,
   Clock,
   XCircle,
   RefreshCw,
-  Facebook,
-  Mail,
+  Users,
+  MousePointerClick,
 } from "lucide-react";
 import { api } from "@/lib/api-client";
-import { STATUS_LABELS, CHANNEL_LABELS, formatDate } from "@/lib/utils";
+import { STATUS_LABELS } from "@/lib/utils";
 import ClickLineChart from "@/components/campaign/ClickLineChart";
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
@@ -33,8 +32,8 @@ interface CampaignListItem {
 
 interface ChannelMetrics {
   sent: number;
-  opened: number;
-  clicked: number;
+  opened: number;     // unique IP users (người dùng thật)
+  clicked: number;    // total web visits (lượt truy cập)
   open_rate: number;
   click_rate: number;
   link_clicks: number;
@@ -57,23 +56,6 @@ interface CampaignPerformance {
 
 interface PerformanceResponse {
   metrics: CampaignPerformance;
-}
-
-/* ── Helpers ────────────────────────────────────────────────────────────── */
-
-function StatusIcon({ status }: { status: string }) {
-  switch (status) {
-    case "completed":
-      return <CheckCircle2 size={14} className="text-green-500" />;
-    case "running":
-      return <Clock size={14} className="text-blue-500" />;
-    case "pending_agent":
-      return <RefreshCw size={14} className="text-amber-500" />;
-    case "failed":
-      return <XCircle size={14} className="text-red-500" />;
-    default:
-      return <AlertCircle size={14} className="text-gray-400" />;
-  }
 }
 
 /* ── Main Page ─────────────────────────────────────────────────────────── */
@@ -104,7 +86,7 @@ export default function CampaignAnalyticsPage() {
       }
     };
     fetchCampaigns();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchPerformance = useCallback(async () => {
     if (!selectedCampaignId) return;
@@ -137,6 +119,13 @@ export default function CampaignAnalyticsPage() {
 
   const email = selectedPerformance?.email;
   const fb = selectedPerformance?.facebook;
+
+  const emailUsers = email?.opened ?? 0;
+  const emailVisits = email?.clicked ?? 0;
+  const emailNotVisited = Math.max(0, (email?.sent ?? 0) - emailUsers);
+  const fbUsers = fb?.opened ?? 0;
+  const fbVisits = fb?.clicked ?? 0;
+  const fbNotVisited = Math.max(0, (fb?.sent ?? 0) - fbUsers);
 
   return (
     <div className="min-h-screen bg-transparent">
@@ -233,110 +222,140 @@ export default function CampaignAnalyticsPage() {
 
                 {!loadingPerformance && !error && selectedPerformance && (
                   <>
-                    {/* Open Rate Cards */}
-                    <div className="grid grid-cols-2 gap-4 mb-6">
-                      {/* Email Open Rate */}
-                      <div className="border border-[#377D73]/20 rounded-xl p-5">
-                        <div className="flex items-center gap-3 mb-4">
-                          <div className="w-10 h-10 rounded-lg bg-[#377D73]/10 flex items-center justify-center">
-                            <Mail size={18} className="text-[#377D73]" />
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium text-gray-500">Tỉ lệ mở Email</p>
-                            <p className="text-xs text-gray-400">{email?.sent || 0} email gửi</p>
-                          </div>
-                        </div>
-                        <p className="text-4xl font-bold text-[#377D73]">
-                          {(email?.open_rate || 0).toFixed(1)}%
+                    {/* Section: Người dùng thật */}
+                    <div className="mb-6">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Users size={14} className="text-gray-400" />
+                        <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                          Người dùng thật
                         </p>
-                        <div className="mt-3 h-2 bg-gray-100 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-[#377D73] rounded-full"
-                            style={{ width: `${Math.min(email?.open_rate || 0, 100)}%` }}
-                          />
-                        </div>
-                        <div className="flex justify-between mt-1.5 text-xs text-gray-400">
-                          <span>{email?.opened || 0} lần mở</span>
-                          <span>{(email?.sent || 0) - (email?.opened || 0)} không mở</span>
-                        </div>
+                        <span className="ml-2 text-[10px] text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">
+                          Đếm theo IP duy nhất
+                        </span>
                       </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        {/* Email - Người dùng thật */}
+                        <div className="rounded-2xl border border-[#377D73]/20 p-5">
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className="w-10 h-10 rounded-xl bg-[#377D73]/10 flex items-center justify-center">
+                              <Users size={18} className="text-[#377D73]" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-gray-600">Email</p>
+                              <p className="text-[11px] text-gray-400">{email?.sent ?? 0} email gửi</p>
+                            </div>
+                          </div>
+                          <p className="text-4xl font-bold text-[#377D73]">{emailUsers.toLocaleString()}</p>
+                          <p className="text-[11px] text-gray-400 mt-0.5">
+                            người dùng thật · {(email?.open_rate ?? 0).toFixed(1)}% tỉ lệ
+                          </p>
+                          <div className="h-1.5 bg-gray-100 rounded-full mt-2 overflow-hidden">
+                            <div
+                              className="h-full bg-[#377D73] rounded-full"
+                              style={{ width: `${Math.min(email?.open_rate ?? 0, 100)}%` }}
+                            />
+                          </div>
+                          <p className="text-[10px] text-gray-300 mt-1 text-right">
+                            {emailNotVisited > 0 ? `${emailNotVisited.toLocaleString()} không truy cập` : "Tất cả đã truy cập"}
+                          </p>
+                        </div>
 
-                      {/* Facebook Open Rate */}
-                      <div className="border border-blue-200/50 rounded-xl p-5">
-                        <div className="flex items-center gap-3 mb-4">
-                          <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                            <Facebook size={18} className="text-blue-600" />
+                        {/* Facebook - Người dùng thật */}
+                        <div className="rounded-2xl border border-blue-200/50 p-5">
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+                              <Users size={18} className="text-blue-600" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-gray-600">Facebook</p>
+                              <p className="text-[11px] text-gray-400">{fb?.sent ?? 0} post</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-sm font-medium text-gray-500">Tỉ lệ mở Facebook</p>
-                            <p className="text-xs text-gray-400">{fb?.sent || 0} post</p>
+                          <p className="text-4xl font-bold text-blue-600">{fbUsers.toLocaleString()}</p>
+                          <p className="text-[11px] text-gray-400 mt-0.5">
+                            người dùng thật · {(fb?.open_rate ?? 0).toFixed(1)}% tỉ lệ
+                          </p>
+                          <div className="h-1.5 bg-gray-100 rounded-full mt-2 overflow-hidden">
+                            <div
+                              className="h-full bg-blue-500 rounded-full"
+                              style={{ width: `${Math.min(fb?.open_rate ?? 0, 100)}%` }}
+                            />
                           </div>
-                        </div>
-                        <p className="text-4xl font-bold text-blue-600">
-                          {(fb?.open_rate || 0).toFixed(1)}%
-                        </p>
-                        <div className="mt-3 h-2 bg-gray-100 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-blue-500 rounded-full"
-                            style={{ width: `${Math.min(fb?.open_rate || 0, 100)}%` }}
-                          />
-                        </div>
-                        <div className="flex justify-between mt-1.5 text-xs text-gray-400">
-                          <span>{fb?.opened || 0} lượt xem</span>
-                          <span>{(fb?.sent || 0) - (fb?.opened || 0)} không xem</span>
+                          <p className="text-[10px] text-gray-300 mt-1 text-right">
+                            {fbNotVisited > 0 ? `${fbNotVisited.toLocaleString()} không truy cập` : "Tất cả đã truy cập"}
+                          </p>
                         </div>
                       </div>
                     </div>
 
-                    {/* Click Rate Row */}
-                    <div className="grid grid-cols-2 gap-4 mb-6">
-                      <div className="border border-gray-200 rounded-xl p-5">
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="w-10 h-10 rounded-lg bg-[#377D73]/10 flex items-center justify-center">
-                            <MousePointerClick size={18} className="text-[#377D73]" />
-                          </div>
-                          <p className="text-sm font-medium text-gray-500">Tỉ lệ click Email</p>
-                        </div>
-                        <p className="text-3xl font-bold text-gray-800">
-                          {(email?.click_rate || 0).toFixed(1)}%
+                    {/* Section: Lượt truy cập */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <MousePointerClick size={14} className="text-gray-400" />
+                        <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                          Lượt truy cập
                         </p>
-                        <div className="mt-3 h-2 bg-gray-100 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-[#377D73]/60 rounded-full"
-                            style={{ width: `${Math.min(email?.click_rate || 0, 100)}%` }}
-                          />
-                        </div>
-                        <div className="flex justify-between mt-1.5 text-xs text-gray-400">
-                          <span>{email?.clicked || 0} click</span>
-                          <span>{email?.link_clicks || 0} link click</span>
-                        </div>
+                        <span className="ml-2 text-[10px] text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">
+                          Tổng click truy cập website
+                        </span>
                       </div>
-
-                      <div className="border border-gray-200 rounded-xl p-5">
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                            <MousePointerClick size={18} className="text-blue-600" />
+                      <div className="grid grid-cols-2 gap-4">
+                        {/* Email - Lượt truy cập */}
+                        <div className="rounded-2xl border border-[#377D73]/20 p-5">
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className="w-10 h-10 rounded-xl bg-[#377D73]/10 flex items-center justify-center">
+                              <MousePointerClick size={18} className="text-[#377D73]" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-gray-600">Email</p>
+                              <p className="text-[11px] text-gray-400">{emailUsers.toLocaleString()} người dùng thật</p>
+                            </div>
                           </div>
-                          <p className="text-sm font-medium text-gray-500">Tỉ lệ click Facebook</p>
+                          <p className="text-4xl font-bold text-[#377D73]">{emailVisits.toLocaleString()}</p>
+                          <p className="text-[11px] text-gray-400 mt-0.5">
+                            lượt truy cập · {(email?.click_rate ?? 0).toFixed(1)}% tỉ lệ
+                          </p>
+                          <div className="h-1.5 bg-gray-100 rounded-full mt-2 overflow-hidden">
+                            <div
+                              className="h-full bg-[#377D73]/60 rounded-full"
+                              style={{ width: `${Math.min(email?.click_rate ?? 0, 100)}%` }}
+                            />
+                          </div>
+                          <p className="text-[10px] text-gray-300 mt-1 text-right">
+                            {(email?.link_clicks ?? 0).toLocaleString()} link click
+                          </p>
                         </div>
-                        <p className="text-3xl font-bold text-gray-800">
-                          {(fb?.click_rate || 0).toFixed(1)}%
-                        </p>
-                        <div className="mt-3 h-2 bg-gray-100 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-blue-400/60 rounded-full"
-                            style={{ width: `${Math.min(fb?.click_rate || 0, 100)}%` }}
-                          />
-                        </div>
-                        <div className="flex justify-between mt-1.5 text-xs text-gray-400">
-                          <span>{fb?.clicked || 0} click</span>
-                          <span>{fb?.link_clicks || 0} link click</span>
+
+                        {/* Facebook - Lượt truy cập */}
+                        <div className="rounded-2xl border border-blue-200/50 p-5">
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+                              <MousePointerClick size={18} className="text-blue-600" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-gray-600">Facebook</p>
+                              <p className="text-[11px] text-gray-400">{fbUsers.toLocaleString()} người dùng thật</p>
+                            </div>
+                          </div>
+                          <p className="text-4xl font-bold text-blue-600">{fbVisits.toLocaleString()}</p>
+                          <p className="text-[11px] text-gray-400 mt-0.5">
+                            lượt truy cập · {(fb?.click_rate ?? 0).toFixed(1)}% tỉ lệ
+                          </p>
+                          <div className="h-1.5 bg-gray-100 rounded-full mt-2 overflow-hidden">
+                            <div
+                              className="h-full bg-blue-400/60 rounded-full"
+                              style={{ width: `${Math.min(fb?.click_rate ?? 0, 100)}%` }}
+                            />
+                          </div>
+                          <p className="text-[10px] text-gray-300 mt-1 text-right">
+                            {(fb?.link_clicks ?? 0).toLocaleString()} link click
+                          </p>
                         </div>
                       </div>
                     </div>
 
                     {/* Bar Chart */}
-                    <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
+                    <div className="bg-white rounded-xl border border-gray-200 p-5 mt-6">
                       <div className="flex items-center justify-between mb-4">
                         <div>
                           <h3 className="text-sm font-semibold text-gray-800">Lượt click theo thời gian</h3>

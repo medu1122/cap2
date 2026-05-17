@@ -1,12 +1,16 @@
 """Model cho campaign_tracking_links - theo dõi clicks trên custom links."""
 import uuid
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING, List
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from core.database import Base
+
+if TYPE_CHECKING:
+    from models.campaign_click_log import CampaignClickLog
 
 
 class CampaignTrackingLink(Base):
@@ -26,6 +30,9 @@ class CampaignTrackingLink(Base):
 
     # Relationships
     campaign = relationship("Campaign", back_populates="tracking_links")
+    click_logs = relationship(
+        "CampaignClickLog", back_populates="link", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<CampaignTrackingLink {self.short_code} [{self.link_type}] -> {self.destination_url}>"

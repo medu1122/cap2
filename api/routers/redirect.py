@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.database import get_db
 from models.campaign_tracking_link import CampaignTrackingLink
 from models.campaign_execution_log import CampaignExecutionLog
+from models.campaign_click_log import CampaignClickLog
 
 router = APIRouter(prefix="/r", tags=["redirect"])
 
@@ -56,6 +57,23 @@ async def redirect_to_destination(
 
     # Tăng click count
     link.click_count = (link.click_count or 0) + 1
+
+    # Ghi log click với IP để đếm người dùng thật
+    client_ip = request.client.host if request.client else "unknown"
+    # X-Forwarded-For có thể chứa nhiều IP, lấy IP đầu tiên (thực)
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        client_ip = forwarded.split(",")[0].strip()
+    elif request.headers.get("x-real-ip"):
+        client_ip = request.headers.get("x-real-ip", client_ip)
+
+    click_log = CampaignClickLog(
+        campaign_id=link.campaign_id,
+        link_id=link.id,
+        ip_address=client_ip,
+        user_agent=request.headers.get("user-agent"),
+    )
+    db.add(click_log)
     await db.commit()
 
     # Nếu có token, cập nhật clicked_at trên execution log

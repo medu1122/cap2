@@ -27,6 +27,7 @@ from models.customer_list import CustomerList
 from models.campaign_execution_log import CampaignExecutionLog
 from models.campaign_revenue import CampaignRevenue
 from models.campaign_tracking_link import CampaignTrackingLink
+from models.campaign_click_log import CampaignClickLog
 from schemas.campaign import (
     CampaignCreate,
     CampaignListItem,
@@ -1126,15 +1127,51 @@ async def get_campaign_performance(
     )
     logs = list(logs_result.scalars().all())
 
-    # Tracking links — tách theo link_type
+    # Click logs — ghi mỗi lần user truy cập link (có IP)
+    click_logs_result = await db.execute(
+        select(CampaignClickLog).where(CampaignClickLog.campaign_id == campaign_id)
+    )
+    click_logs = list(click_logs_result.scalars().all())
+
+    # Tracking links — dùng để phân biệt email_click vs facebook_post
     tracking_result = await db.execute(
         select(CampaignTrackingLink).where(CampaignTrackingLink.campaign_id == campaign_id)
     )
     tracking_links = list(tracking_result.scalars().all())
-    email_link_clicks = sum(t.click_count for t in tracking_links if t.link_type == "email_click")
-    fb_link_clicks = sum(t.click_count for t in tracking_links if t.link_type == "facebook_post")
 
-    # Revenue records (vẫn giữ để không break frontend, không dùng tính toán)
+    # Map link_id -> link_type
+    link_type_map = {str(t.id): t.link_type for t in tracking_links}
+
+    email_clicks = [c for c in click_logs if link_type_map.get(str(c.link_id)) == "email_click"]
+    fb_clicks = [c for c in click_logs if link_type_map.get(str(c.link_id)) == "facebook_post"]
+
+    # Người dùng thật = số IP duy nhất | Lượt truy cập = tổng clicks
+    def user_stats(click_list):
+        total = len(click_list)
+        unique_ips = len(set(c.ip_address for c in click_list))
+        return unique_ips, total
+
+    email_unique_users, email_total_visits = user_stats(email_clicks)
+    fb_unique_users, fb_total_visits = user_stats(fb_clicks)
+
+    email_sent = sum(1 for r in logs if r.channel == "email")
+    fb_sent = sum(1 for r in logs if r.channel == "facebook")
+
+    email_open_r = round((email_unique_users / email_sent) * 100, 1) if email_sent else 0.0
+    fb_open_r = round((fb_unique_users / fb_sent) * 100, 1) if fb_sent else 0.0
+    email_click_r = round((email_total_visits / email_sent) * 100, 1) if email_sent else 0.0
+    fb_click_r = round((fb_total_visits / fb_sent) * 100, 1) if fb_sent else 0.0
+
+    total_sent = email_sent + fb_sent
+    total_opened = email_unique_users + fb_unique_users
+    total_clicked = email_total_visits + fb_total_visits
+    total_delivered = sum(1 for r in logs if r.status in ("sent", "delivered"))
+    total_bounced = sum(1 for r in logs if r.status == "bounced")
+
+    overall_open_r = round((total_opened / total_sent) * 100, 1) if total_sent else 0.0
+    overall_click_r = round((total_clicked / total_sent) * 100, 1) if total_sent else 0.0
+
+    # Revenue records
     revenue_result = await db.execute(
         select(CampaignRevenue)
         .where(CampaignRevenue.campaign_id == campaign_id)
@@ -1142,42 +1179,12 @@ async def get_campaign_performance(
     )
     revenues = [CampaignRevenueOut.model_validate(r) for r in revenue_result.scalars().all()]
 
-    # ── Breakdown theo kênh ──────────────────────────────────────
-    email_logs = [r for r in logs if r.channel == "email"]
-    fb_logs = [r for r in logs if r.channel == "facebook"]
-
-    def channel_stats(rows):
-        sent = len(rows)
-        opened = sum(1 for r in rows if r.opened_at)
-        clicked = sum(1 for r in rows if r.clicked_at)
-        return sent, opened, clicked
-
-    def channel_rates(sent, opened, clicked):
-        open_r = round((opened / sent) * 100, 1) if sent else 0.0
-        click_r = round((clicked / sent) * 100, 1) if sent else 0.0
-        return open_r, click_r
-
-    email_sent, email_opened, email_clicked = channel_stats(email_logs)
-    fb_sent, fb_opened, fb_clicked = channel_stats(fb_logs)
-
-    email_open_r, email_click_r = channel_rates(email_sent, email_opened, email_clicked)
-    fb_open_r, fb_click_r = channel_rates(fb_sent, fb_opened, fb_clicked)
-
-    total_sent = email_sent + fb_sent
-    total_opened = email_opened + fb_opened
-    total_clicked = email_clicked + email_link_clicks + fb_link_clicks  # email click + email_link_clicks + fb link opens
-    total_delivered = sum(1 for r in logs if r.status in ("sent", "delivered"))
-    total_bounced = sum(1 for r in logs if r.status == "bounced")
-
-    overall_open_r = round((total_opened / total_sent) * 100, 1) if total_sent else 0.0
-    overall_click_r = round((total_clicked / total_sent) * 100, 1) if total_sent else 0.0
-
     metrics = CampaignPerformanceMetrics(
         campaign_id=campaign.id,
         campaign_name=campaign.campaign_name,
         status=campaign.status,
         total_sent=total_sent,
-        total_delivered=total_delivered,
+        total_delivered=sum(1 for r in logs if r.status in ("sent", "delivered")),
         total_opened=total_opened,
         total_clicked=total_clicked,
         total_bounced=total_bounced,
@@ -1185,19 +1192,19 @@ async def get_campaign_performance(
         click_rate=overall_click_r,
         email=ChannelMetrics(
             sent=email_sent,
-            opened=email_opened,
-            clicked=email_clicked,
+            opened=email_unique_users,
+            clicked=email_total_visits,
             open_rate=email_open_r,
             click_rate=email_click_r,
-            link_clicks=email_link_clicks,
+            link_clicks=email_total_visits,
         ),
         facebook=ChannelMetrics(
             sent=fb_sent,
-            opened=fb_link_clicks,  # lượt mở post = clicks trên tracking link facebook_post
-            clicked=fb_clicked,
+            opened=fb_unique_users,
+            clicked=fb_total_visits,
             open_rate=fb_open_r,
             click_rate=fb_click_r,
-            link_clicks=fb_link_clicks,
+            link_clicks=fb_total_visits,
         ),
     )
 

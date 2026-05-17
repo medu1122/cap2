@@ -38,13 +38,19 @@ class CampaignRevenueOut(BaseModel):
 
 
 class ChannelMetrics(BaseModel):
-    """Metrics cho từng kênh."""
+    """Metrics cho từng kênh.
+
+    - sent: số email/post gửi
+    - opened (người dùng thật): số IP duy nhất truy cập link
+    - clicked (lượt truy cập): tổng số lần click truy cập web
+    - link_clicks: tổng số click trên tracking links (từ bảng click_logs)
+    """
     sent: int = 0
-    opened: int = 0
-    clicked: int = 0
+    opened: int = 0  # unique IP users
+    clicked: int = 0  # total web visits / clicks
     open_rate: float = 0.0
     click_rate: float = 0.0
-    link_clicks: int = 0  # từ tracking_links (Facebook)
+    link_clicks: int = 0  # total clicks from click_logs
 
 
 class CampaignPerformanceMetrics(BaseModel):
