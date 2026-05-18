@@ -54,7 +54,7 @@ async def get_calendar(
     )
 
     query = (
-        select(ContentItem, Campaign.campaign_name, Campaign.deadline)
+        select(ContentItem, Campaign.campaign_name, Campaign.deadline, Campaign.start_date)
         .join(Campaign, Campaign.id == ContentItem.campaign_id)
         .join(
             latest_version_sq,
@@ -80,7 +80,7 @@ async def get_calendar(
     rows = result.all()
 
     items = []
-    for content_item, campaign_name, campaign_deadline in rows:
+    for content_item, campaign_name, campaign_deadline, campaign_start_date in rows:
         content_json = content_item.content_json or {}
         preview = (
             content_json.get("copy")
@@ -93,6 +93,7 @@ async def get_calendar(
             "campaign_id": str(content_item.campaign_id),
             "campaign_name": campaign_name,
             "campaign_deadline": str(campaign_deadline),
+            "campaign_start_date": str(campaign_start_date) if campaign_start_date else None,
             "channel": content_item.channel,
             "status": content_item.status,
             "scheduled_date": str(content_item.scheduled_date),

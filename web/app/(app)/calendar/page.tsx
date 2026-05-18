@@ -18,7 +18,7 @@ import {
 import Link from "next/link";
 import { api } from "@/lib/api-client";
 import { STATUS_COLORS, STATUS_LABELS, CHANNEL_LABELS, cn, formatDate } from "@/lib/utils";
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, isToday, parseISO } from "date-fns";
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, isSameMonth, isToday, isSameDay, parseISO } from "date-fns";
 import { vi } from "date-fns/locale";
 import HelpDialogButton from "@/components/common/HelpDialogButton";
 
@@ -29,6 +29,7 @@ interface CalendarItem {
   campaign_id: string;
   campaign_name: string;
   campaign_deadline?: string;
+  campaign_start_date?: string | null;
   channel: string;
   status: string;
   scheduled_date: string;
@@ -374,6 +375,62 @@ export default function CalendarPage() {
     return map;
   }, [items]);
 
+  // ── Campaign metadata map (start_date, deadline) ───────────────────────
+  const campaignMeta = useMemo(() => {
+    const meta: Record<string, { start: Date | null; deadline: Date | null }> = {};
+    for (const item of items) {
+      if (!meta[item.campaign_id]) {
+        meta[item.campaign_id] = {
+          start: item.campaign_start_date ? parseISO(item.campaign_start_date) : null,
+          deadline: item.campaign_deadline ? parseISO(item.campaign_deadline) : null,
+        };
+      }
+    }
+    return meta;
+  }, [items]);
+
+  // ── Unique campaigns in view (for timeline legend) ──────────────────────
+  const visibleCampaigns = useMemo(() => {
+    const seen = new Map<string, { name: string; start: Date | null; deadline: Date | null; colorIdx: number }>();
+    for (const item of items) {
+      if (!seen.has(item.campaign_id)) {
+        seen.set(item.campaign_id, {
+          name: item.campaign_name,
+          start: item.campaign_start_date ? parseISO(item.campaign_start_date) : null,
+          deadline: item.campaign_deadline ? parseISO(item.campaign_deadline) : null,
+          colorIdx: campaignColorMap[item.campaign_id] ?? 0,
+        });
+      }
+    }
+    return Array.from(seen.values());
+  }, [items, campaignColorMap]);
+
+  // ── Pre-compute timeline bars keyed by date ─────────────────────────────
+  // { [dateKey]: Array<{ campaignId, color, isStart, isEnd, colorIdx }> }
+  const timelineBarsByDate = useMemo(() => {
+    const map: Record<string, Array<{ campaignId: string; colorIdx: number; isStart: boolean; isEnd: boolean }>> = {};
+    for (const day of days) {
+      const dateKey = format(day, "yyyy-MM-dd");
+      const dayDate = day;
+      const bars: Array<{ campaignId: string; colorIdx: number; isStart: boolean; isEnd: boolean }> = [];
+      for (const c of visibleCampaigns) {
+        if (!c.start && !c.deadline) continue;
+        const cs = c.start ?? c.deadline;
+        const ce = c.deadline ?? c.start;
+        if (dayDate >= cs && dayDate <= ce) {
+          bars.push({
+            campaignId: c.name,
+            colorIdx: c.colorIdx,
+            isStart: !!c.start && isSameDay(dayDate, c.start),
+            isEnd: !!c.deadline && isSameDay(dayDate, c.deadline),
+          });
+        }
+      }
+      if (bars.length > 0) map[dateKey] = bars;
+    }
+    return map;
+  }, [days, visibleCampaigns]);
+
   // ── Calendar grid ─────────────────────────────────────────────────────
   const start = viewMode === "month"
     ? startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 })
@@ -563,27 +620,57 @@ export default function CalendarPage() {
 
               {/* Days */}
               <div className="relative" style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)" }}>
-                {days.map((day, dayIdx) => {
+                {days.map((day) => {
                   const dateKey = format(day, "yyyy-MM-dd");
                   const dayItems = itemsByDate[dateKey] || [];
                   const sameMonth = isSameMonth(day, currentDate);
                   const today = isToday(day);
                   const hasItems = dayItems.length > 0;
                   const primaryColor = hasItems ? getCampaignColor(campaignColorMap[dayItems[0].campaign_id] ?? 0) : null;
+                  const bars = timelineBarsByDate[dateKey] || [];
 
                   return (
                     <div
                       key={dateKey}
                       className={cn(
-                        "relative border-r border-b border-gray-200 min-h-20 p-1.5",
+                        "relative border-r border-b border-gray-200 min-h-24 p-1.5",
                         !sameMonth && "bg-gray-50/60",
                         today && "bg-[#377D73]/4",
-                        hasItems && sameMonth && "bg-[#377D73]/5"
+                        hasItems && sameMonth && primaryColor && "bg-[#377D73]/5"
                       )}
                       style={hasItems && sameMonth && primaryColor ? {
                         backgroundColor: `${primaryColor.bar}14`,
                       } : undefined}
                     >
+                      {/* Campaign timeline bars */}
+                      {bars.length > 0 && sameMonth && (
+                        <div className="absolute left-0 right-0 top-1 z-10 pointer-events-none flex flex-col gap-0.5 px-1">
+                          {bars.map((bar) => {
+                            const color = getCampaignColor(bar.colorIdx);
+                            return (
+                              <div key={bar.campaignId} className="relative h-1.5">
+                                <div
+                                  className="absolute inset-y-0"
+                                  style={{
+                                    left: bar.isStart ? "4px" : "0",
+                                    right: bar.isEnd ? "4px" : "0",
+                                    backgroundColor: color.bar,
+                                    opacity: 0.7,
+                                    borderRadius: bar.isStart && bar.isEnd
+                                      ? "9999px"
+                                      : bar.isStart
+                                        ? "9999px 2px 2px 9999px"
+                                        : bar.isEnd
+                                          ? "2px 9999px 9999px 2px"
+                                          : "2px",
+                                  }}
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
                       {/* Day number */}
                       <p className={cn(
                         "text-xs mb-1 font-semibold",
@@ -594,7 +681,7 @@ export default function CalendarPage() {
                       </p>
 
                       {/* Content dots */}
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-wrap gap-1 mt-3">
                         {dayItems.map((item) => {
                           const color = getCampaignColor(campaignColorMap[item.campaign_id] ?? 0);
                           return (
@@ -614,15 +701,52 @@ export default function CalendarPage() {
               </div>
             </div>
 
-            {/* Legend row */}
+            {/* Campaign timeline legend */}
+            <div className="bg-white rounded-xl border border-gray-200 px-4 py-3">
+              <p className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold mb-2">
+                Chiến dịch đang hoạt động
+              </p>
+              <div className="flex flex-wrap gap-x-4 gap-y-2">
+                {visibleCampaigns.map((c) => {
+                  const color = getCampaignColor(c.colorIdx);
+                  const startStr = c.start ? format(c.start, "d/M") : "?";
+                  const endStr = c.deadline ? format(c.deadline, "d/M") : "?";
+                  return (
+                    <div key={c.name} className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        <span
+                          className="inline-block w-4 h-1.5 rounded-full"
+                          style={{ backgroundColor: color.bar }}
+                        />
+                        <span className="text-xs text-gray-600 font-medium truncate max-w-[140px]" title={c.name}>
+                          {c.name}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-gray-400">
+                        {startStr} → {endStr}
+                      </span>
+                    </div>
+                  );
+                })}
+                {visibleCampaigns.length === 0 && (
+                  <p className="text-xs text-gray-400 italic">Không có chiến dịch nào trong tháng này.</p>
+                )}
+              </div>
+            </div>
+
+            {/* Color legend */}
             <div className="flex items-center gap-4 text-xs text-gray-400 flex-wrap">
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded-full bg-[#377D73]" />
                 Hôm nay
               </span>
               <span className="flex items-center gap-1.5">
+                <span className="w-4 h-1.5 rounded-full bg-[#818CF8]" />
+                Chiến dịch đang hoạt động
+              </span>
+              <span className="flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded-full bg-[#818CF8]" />
-                Chiến dịch
+                Nội dung đã lên lịch
               </span>
             </div>
           </div>

@@ -5,6 +5,7 @@ from agents.strategist import StrategistAgent
 from agents.writer import WriterAgent
 from agents.critic import CriticAgent
 from agents.base import timed_agent_call
+from demo_shortcut import check_and_run_demo
 
 
 _VN_FIXED_HOLIDAYS = {
@@ -127,6 +128,11 @@ class CampaignOrchestrator:
                 channels = brief.get("channels", [])
                 additional_notes = (brief.get("additional_notes") or "").lower()
                 image_required = "[image_required]" in additional_notes
+
+                # ── Demo shortcut check ─────────────────────────────────────────
+                # Nếu input khớp demo pattern → tạo content ngay, không chạy AI
+                if await check_and_run_demo(campaign_id, brief, brand_vault):
+                    return  # Demo đã tự xử lý hết
 
                 # ── Step 1: Strategist ─────────────────────────────────────────
                 plan = await self.strategist.run(campaign_id, brief, brand_vault)

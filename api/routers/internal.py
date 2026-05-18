@@ -2,6 +2,7 @@
 Internal routes called only by the agent service — not exposed to the browser.
 No auth middleware on these routes (agent service runs in the same Docker network).
 """
+import asyncio
 import uuid
 from datetime import date, timedelta
 from fastapi import APIRouter, Depends
@@ -343,3 +344,78 @@ async def get_tracking_links_internal(
         {"name": link.name, "url": f"{base}/r/{link.short_code}", "link_type": link.link_type}
         for link in links
     ]
+
+
+# ── SSE Events ────────────────────────────────────────────────────────────────
+# Frontend subscribe SSE tại /internal/campaigns/{id}/stream
+# Agent gọi POST /internal/campaigns/{id}/sse-event để emit event
+
+_sse_clients: dict[str, list[asyncio.Queue]] = {}
+
+
+async def _get_or_create_queue(campaign_id: str) -> asyncio.Queue:
+    if campaign_id not in _sse_clients:
+        _sse_clients[campaign_id] = []
+    return asyncio.Queue()
+
+
+class SSEEventPayload(BaseModel):
+    type: str
+    channel: str | None = None
+    content_json: dict | None = None
+    scheduled_date: str | None = None
+    message: str | None = None
+    step: str | None = None
+    plan_summary: str | None = None
+
+
+@router.post("/campaigns/{campaign_id}/sse-event")
+async def emit_sse_event(
+    campaign_id: uuid.UUID,
+    payload: SSEEventPayload,
+):
+    """
+    Agent gọi endpoint này để emit SSE event.
+    Frontend subscribe /internal/campaigns/{id}/stream để nhận events.
+    """
+    queue = await _get_or_create_queue(str(campaign_id))
+    await queue.put(payload.model_dump_json())
+    return {"ok": True}
+
+
+@router.get("/campaigns/{campaign_id}/stream")
+async def sse_stream(
+    campaign_id: uuid.UUID,
+):
+    """
+    SSE endpoint cho frontend subscribe.
+    Trả về stream events cho đến khi campaign hoàn thành.
+    """
+    from fastapi.responses import StreamingResponse
+    import asyncio
+
+    queue = await _get_or_create_queue(str(campaign_id))
+
+    async def event_generator():
+        # Ping every 5s to keep connection alive
+        ping_count = 0
+        while True:
+            try:
+                event_data = await asyncio.wait_for(queue.get(), timeout=5.0)
+                yield f"data: {event_data}\n\n"
+            except asyncio.TimeoutError:
+                yield f": ping {ping_count}\n\n"
+                ping_count += 1
+                # After 60 pings (5 min), assume something is wrong and close
+                if ping_count > 60:
+                    break
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

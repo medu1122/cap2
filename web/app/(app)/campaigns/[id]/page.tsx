@@ -654,7 +654,9 @@ export default function CampaignDetailPage() {
   const [showRevenueModal, setShowRevenueModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [realtimeMessages, setRealtimeMessages] = useState<string[]>([]);
   const router = useRouter();
+  const esRef = useRef<EventSource | null>(null);
 
   async function handleDelete() {
     setDeleting(true);
@@ -674,18 +676,45 @@ export default function CampaignDetailPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // SSE subscription cho realtime messages
+  useEffect(() => {
+    if (!id || !campaign) return;
+    const isProcessing = campaign.status === "running" || campaign.status === "pending_agent";
+    if (!isProcessing) return;
+
+    const es = new EventSource(`/api/internal/campaigns/${id}/stream`);
+    esRef.current = es;
+
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.message) {
+          setRealtimeMessages((prev) => {
+            const updated = [...prev, data.message];
+            return updated.slice(-3); // Giữ 3 message gần nhất
+          });
+        }
+      } catch {
+        // ignore parse errors
+      }
+    };
+
+    es.onerror = () => {
+      // Silently reconnect
+    };
+
+    return () => {
+      es.close();
+      esRef.current = null;
+    };
+  }, [id, campaign?.status, campaign]);
+
+  // Fallback polling khi SSE không khả dụng
   useEffect(() => {
     const isProcessing = campaign?.status === "running" || campaign?.status === "pending_agent";
     if (!isProcessing) return;
-    // Fake 5s "AI đang nghĩ" trước khi hiện progress thật
-    const fakeDelayTimer = setTimeout(() => {
-      // Fake delay xong, bắt đầu poll thật
-    }, 5000);
     const interval = setInterval(load, 3000);
-    return () => {
-      clearInterval(interval);
-      clearTimeout(fakeDelayTimer);
-    };
+    return () => clearInterval(interval);
   }, [campaign?.status, load]);
 
   if (!campaign) return (
@@ -786,12 +815,20 @@ export default function CampaignDetailPage() {
 
           {/* Inline progress bar — thời gian chạy hiển thị ngay trong form */}
           {isProcessing && (
-            <div className="mb-4">
+            <div className="mb-4 space-y-2">
               <CampaignBuildingProgress
                 channels={campaign.channels}
                 agent_logs={campaign.agent_logs}
                 campaign_plan_json={campaign.campaign_plan_json ?? undefined}
               />
+              {realtimeMessages.length > 0 && (
+                <div className="bg-[#377D73]/5 border border-[#377D73]/20 rounded-lg px-4 py-2">
+                  <p className="text-[11px] text-[#377D73] font-medium">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#377D73] animate-pulse mr-1.5" />
+                    {realtimeMessages[realtimeMessages.length - 1]}
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
