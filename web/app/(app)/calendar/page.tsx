@@ -405,8 +405,16 @@ export default function CalendarPage() {
     return Array.from(seen.values());
   }, [items, campaignColorMap]);
 
+  // ── Calendar grid ─────────────────────────────────────────────────────
+  const start = viewMode === "month"
+    ? startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 })
+    : startOfWeek(currentDate, { weekStartsOn: 1 });
+  const end = viewMode === "month"
+    ? endOfWeek(endOfMonth(currentDate), { weekStartsOn: 1 })
+    : endOfWeek(currentDate, { weekStartsOn: 1 });
+  const days = eachDayOfInterval({ start, end });
+
   // ── Pre-compute timeline bars keyed by date ─────────────────────────────
-  // { [dateKey]: Array<{ campaignId, color, isStart, isEnd, colorIdx }> }
   const timelineBarsByDate = useMemo(() => {
     const map: Record<string, Array<{ campaignId: string; colorIdx: number; isStart: boolean; isEnd: boolean }>> = {};
     for (const day of days) {
@@ -415,9 +423,9 @@ export default function CalendarPage() {
       const bars: Array<{ campaignId: string; colorIdx: number; isStart: boolean; isEnd: boolean }> = [];
       for (const c of visibleCampaigns) {
         if (!c.start && !c.deadline) continue;
-        const cs = c.start ?? c.deadline;
-        const ce = c.deadline ?? c.start;
-        if (dayDate >= cs && dayDate <= ce) {
+        const cs = c.start ?? c.deadline!;
+        const ce = c.deadline ?? c.start!;
+        if (cs && ce && dayDate >= cs && dayDate <= ce) {
           bars.push({
             campaignId: c.name,
             colorIdx: c.colorIdx,
@@ -430,15 +438,6 @@ export default function CalendarPage() {
     }
     return map;
   }, [days, visibleCampaigns]);
-
-  // ── Calendar grid ─────────────────────────────────────────────────────
-  const start = viewMode === "month"
-    ? startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 })
-    : startOfWeek(currentDate, { weekStartsOn: 1 });
-  const end = viewMode === "month"
-    ? endOfWeek(endOfMonth(currentDate), { weekStartsOn: 1 })
-    : endOfWeek(currentDate, { weekStartsOn: 1 });
-  const days = eachDayOfInterval({ start, end });
 
   const itemsByDate = useMemo(() => {
     const m: Record<string, CalendarItem[]> = {};
