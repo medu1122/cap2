@@ -3,7 +3,7 @@ from routers.workflow import _segment_customer
 
 
 def test_segment_customer_runtime_rules():
-    assert _segment_customer({"days_since_last_purchase": 80}) == "churn"
+    assert _segment_customer({"days_since_last_purchase": 80}) == "inactive"
     assert _segment_customer({"total_spend": 15_000_000}) == "vip"
     assert _segment_customer({"order_count": 12}) == "vip"
     assert _segment_customer({"days_since_last_purchase": 15}) == "potential"
@@ -22,7 +22,7 @@ def test_build_situations_and_actions_low_kpis():
         issues=["ROAS đang thấp hơn ngưỡng an toàn 2.0"],
     )
     assert len(situations) >= 3
-    assert any(a["target_segment"] == "churn" for a in actions)
+    assert any(a["target_segment"] == "inactive" for a in actions)
     assert any(a["priority"] in {"high", "medium"} for a in actions)
 
 

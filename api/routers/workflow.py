@@ -69,7 +69,7 @@ def _to_int_or_none(value: object) -> int | None:
 def _segment_customer(extra_fields: dict | None) -> str:
     """
     Segment runtime (khong migration):
-    - churn: days_since_last_purchase >= 60
+    - inactive: days_since_last_purchase >= 60
     - vip: total_spend >= 10_000_000 hoac order_count >= 10
     - potential: con lai va co du lieu co ban
     """
@@ -79,7 +79,7 @@ def _segment_customer(extra_fields: dict | None) -> str:
     order_count = _to_int_or_none(extra.get("order_count"))
 
     if days_since_last_purchase is not None and days_since_last_purchase >= 60:
-        return "churn"
+        return "inactive"
     if (total_spend is not None and total_spend >= 10_000_000) or (
         order_count is not None and order_count >= 10
     ):
@@ -417,10 +417,7 @@ def _format_brand_for_smart_contact(brand: Brand) -> str:
     bd = (brand.brand_description or "").strip()
     if bd:
         parts.append(f"Mô tả ngành hình & giá trị: {bd[:1600]}")
-    else:
-        # Ngành hình TRỐNG = cảnh báo để LLM không bịa
-        parts.append("Mô tả ngành hình & giá trị: (CHƯA CẬP NHẬT — TUYỆT ĐỐI KHÔNG suy đoán ngành hình)")
-    parts.append(f"Giọng điệu (tone_of_voice): {(brand.tone_of_voice or '').strip() or '(chưa cập nhật)'}")
+    parts.append(f"Giọng điệu (tone_of_voice): {(brand.tone_of_voice or '').strip()}")
     ta = (brand.target_audience or "").strip()
     if ta:
         parts.append(f"Khách hàng mục tiêu: {ta[:900]}")
@@ -514,14 +511,7 @@ def _smart_contact_compose_system_prompt(
     context_one_liner: str | None,
     recipients_data: str | None,
     brand_context: str | None,
-    brand_name_for_prompt: str = "",
 ) -> str:
-    """Build system prompt cho smart contact compose.
-
-    Args:
-        brand_name_for_prompt: tên thương hiệu (trích từ brand_context) —
-                               dùng để nhắc LLM bắt buộc dùng tên này.
-    """
     channel_rules = (
         "ĐỊNH DẠNG SMS:\n"
         "- Tối đa khoảng 300 ký tự (Unicode); 1–2 câu ngắn; ít xuống dòng; không chèn URL dài.\n"
@@ -530,57 +520,35 @@ def _smart_contact_compose_system_prompt(
         else "ĐỊNH DẠNG EMAIL:\n"
         "- 3–8 câu được phép nếu cần làm rõ giá trị và ngành hình; có thể ngắt đoạn bằng một dòng trống.\n"
         "- Không ghi dòng «Tiêu đề:» trong nội dung (tiêu đề do form riêng).\n"
-    )
-
-    # System role cố định — không thay đổi
-    # Brand name được đặt ở ĐẦU TIÊN để anchor identity
-    brand_intro = (
-        f"Bạn đang viết email cho thương hiệu: **{brand_name_for_prompt}**. "
-        "Mọi nội dung email phải thể hiện đúng thương hiệu này.\n\n"
-        if brand_name_for_prompt and brand_context
-        else ""
+        "- Nội dung phải «có thịt»: gợi đúng loại hình kinh doanh từ HỒ SƠ THƯƠNG HIỆU (khi có); tránh câu chung chung áp dụng được cho mọi shop.\n"
     )
     role = (
         "Bạn là người viết email chăm sóc khách một-một, tiếng Việt có dấu.\n\n"
         if brand_context
-        else (
-            "Bạn là người viết email chăm sóc khách một-một (tiếng Việt có dấu), "
-            "phong cách thân thiện, phù hợp chủ cửa hàng / dịch vụ địa phương khi không có "
-            "hồ sơ thương hiệu đủ chi tiết.\n\n"
-        )
+        else "Bạn là người viết email chăm sóc khách một-một (tiếng Việt có dấu), phong cách thân thiện, phù hợp chủ cửa hàng / dịch vụ địa phương khi không có hồ sơ thương hiệu đủ chi tiết.\n\n"
     )
-    base = role + brand_intro
-
-    # ── HỒ SƠ THƯƠNG HIỆU ────────────────────────────────────────────────
-    # Phần này BẮT BUỘC phải dùng — đây là nguồn thông tin duy nhất
-    # về thương hiệu mà LLM được phép dùng trong email.
+    base = role
     if brand_context:
         base += (
-            "═══════════════════════════════════════════════════════════════\n"
-            "HỒ SƠ THƯƠNG HIỆU  ← ĐÂY LÀ NGUỒN THÔNG TIN UY TÍN NHẤT\n"
-            "═══════════════════════════════════════════════════════════════\n"
-            f"{brand_context[:3200]}\n\n"
-            "───────────────────────────────────────────────────────────────\n"
-            "QUY TẮC BẮT BUỘC ÁP DỤNG HỒ SƠ THƯƠNG HIỆU:\n"
-            "1. NHẮC TÊN THƯƠNG HIỆU trong nội dung — tên thương hiệu phải xuất hiện tự nhiên.\n"
-            "2. VIẾT ĐÚNG NGÀNH HÌNH — dựa trên mô tả ngành hình & giá trị trong hồ sơ.\n"
-            "3. ĐÚNG ĐỐI TƯỢNG — viết cho đúng khách hàng mục tiêu mà thương hiệu đã định nghĩa.\n"
-            "4. ĐÚNG GIỌNG ĐIỆU — bám theo tone_of_voice và preferred_salutation trong hồ sơ.\n"
-            "5. NHẮC SẢN PHẨM/DỊCH VỤ ĐẶC TRƯNG — từ khối «Dịch vụ / sản phẩm chính» (nếu có).\n"
-            "6. KHÔNG BỊA tên thương hiệu, sản phẩm, dịch vụ không có trong hồ sơ.\n"
-            "7. TUÂN THỦ TỪ CẤM — tuyệt đối không dùng từ trong forbidden_words.\n\n"
+            "════════════════════════════════════════\n"
+            "HỒ SƠ THƯƠNG HIỆU (Brand Vault — bắt buộc áp dụng)\n"
+            "════════════════════════════════════════\n"
+            f"{brand_context[:2800]}\n\n"
+            "Yêu cầu đối với đoạn email:\n"
+            "- Thể hiện đúng ngành hình và cách đứng thương hiệu (không chỉ «xin chào quý khách» vô căn).\n"
+            "- Bám giọng điệu và xưng hô trong hồ sơ.\n"
+            "- Nếu có dịch vụ/sản phẩm chính trong hồ sơ, có thể nhắc tự nhiên (đúng chức năng), không ép bán hàng gượng ép.\n"
+            "- Tuyệt đối tôn trọng các từ/khối đã liệt kê là không dùng (nếu có).\n\n"
         )
-    # ── KẾT THÚC HỒ SƠ THƯƠNG HIỆU ────────────────────────────────────
-
     base += (
         "ĐẦU RA:\n"
-        "- Chỉ trả về đúng nội dung gửi khách (plain text). Không markdown, không fence ```.\n"
+        "- Chỉ trả về đúng nội dung gửi khách (plain text). Không markdown, không bullet có dấu -/• kiểu list dài.\n"
         "- Không lời dẫn meta («Dưới đây là…», «Nội dung:», «Đây là email…»).\n"
-        "- Có thể dùng biến placeholder (giữ hai ngoặc nhọn): "
+        "- Có thể dùng biến placeholder khi hợp lý (giữ hai ngoặc nhọn): "
         "{{HoVaTen}}, {{phone}}, {{LanCuoiChiTra}}, {{days_since_last}}, "
-        "{{DichVuLanCuoiSuDung}}, {{DichVuSuDungNhieuNhat}}, {{TongSoLanQuayLai}}.\n"
-        "- KHÔNG tự nhắc khuyến mãi, giảm giá, voucher — trừ khi trong YÊU CẦU NGƯỜI DÙNG có nói rõ.\n"
-        "- Không bịa ngày, số tiền, chi nhánh không có trong dữ liệu khách (khi có khối dữ liệu khách bên dưới).\n"
+        "{{DichVuLanCuoiSuDung}}, {{DichVuSuDungNhieuNhat}}, {{TongSoLanQuayLai}}.\n\n"
+        "KHÔNG tự nhắc khuyến mãi, giảm giá, voucher — trừ khi trong YÊU CẦU NGƯỜI DÙNG có nói rõ.\n"
+        "- Không bịa ngày, số tiền, chi nhánh không có trong dữ liệu khách (khi có khối dữ liệu khách bên dưới).\n\n"
         f"{channel_rules}\n"
     )
     if recipients_data:
@@ -601,7 +569,6 @@ async def _smart_contact_compose_text(
     payload: SmartContactComposePayload,
     *,
     brand_context: str | None = None,
-    brand_name_for_prompt: str = "",
 ) -> str:
     up = (payload.user_prompt or "").strip()
     if not up:
@@ -617,39 +584,30 @@ async def _smart_contact_compose_text(
     if mode not in ("email", "sms"):
         mode = "email"
     ctx = (payload.context_one_liner or "").strip() or None
-    sys = _smart_contact_compose_system_prompt(
-        mode, ctx, rd,
-        brand_context.strip() if brand_context else None,
-        brand_name_for_prompt=brand_name_for_prompt,
-    )
+    sys = _smart_contact_compose_system_prompt(mode, ctx, rd, brand_context.strip() if brand_context else None)
     user_block = f"YÊU CẦU CỦA NGƯỜI DÙNG:\n{up}"
     messages = [
         {"role": "system", "content": sys},
         {"role": "user", "content": user_block},
     ]
-    temp = 0.32 if mode == "sms" else (0.45 if brand_context else 0.40)
+    temp = 0.32 if mode == "sms" else (0.42 if brand_context else 0.38)
     try:
-        # GPT-4o cho chất lượng cao nhất — brand-aware email cần model mạnh
         resp = await asyncio.wait_for(
-            _openai.chat.completions.create(
-                model="gpt-4o",
+            _qwen.chat.completions.create(
+                model=QWEN_MODEL,
                 messages=messages,
                 temperature=temp,
             ),
-            timeout=min(120, 120),
+            timeout=min(QWEN_TIMEOUT, 90),
         )
         out = (resp.choices[0].message.content or "").strip()
         return _normalize_smart_contact_compose_output(out, mode)
     except Exception:
         try:
-            # Qwen fallback — vẫn dùng local model nếu OpenAI lỗi
-            resp = await asyncio.wait_for(
-                _qwen.chat.completions.create(
-                    model=QWEN_MODEL,
-                    messages=messages,
-                    temperature=temp,
-                ),
-                timeout=min(QWEN_TIMEOUT, 90),
+            resp = await _openai.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                temperature=temp,
             )
             out = (resp.choices[0].message.content or "").strip()
             return _normalize_smart_contact_compose_output(out, mode)
@@ -1282,7 +1240,7 @@ async def list_customer_lists(
     items = result.scalars().all()
     payload: list[dict] = []
     for item in items:
-        segment_counts = {"vip": 0, "potential": 0, "churn": 0, "unknown": 0}
+        segment_counts = {"vip": 0, "potential": 0, "inactive": 0, "unknown": 0}
         seg_result = await db.execute(
             select(Customer.extra_fields).where(Customer.customer_list_id == item.id)
         )
@@ -1341,7 +1299,7 @@ async def list_customers(
     ]
     if segment:
         normalized_segment = segment.strip().lower()
-        if normalized_segment not in {"vip", "potential", "churn", "unknown"}:
+        if normalized_segment not in {"vip", "potential", "inactive", "unknown"}:
             raise HTTPException(400, f"Segment không hợp lệ: {segment}")
         payload = [item for item in payload if item["segment"] == normalized_segment]
     return payload[offset : offset + limit]
@@ -1559,12 +1517,14 @@ async def customer_list_smart_contact_compose(
     if not list_result.scalar_one_or_none():
         raise HTTPException(404, "Customer list không tồn tại")
 
-    brand_row: Brand | None = None
+    brand_context: str | None = None
     if payload.brand_id:
         br_one = await db.execute(
             select(Brand).where(Brand.id == payload.brand_id, Brand.user_id == current_user.id)
         )
         brand_row = br_one.scalar_one_or_none()
+        if brand_row:
+            brand_context = _format_brand_for_smart_contact(brand_row)
     else:
         br_latest = await db.execute(
             select(Brand)
@@ -1572,15 +1532,11 @@ async def customer_list_smart_contact_compose(
             .order_by(Brand.updated_at.desc())
             .limit(1)
         )
-        brand_row = br_latest.scalar_one_or_none()
-    brand_context: str | None = _format_brand_for_smart_contact(brand_row) if brand_row else None
-    brand_name_for_prompt: str = brand_row.brand_name.strip() if brand_row else ""
+        brand_latest = br_latest.scalar_one_or_none()
+        if brand_latest:
+            brand_context = _format_brand_for_smart_contact(brand_latest)
 
-    text = await _smart_contact_compose_text(
-        payload,
-        brand_context=brand_context,
-        brand_name_for_prompt=brand_name_for_prompt,
-    )
+    text = await _smart_contact_compose_text(payload, brand_context=brand_context)
     return {"text": text}
 
 
@@ -1715,131 +1671,48 @@ class SmartContactBatchPayload(BaseModel):
 
 
 OUTREACH_PURPOSE_INSTRUCTION: dict[str, str] = {
-    # ─── CÓ KHẢ NĂNG RỜI BỎ ───────────────────────────────────────────
-    # Phản ứng: khách đã im lặng lâu → gợi FOMO + kỷ niệm tốt
     "nhac_nhe": (
-        "MỤC ĐÍCH: Khách đã lâu không quay lại, email phải khơi lại cảm xúc và tạo lý do thật sự để quay lại.\n\n"
-        "GIỌNG VĂN: Thân thương như người bạn cũ nhắn tin, không phải email quảng cáo. "
-        "Giọng ấm, chân thành, tôn trọng — KHÔNG gây áp lực, KHÔNG FOMO ép uổng.\n\n"
-        "CẤU TRÚC BẮT BUỘC (theo thứ tự):\n"
-        "  1. MỞ ĐẦU: Gọi tên khách bằng biến {{HoVaTen}}, nói rõ mình là ai/từ thương hiệu nào. "
-        "Ví dụ: «Minh ơi, bên mình là [Tên thương hiệu], hôm nay nhớ người quá nên viết tin nhắn này.»\n"
-        "  2. BODY (PHẦN CHÍNH — viết dài, có chi tiết):\n"
-        "     a. Gợi lại kỷ niệm tốt cụ thể: dịch vụ khách đã dùng, lần cuối ghé thăm là khi nào, trải nghiệm gì.\n"
-        "     b. Chia sẻ ngắn về điều đã thay đổi/tốt hơn bên mình kể từ lần cuối khách đến.\n"
-        "     c. Nói về dịch vụ/delta mới mà khách chưa trải nghiệm.\n"
-        "  3. CTA NHẸ: Mời ghé thăm tự nhiên, KHÔNG kèm khuyến mãi/voucher.\n\n"
-        "ĐỘ DÀI: 250–350 từ tiếng Việt. Viết đủ dài để email có thịt, không phải một đoạn ngắn.\n\n"
-        "VÍ DỤ ĐÚNG: «Thắng ơi, bên mình là Trung tâm Anh ngữ, hôm nay nhớ mày quá nên viết tin nhắn này. "
-        "Lần cuối mày đến học bài lúc tháng 3, lúc đó mình còn phòng học nhỏ. Giờ bên mình vừa mở thêm phòng máy lạnh mới, "
-        "bạc thầy mới từ Mỹ về, mày phải đến thử. Tranh thủ cuối tuần ghé lại nhé.»\n\n"
-        "VÍ DỤ SAI: «Xin chào quý khách, chúng tôi có nhiều ưu đãi hấp dẫn, hãy quay lại ngay!» (quá chung chung, "
-        "không có tên thương hiệu, không gợi kỷ niệm)\n\n"
-        "QUY TẮC: Không đề cập khuyến mãi. Nhắc dịch vụ cụ thể đã dùng. "
-        "Gọi tên thương hiệu rõ ràng. Viết như người thật nhắn tin, không phải máy.\n\n"
-        "QUY TẮC CHỐNG BỊA (BẮT BUỘC TUÂN THỦ):\n"
-        "✗ TUYỆT ĐỐI KHÔNG bịa tên dịch vụ, sản phẩm, thầy giáo, không gian, công nghệ không có trong HỒ SƠ THƯƠNG HIỆU.\n"
-        "✗ TUYỆT ĐỐI KHÔNG viết về ngành hình khác (VD: brand là trung tâm Anh ngữ → KHÔNG viết massage, spa, nha khoa…).\n"
-        "✗ TUYỆT ĐỐI KHÔNG viết chi tiết cụ thể nếu HỒ SƠ THƯƠNG HIỆU trống — hãy dùng câu chung mà không bịa.\n"
-        "✓ Nếu brand description trống: viết chào hỏi ấm áp + nhắc tên thương hiệu + CTA, KHÔNG bịa chi tiết.\n"
-        "✓ Chỉ dùng thông tin có trong HỒ SƠ THƯƠNG HIỆU."
+        "Mục đích: nhắc khách đã lâu chưa quay lại.\n"
+        "- Giọng văn: thân thiện, nhẹ nhàng, không gây áp lực, như đang trò chuyện với người quen.\n"
+        "- Nội dung: Thể hiện sự quan tâm chân thành, nhắc nhở nhẹ về trải nghiệm tốt đã có, không đề cập khuyến mãi.\n"
+        "- Cấu trúc: Chào hỏi ấm áp → Nhắc kỷ niệm/trải nghiệm đẹp → Mời ghé thăm tự nhiên.\n"
+        "- Độ dài: 150-200 từ.\n"
+        "- Phong cách: Như tin nhắn của người bạn thân, không phải email quảng cáo."
     ),
-    # ─── TIỀM NĂNG ────────────────────────────────────────────────────
-    # Phản ứng: khách dùng rồi → cảm ơn + gợi ý nâng cấp trải nghiệm
     "cham_soc": (
-        "MỤC ĐÍCH: Khách đã dùng dịch vụ và có tiềm năng dùng thêm/nâng cấp. "
-        "Email phải thể hiện sự trân trọng đã có, đồng thời gợi ý dịch vụ/phẩm chất khác phù hợp.\n\n"
-        "GIỌNG VĂN: Ấm, trân trọng, chuyên nghiệp nhưng gần gũi. "
-        "Đặt khách làm trung tâm — không bán hàng, mà đang giới thiệu bạn bè.\n\n"
-        "CẤU TRÚC BẮT BUỘC (theo thứ tự):\n"
-        "  1. MỞ ĐẦU: Gọi tên khách bằng biến {{HoVaTen}}, cảm ơn vì đã tin tưởng dịch vụ đã dùng.\n"
-        "  2. BODY (PHẦN CHÍNH — viết dài, có chi tiết):\n"
-        "     a. Nói cụ thể về dịch vụ/phẩm chất đã dùng tích cực — gọi tên dịch vụ rõ ràng.\n"
-        "     b. Gợi ý dịch vụ/phẩm chất KHÁC mà khách chưa thử, phù hợp với ngành hình thương hiệu.\n"
-        "     c. Chia sẻ điều đặc biệt về dịch vụ mới đó (thầy giỏi, công nghệ mới, không gian thoải mái…).\n"
-        "  3. CTA NHẸ: Mời trải nghiệm dịch vụ mới, không kèm khuyến mãi.\n\n"
-        "ĐỘ DÀI: 250–350 từ tiếng Việt. Viết đủ dài để email có thịt, không phải một đoạn ngắn.\n\n"
-        "VÍ DỤ ĐÚNG: «Chị Linh à, em từ Trung tâm Anh ngữ gửi lời cảm ơn chị đã tin tưởng học IELTS với bọn em "
-        "suốt mấy tháng qua. Chị từng học lớp Pre-IELTS, bọn em vừa mở thêm lớp IELTS Intensive với thầy từ Mỹ về, "
-        "chị chắc sẽ thích. Hẹn chị cuối tuần nhé!»\n\n"
-        "VÍ DỤ SAI: «Xin chào, cảm ơn đã sử dụng dịch vụ của chúng tôi.» (không cá nhân hóa)\n\n"
-        "QUY TẮC: Cảm ơn bằng tên dịch vụ cụ thể đã dùng. Gợi ý dịch vụ phù hợp. "
-        "Không xin lỗi, không thanh minh. Viết tự nhiên như tin nhắn từ cửa hàng.\n\n"
-        "QUY TẮC CHỐNG BỊA (BẮT BUỘC TUÂN THỦ):\n"
-        "✗ TUYỆT ĐỐI KHÔNG bịa tên dịch vụ, sản phẩm, thầy giáo, không gian, công nghệ không có trong HỒ SƠ THƯƠNG HIỆU.\n"
-        "✗ TUYỆT ĐỐI KHÔNG viết về ngành hình khác (VD: brand là trung tâm Anh ngữ → KHÔNG viết massage, spa, nha khoa…).\n"
-        "✗ TUYỆT ĐỐI KHÔNG viết chi tiết cụ thể nếu HỒ SƠ THƯƠNG HIỆU trống — hãy dùng câu chung mà không bịa.\n"
-        "✓ Nếu brand description trống: viết chào hỏi ấm áp + nhắc tên thương hiệu + CTA, KHÔNG bịa chi tiết.\n"
-        "✓ Chỉ dùng thông tin có trong HỒ SƠ THƯƠNG HIỆU."
+        "Mục đích: chăm sóc, hỏi thăm khách hàng về trải nghiệm gần nhất.\n"
+        "- Giọng văn: quan tâm chân thành, đặt khách hàng làm trung tâm.\n"
+        "- Nội dung: Hỏi thăm về trải nghiệm/dịch vụ đã sử dụng, thể hiện sự trân trọng, mời góp ý nếu phù hợp.\n"
+        "- Cấu trúc: Chào hỏi ấm áp → Hỏi thăm về dịch vụ đã dùng → Cam kết chất lượng → Mời quay lại.\n"
+        "- Độ dài: 120-180 từ.\n"
+        "- Phong cách: Như tin nhắn cảm ơn từ quản lý cửa hàng, không phải khảo sát."
     ),
-    # ─── KÍCH HOẠT ────────────────────────────────────────────────────
-    # Phản ứng: khách vắng bóng → tạo sự tò mò + háo hức quay lại
     "kích_hoạt": (
-        "MỤC ĐÍCH: Khách đã rất lâu không quay lại (hoặc có dấu hiệu rời bỏ). "
-        "Email phải tạo sự tò mò mạnh, khiến khách MUỐN quay lại ngay.\n\n"
-        "GIỌNG VĂN: Hào hứng, niềm nở, như gặp lại người bạn cũ. "
-        "Giọng tự hào về những gì đã thay đổi — KHÔNG tội nghiệp, KHÔNG van nài.\n\n"
-        "CẤU TRÚC BẮT BUỘC (theo thứ tự):\n"
-        "  1. MỞ ĐẦU: Gọi tên khách bằng biến {{HoVaTen}}, nói thẳng «lâu rồi không gặp».\n"
-        "  2. BODY (PHẦN CHÍNH — viết dài, có chi tiết):\n"
-        "     a. Chia sẻ 1-2 điều MỚI/THÚ VỊ đã có từ lần cuối khách đến (dịch vụ mới, thầy mới, không gian mới).\n"
-        "     b. Mô tả cụ thể điều mới đó — thầy giỏi thế nào, chương trình học ra sao.\n"
-        "     c. Tạo tò mò bằng thật, không bịa — khách phải CÓ LÝ DO thật sự để quay lại.\n"
-        "  3. CTA HÀO HỨNG: Mời ghé thử ngay với lý do cụ thể.\n\n"
-        "ĐỘ DÀI: 250–350 từ tiếng Việt. Viết đủ dài để email có thịt, không phải một đoạn ngắn.\n\n"
-        "VÍ DỤ ĐÚNG: «Minh ơi, đã 3 tháng rồi không thấy mày! Bên mình là Trung tâm Anh ngữ, vừa nâng cấp toàn bộ "
-        "không gian học, thêm phòng máy lạnh mới, và mình vừa có thầy từ Mỹ về. Mày phải đến thử. "
-        "Cuối tuần này mình giữ chỗ cho mày nhé.»\n\n"
-        "VÍ DỤ SAI: «Kính gửi quý khách hàng thân mến, chúng tôi luôn đồng hành cùng quý vị.» "
-        "(không có tên, không có điều mới, không tạo tò mò)\n\n"
-        "QUY TẮC: Phải nói rõ điều gì ĐÃ THAY ĐỔI (cụ thể). Không dùng «giảm giá», «voucher». "
-        "Tạo tò mò bằng thật, không bịa. Tên thương hiệu phải xuất hiện tự nhiên.\n\n"
-        "QUY TẮC CHỐNG BỊA (BẮT BUỘC TUÂN THỦ):\n"
-        "✗ TUYỆT ĐỐI KHÔNG bịa tên dịch vụ, sản phẩm, thầy giáo, không gian, công nghệ không có trong HỒ SƠ THƯƠNG HIỆU.\n"
-        "✗ TUYỆT ĐỐI KHÔNG viết về ngành hình khác (VD: brand là trung tâm Anh ngữ → KHÔNG viết massage, spa, nha khoa…).\n"
-        "✗ TUYỆT ĐỐI KHÔNG viết chi tiết cụ thể nếu HỒ SƠ THƯƠNG HIỆU trống — hãy dùng câu chung mà không bịa.\n"
-        "✓ Nếu brand description trống: viết chào hỏi ấm áp + nhắc tên thương hiệu + CTA, KHÔNG bịa chi tiết.\n"
-        "✓ Chỉ dùng thông tin có trong HỒ SƠ THƯƠNG HIỆU."
+        "Mục đích: kích hoạt khách quay trở lại sau thời gian dài vắng bóng.\n"
+        "- Giọng văn: háo hứng như gặp lại người bạn cũ, có lý do thú vị để quay lại.\n"
+        "- Nội dung: Chia sẻ cập nhật mới (dịch vụ mới, không gian mới, chương trình mới), tạo sự tò mò.\n"
+        "- Cấu trúc: Chào hỏi niềm nở → Chia sẻ điều mới/món mới → Mời ghé thử ngay.\n"
+        "- Độ dài: 150-200 từ.\n"
+        "- Phong cách: Như lời mời riêng từ người bạn, không phải thư mời sự kiện."
     ),
-    # ─── KHÁCH MỚI ────────────────────────────────────────────────────
-    # Phản ứng: khách mới trải nghiệm → hướng dẫn + kết nối cảm xúc
     "khach_moi": (
-        "MỤC ĐÍCH: Khách mới trải nghiệm lần đầu. Email phải củng cố cảm xúc tích cực, "
-        "giúp khách cảm thấy đã chọn đúng chỗ, và khao khát quay lại sớm.\n\n"
-        "GIỌNG VĂN: Nồng ấm, chân thành, tràn đầy năng lượng tích cực. "
-        "Như lời cảm ơn từ người chủ cửa hàng tử tế — không phải email chào hàng.\n\n"
-        "CẤU TRÚC BẮT BUỘC (theo thứ tự):\n"
-        "  1. MỞ ĐẦU: Cảm ơn bằng tên khách ({{HoVaTen}}), nói rõ mình là thương hiệu nào, "
-        "dịch vụ khách vừa dùng là gì.\n"
-        "  2. BODY (PHẦN CHÍNH — viết dài, có chi tiết):\n"
-        "     a. Nói về trải nghiệm tích cực cụ thể dựa trên dịch vụ đã dùng.\n"
-        "     b. Gợi ý dịch vụ TIẾP THEO phù hợp — giải thích ngắn tại sao khách sẽ thích.\n"
-        "     c. Chia sẻ điều đặc biệt của thương hiệu (thầy giỏi, phương pháp hay…).\n"
-        "  3. CAM KẾT NHẸ: Đảm bảo chất lượng, mời gặp lại.\n\n"
-        "ĐỘ DÀI: 250–350 từ tiếng Việt. Viết đủ dài để email có thịt, không phải một đoạn ngắn.\n\n"
-        "VÍ DỤ ĐÚNG: «Anh Tuấn ơi, Trung tâm Anh ngữ cảm ơn anh đã thử lớp IELTS học thử bên mình! "
-        "Anh hài lòng với buổi học không? Thầy của bọn em đang dạy rất nhiệt tình, bọn em có thêm "
-        "tài liệu ôn tập mới mà anh có thể dùng miễn phí. Anh đừng ngại ghé lại nhé!»\n\n"
-        "VÍ DỤ SAI: «Cảm ơn bạn đã mua hàng. Chúng tôi hy vọng bạn hài lòng với sản phẩm.» "
-        "(không cá nhân hóa, không có CTA)\n\n"
-        "QUY TẮC: Cảm ơn bằng tên dịch vụ cụ thể đã dùng. Gợi dịch vụ TIẾP THEO phù hợp. "
-        "Không nói chung chung. Tên thương hiệu phải xuất hiện.\n\n"
-        "QUY TẮC CHỐNG BỊA (BẮT BUỘC TUÂN THỦ):\n"
-        "✗ TUYỆT ĐỐI KHÔNG bịa tên dịch vụ, sản phẩm, thầy giáo, không gian, công nghệ không có trong HỒ SƠ THƯƠNG HIỆU.\n"
-        "✗ TUYỆT ĐỐI KHÔNG viết về ngành hình khác (VD: brand là trung tâm Anh ngữ → KHÔNG viết massage, spa, nha khoa…).\n"
-        "✗ TUYỆT ĐỐI KHÔNG viết chi tiết cụ thể nếu HỒ SƠ THƯƠNG HIỆU trống — hãy dùng câu chung mà không bịa.\n"
-        "✓ Nếu brand description trống: viết chào hỏi ấm áp + nhắc tên thương hiệu + CTA, KHÔNG bịa chi tiết.\n"
-        "✓ Chỉ dùng thông tin có trong HỒ SƠ THƯƠNG HIỆU."
+        "Mục đích: chào đón khách hàng mới, cảm ơn đã tin tưởng.\n"
+        "- Giọng văn: nồng ấm, chân thành, tràn đầy năng lượng tích cực.\n"
+        "- Nội dung: Cảm ơn đã đến/lựa chọn, giới thiệu ngắn gọn điểm hấp dẫn nhất, mời quay lại.\n"
+        "- Cấu trúc: Chào mừng nồng ấm → Cảm ơn đã tin tưởng → Giới thiệu điểm đặc biệt → Kêu gọi quay lại.\n"
+        "- Độ dài: 100-150 từ.\n"
+        "- Phong cách: Như lời chào từ một người chủ cửa hàng tử tế, không phải email chào hàng."
     ),
 }
 
 
 async def _compose_single_email(
     customer: dict,
-    brand: Brand | None,
+    brand_context: str | None,
     purpose_instruction: str,
+    list_name: str,
     purpose_key: str = "nhac_nhe",
-    segment: str = "churn_risk",
+    segment: str = "potential",
 ) -> dict:
     """Soạn 1 email cho 1 khách, trả về dict có name/email/phone/subject/body."""
     name = (customer.get("name") or "").strip() or "khách"
@@ -1847,9 +1720,13 @@ async def _compose_single_email(
     phone = (customer.get("phone") or "").strip()
     variables: dict[str, str] = customer.get("variables") or {}
 
-    # brand_context dạng string để đưa vào prompt
-    brand_context: str | None = _format_brand_for_smart_contact(brand) if brand else None
-    brand_name_for_prompt: str = brand.brand_name.strip() if brand else ""
+    # Tạo brand context fallback nếu không có brand — để LLM luôn có thông tin thương hiệu
+    if not brand_context:
+        brand_context = (
+            f"Tên thương hiệu: {list_name}\n"
+            "Slogan / dòng phụ: (chưa cập nhật)\n"
+            "Giọng điệu (tone_of_voice): thân thiện\n"
+        )
 
     # Trích xuất thông tin liên hệ brand từ brand_context cho footer
     brand_contact_parts: list[str] = []
@@ -1864,56 +1741,58 @@ async def _compose_single_email(
             ):
                 brand_contact_parts.append(stripped)
 
-    # Segment context — key = giá trị segment từ frontend (churn_risk / potential / new / vip)
+    # Trích brand name từ brand_context
+    brand_name = name  # mặc định = tên khách (sai mục đích, fix sau)
+    for line in brand_context.splitlines():
+        low = line.strip().lower()
+        if low.startswith("tên thương hiệu:"):
+            brand_name = line.strip().removeprefix("Tên thương hiệu:").removeprefix("tên thương hiệu:").strip()
+            break
+
+    # Segment-specific context for the LLM
     segment_context: dict[str, str] = {
         "churn_risk": (
             "📌 Nhóm khách: CÓ KHẢ NĂNG RỜI BỎ — đã lâu không quay lại.\n"
-            "→ Phản ứng: gợi FOMO nhẹ + kỷ niệm tốt, tạo lý do thật sự để quay lại. "
-            "Không van nài, không gây áp lực."
+            "  → Email: nhẹ nhàng, gợi kỷ niệm tốt, tạo lý do hấp dẫn để quay lại. "
+            "Nhắc tên thương hiệu, dịch vụ đặc trưng đã dùng."
         ),
         "potential": (
-            "📌 Nhóm khách: TIỀM NĂNG — dùng dịch vụ 2+ lần, chi tiêu tốt, chưa phải VIP.\n"
-            "→ Phản ứng: thể hiện sự trân trọng, gợi dịch vụ khác phù hợp để nâng cấp trải nghiệm. "
-            "Nhắc tên thương hiệu tự nhiên."
+            "📌 Nhóm khách: TIỀM NĂNG — dùng dịch vụ 2+ lần, chi tiêu tốt.\n"
+            "  → Email: thể hiện sự trân trọng, gợi ý dịch vụ khác phù hợp, nhắc tên thương hiệu."
         ),
         "new": (
             "📌 Nhóm khách: KHÁCH MỚI — mới trải nghiệm lần đầu.\n"
-            "→ Phản ứng: nồng ấm cảm ơn, củng cố cảm xúc tích cực, gợi dịch vụ tiếp theo phù hợp. "
-            "Tạo cảm giác «đã chọn đúng chỗ»."
+            "  → Email: nồng ấm, cảm ơn, giới thiệu dịch vụ để quay lại sớm, nhắc tên thương hiệu."
         ),
         "vip": (
             "📌 Nhóm khách: VIP — chi tiêu cao, quay lại nhiều lần.\n"
-            "→ Phản ứng: trân trọng cao cấp, khiến khách cảm thấy đặc biệt, "
-            "chia sẻ ưu đãi/cập nhật đặc biệt dành riêng VIP."
+            "  → Email: trân trọng cao cấp, ưu đãi đặc biệt, nhắc tên thương hiệu."
         ),
     }
-    seg_context = segment_context.get(segment, segment_context["churn_risk"])
+    seg_context = segment_context.get(segment, segment_context["potential"])
 
     # Build per-customer data context
     data_lines: list[str] = []
 
     # Lấy thông tin brand từ brand_context để đưa vào user prompt
-    brand_name_for_prompt = ""
+    brand_name_for_prompt = brand_name
     brand_tagline_for_prompt = ""
     brand_products_for_prompt = ""
-    if brand_context:
-        for line in brand_context.splitlines():
-            low = line.strip().lower()
-            if low.startswith("tên thương hiệu:"):
-                brand_name_for_prompt = line.strip().removeprefix("Tên thương hiệu:").removeprefix("tên thương hiệu:").strip()
-            elif low.startswith("slogan"):
-                brand_tagline_for_prompt = line.strip().removeprefix("Slogan / dòng phụ:").removeprefix("slogan / dòng phụ:").strip()
-            elif low.startswith("dịch vụ / sản phẩm chính"):
-                brand_products_for_prompt = line.strip().removeprefix("Dịch vụ / sản phẩm chính (tham khảo khi viết):").strip()
+    brand_services_for_prompt = ""
+    for line in brand_context.splitlines():
+        low = line.strip().lower()
+        if low.startswith("tên thương hiệu:"):
+            brand_name_for_prompt = line.strip().removeprefix("Tên thương hiệu:").removeprefix("tên thương hiệu:").strip()
+        elif low.startswith("slogan"):
+            brand_tagline_for_prompt = line.strip().removeprefix("Slogan / dòng phụ:").removeprefix("slogan / dòng phụ:").strip()
+        elif low.startswith("dịch vụ / sản phẩm chính"):
+            brand_products_for_prompt = line.strip().removeprefix("Dịch vụ / sản phẩm chính (tham khảo khi viết):").strip()
 
-    # Chỉ thêm brand info khi có brand thật
-    if brand_name_for_prompt:
-        data_lines.append(f"→ VIẾT EMAIL TỪ THƯƠNG HIỆU: {brand_name_for_prompt}")
-        if brand_tagline_for_prompt:
-            data_lines.append(f"  Slogan: {brand_tagline_for_prompt}")
-        if brand_products_for_prompt:
-            data_lines.append(f"  Dịch vụ/sản phẩm chính: {brand_products_for_prompt}")
-        data_lines.append("")  # blank line separator
+    data_lines.append(f"→ VIẾT EMAIL CHO THƯƠNG HIỆU: {brand_name_for_prompt}")
+    if brand_tagline_for_prompt:
+        data_lines.append(f"  Slogan: {brand_tagline_for_prompt}")
+    if brand_products_for_prompt:
+        data_lines.append(f"  Dịch vụ/sản phẩm chính: {brand_products_for_prompt}")
 
     data_lines.append(f"- Khách: {name}")
     for k, v in variables.items():
@@ -1930,33 +1809,18 @@ async def _compose_single_email(
         data_lines.append(f"  - {k_label}: {v}")
     recipients_data = "\n".join(data_lines)
 
-    # Build user prompt
-    # brand_rules chỉ thêm khi có brand
-    brand_rules = ""
-    brand_intro_for_body = ""
-    if brand_name_for_prompt:
-        brand_rules = (
-            "\nQUY TẮC VIẾT BẮT BUỘC:\n"
-            f"1. NHẮC TÊN THƯƠNG HIỆU «{brand_name_for_prompt}» trong 2-3 chỗ trong nội dung email — "
-            f"ví dụ: «bên {brand_name_for_prompt}», «{brand_name_for_prompt} luôn chào đón bạn», "
-            f"«cửa hàng {brand_name_for_prompt}».\n"
-            "2. Nhắc dịch vụ/sản phẩm đặc trưng của thương hiệu (nếu có), KHÔNG bịa tên.\n"
-            "3. Viết như chính chủ cửa hàng viết tay — không chung chung, có cảm xúc thật.\n"
-            "4. Email gửi cho 1 khách hàng cụ thể — cá nhân hóa bằng tên khách và thông tin khách.\n"
-            "5. KHÔNG dùng cụm chung chung như «bên mình», «chúng tôi», «cửa hàng của tôi» — "
-            f"PHẢI thay bằng tên thương hiệu «{brand_name_for_prompt}».\n"
-            "6. KHÔNG thêm placeholder signature như [Your Name], [Shop Name].\n"
-        )
-        brand_intro_for_body = (
-            f"Bạn đang viết email chăm sóc khách cho thương hiệu: **{brand_name_for_prompt}**.\n"
-            "Nội dung email PHẢI nhắc tên thương hiệu này tự nhiên trong các câu.\n\n"
-        )
+    # Build user prompt — brand info phải ở ĐÂY (user prompt mạnh hơn system prompt)
     user_prompt = (
-        f"{brand_intro_for_body}"
         f"{purpose_instruction}\n\n"
         f"{seg_context}\n\n"
-        f"Thông tin khách hàng:\n{recipients_data}\n"
-        f"{brand_rules}"
+        f"Thông tin khách hàng:\n{recipients_data}\n\n"
+        "QUY TẮC BẮT BUỘC:\n"
+        f"1. VIẾT EMAIL TỪ THƯƠNG HIỆU «{brand_name_for_prompt}» — nhắc tên thương hiệu tự nhiên trong nội dung.\n"
+        "2. Nhắc dịch vụ/sản phẩm đặc trưng của thương hiệu (nếu có), KHÔNG bịa tên.\n"
+        "3. Viết như chính chủ cửa hàng viết tay — không chung chung.\n"
+        "4. Email gửi cho 1 khách hàng cụ thể — cá nhân hóa bằng tên khách và thông tin khách.\n"
+        "5. Không dùng từ cấm của thương hiệu (nếu có trong brand profile).\n"
+        "6. KHÔNG thêm placeholder signature như [Your Name], [Shop Name] — chỉ cần nội dung email thuần túy."
     )
 
     payload = SmartContactComposePayload(
@@ -1966,11 +1830,7 @@ async def _compose_single_email(
         brand_id=None,
     )
 
-    body = await _smart_contact_compose_text(
-        payload,
-        brand_context=brand_context,
-        brand_name_for_prompt=brand_name_for_prompt,
-    )
+    body = await _smart_contact_compose_text(payload, brand_context=brand_context)
 
     # Generate subject line based on segment and purpose
     purpose_subject = {
@@ -2078,13 +1938,15 @@ async def smart_contact_batch(
     if len(filtered) > 200:
         raise HTTPException(400, "Tối đa 200 khách mỗi lần soạn.")
 
-    # Resolve brand — lưu cả Brand row để truyền vào _compose_single_email
-    brand_row: Brand | None = None
+    # Resolve brand
+    brand_context: str | None = None
     if payload.brand_id:
         br_one = await db.execute(
             select(Brand).where(Brand.id == payload.brand_id, Brand.user_id == current_user.id)
         )
         brand_row = br_one.scalar_one_or_none()
+        if brand_row:
+            brand_context = _format_brand_for_smart_contact(brand_row)
     else:
         br_latest = await db.execute(
             select(Brand)
@@ -2092,8 +1954,9 @@ async def smart_contact_batch(
             .order_by(Brand.updated_at.desc())
             .limit(1)
         )
-        brand_row = br_latest.scalar_one_or_none()
-    brand_context: str | None = _format_brand_for_smart_contact(brand_row) if brand_row else None
+        brand_latest = br_latest.scalar_one_or_none()
+        if brand_latest:
+            brand_context = _format_brand_for_smart_contact(brand_latest)
 
     purpose_key = (payload.purpose or "nhac_nhe").strip().lower()
     if purpose_key not in OUTREACH_PURPOSE_INSTRUCTION:
@@ -2104,8 +1967,7 @@ async def smart_contact_batch(
     async def safe_compose(c: dict):
         try:
             return await _compose_single_email(
-                c, brand_row,
-                purpose_instruction,
+                c, brand_context, purpose_instruction, customer_list.list_name,
                 purpose_key=purpose_key, segment=seg
             )
         except Exception as exc:

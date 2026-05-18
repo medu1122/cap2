@@ -43,7 +43,7 @@ class CampaignCreate(BaseModel):
     def validate_source_customer_segment(cls, value: str | None) -> str | None:
         if value is None or value.strip() == "":
             return None
-        allowed = {"vip", "potential", "churn", "unknown"}
+        allowed = {"vip", "potential", "inactive", "unknown"}
         normalized = value.strip().lower()
         if normalized not in allowed:
             raise ValueError(f"Segment không hợp lệ: {value}")

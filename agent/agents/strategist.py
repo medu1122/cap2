@@ -41,13 +41,6 @@ Include one deliverable for each requested channel."""
 class StrategistAgent:
     async def run(self, campaign_id: str, brief: dict, brand_vault: dict) -> dict:
         brand_context = build_brand_context_block(brand_vault)
-
-        target_label = {
-            "existing": "khách cũ",
-            "new": "khách mới",
-            "all": "tất cả khách hàng",
-        }.get(brief.get("target_customer") or "", "tất cả khách hàng")
-
         user_prompt = USER_TEMPLATE.format(
             brand_context=brand_context,
             campaign_name=brief.get("campaign_name", ""),
@@ -57,7 +50,7 @@ class StrategistAgent:
             offer_or_hook=brief.get("offer_or_hook", ""),
             deadline=brief.get("deadline", ""),
             channels=", ".join(brief.get("channels", [])),
-            additional_notes=f"Nhắm đến: {target_label}\n{brief.get('additional_notes') or 'Không có'}",
+            additional_notes=brief.get("additional_notes") or "Không có",
         )
 
         raw, _ = await timed_agent_call(

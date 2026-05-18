@@ -844,6 +844,12 @@ export default function CustomerListsPage() {
   }, [hasRowErrors, rows.length]);
 
   useEffect(() => {
+    // Xóa cache cũ để buộc chạy phân tích mới sau khi fix logic backend
+    try {
+      localStorage.removeItem("customer-analysis-cache-v1");
+    } catch {
+      // ignore
+    }
     try {
       const raw = localStorage.getItem("customer-analysis-cache-v1");
       if (!raw) return;

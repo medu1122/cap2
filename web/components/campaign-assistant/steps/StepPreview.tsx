@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Clock, Users, Check, Link2, Plus, Trash2, Copy, CheckCircle2 } from "lucide-react";
+import { Loader2, Clock, Users, Check, ChevronDown, Link2, Plus, Trash2, Copy, CheckCircle2 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import type { SuggestionItem, BriefForm, UserPrefs, TrackingLinkInput } from "../CampaignAssistantModal";
 
@@ -24,6 +24,35 @@ const CHANNEL_OPTIONS = [
   { value: "video_script", label: "Kịch bản cho video", icon: "🎬" },
 ];
 
+const OBJECTIVE_OPTIONS: Record<string, { label: string; desc: string }[]> = {
+  retention: [
+    { label: "Giữ chân khách cũ", desc: "Tăng loyalty, giảm churn" },
+    { label: "Tăng tần suất mua lại", desc: "Khách mua nhiều hơn trong tháng" },
+    { label: "Khôi phục khách đã mất", desc: "Win-back khách 3-6 tháng không quay lại" },
+  ],
+  acquisition: [
+    { label: "Thu hút khách hàng mới", desc: "Mở rộng tệp khách" },
+    { label: "Tăng nhận diện thương hiệu", desc: "Nhiều người biết đến hơn" },
+  ],
+  awareness: [
+    { label: "Xây dựng uy tín", desc: "Trở thành thương hiệu đáng tin cậy" },
+    { label: "Tiếp cận thị trường mới", desc: "Mở rộng phạm vi khách hàng" },
+  ],
+  upsell: [
+    { label: "Tăng giá trị đơn hàng", desc: "Khách mua nhiều hơn mỗi lần" },
+    { label: "Upsell sản phẩm cao cấp", desc: "Chuyển khách lên gói/dịch vụ cao hơn" },
+  ],
+  seasonal: [
+    { label: "Khuyến mãi dịp lễ", desc: "Tận dụng dịp lễ sắp tới" },
+    { label: "Chiến dịch theo mùa", desc: "Phù hợp với thời điểm trong năm" },
+  ],
+  default: [
+    { label: "Tăng doanh số", desc: "Thúc đẩy mua hàng" },
+    { label: "Xây dựng thương hiệu", desc: "Nâng cao hình ảnh thương hiệu" },
+    { label: "Kết nối khách hàng", desc: "Tạo mối quan hệ với khách" },
+  ],
+};
+
 export default function StepPreview({
   suggestion,
   userPrefs,
@@ -39,18 +68,21 @@ export default function StepPreview({
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const [genDone, setGenDone] = useState(false);
+  const [showObjectivePicker, setShowObjectivePicker] = useState(false);
   const [showTrackingForm, setShowTrackingForm] = useState(false);
-  const [linkUrl, setLinkUrl] = useState("");
+  const [linkForm, setLinkForm] = useState({ name: "", destination_url: "" });
   const [linkError, setLinkError] = useState("");
-  const [createdLinks, setCreatedLinks] = useState<{ short_code: string; name: string; link_type: string }[]>([]);
+  const [createdLinks, setCreatedLinks] = useState<{ short_code: string; name: string }[]>([]);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [createdCampaignId, setCreatedCampaignId] = useState<string>("");
 
+  // Channels đã validated — chỉ gồm giá trị hợp lệ
   const validChannels = useMemo(
     () => (brief.channels || []).filter((c: string) => VALID_CHANNELS.includes(c)),
     [brief.channels]
   );
 
+  // Auto-generate brief when entering this step
   useEffect(() => {
     if (!suggestion || genDone || brief.title) return;
     generateBrief();
@@ -62,6 +94,7 @@ export default function StepPreview({
     setGenerating(true);
     setError("");
     try {
+      console.log("[StepPreview] Generating brief with:", { suggestion, userPrefs });
       const res = await api.post<BriefForm>("/campaign-ideas/generate-brief", {
         suggestion_id: suggestion.id,
         suggestion_title: suggestion.title,
@@ -75,6 +108,7 @@ export default function StepPreview({
         start_date: userPrefs.start_date,
         end_date: userPrefs.end_date,
       });
+      console.log("[StepPreview] Brief generated:", res);
       onBriefChange({
         ...res,
         timing: suggestion.timing || "",
@@ -82,6 +116,7 @@ export default function StepPreview({
       });
       setGenDone(true);
     } catch (err) {
+      console.error("[StepPreview] generateBrief error:", err);
       const msg = err instanceof Error ? err.message : "Không thể tạo. Vui lòng thử lại.";
       setError(msg);
       setGenDone(true);
@@ -100,6 +135,9 @@ export default function StepPreview({
     setCreating(true);
     setError("");
     try {
+      console.log("[StepPreview] Creating CampaignIdea + Campaign + Building content...", { userPrefs });
+
+      // Build deadline: use end_date if set, else default +30 days from today
       let deadline: string;
       if (userPrefs.end_date) {
         deadline = userPrefs.end_date;
@@ -109,8 +147,8 @@ export default function StepPreview({
         deadline = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       }
 
-      // 1. Tạo CampaignIdea
-      await api.post<{ id: string }>("/campaign-ideas", {
+      // 1. Create CampaignIdea record WITH brand_id for proper context
+      const ideaRes = await api.post<{ id: string }>("/campaign-ideas", {
         suggestion_id: suggestion.id,
         title: brief.title,
         objective: brief.objective,
@@ -120,15 +158,9 @@ export default function StepPreview({
         customer_segment: brief.customer_segment,
         brand_id: brandId,
       });
+      console.log("[StepPreview] CampaignIdea created:", ideaRes.id);
 
-      // 2. Tạo Campaign
-      const notes: string[] = [];
-      if (brief.image_required) {
-        notes.push("[IMAGE_REQUIRED] Người dùng yêu cầu hỗ trợ AI tạo ảnh đăng kèm cho chiến dịch.");
-      }
-      if (userPrefs.target_customer) {
-        notes.push(`[TARGET_CUSTOMER: ${userPrefs.target_customer}]`);
-      }
+      // 2. Create Campaign in DB — strip invalid channels to prevent 422
       const campaignPayload: Record<string, unknown> = {
         brand_id: brandId,
         campaign_name: brief.title,
@@ -136,29 +168,44 @@ export default function StepPreview({
         channels: validChannels,
         product_or_service: brief.hook,
         deadline,
-        additional_notes: notes.join("\n"),
+        additional_notes: brief.image_required
+          ? "[IMAGE_REQUIRED] Người dùng yêu cầu hỗ trợ AI tạo ảnh đăng kèm cho chiến dịch."
+          : "",
       };
       if (userPrefs.start_date) campaignPayload.start_date = userPrefs.start_date;
       const campaignRes = await api.post<{ id: string }>("/campaigns", campaignPayload);
       const campaignId = campaignRes.id;
+      console.log("[StepPreview] Campaign created:", campaignId);
       setCreatedCampaignId(campaignId);
 
-      // 3. Tạo tracking links (bulk — mỗi URL tạo email_click + facebook_post)
+      // 3. Tạo tracking links nếu user có bổ sung
       if (trackingLinks.length > 0) {
-        const destUrls = trackingLinks.map((l) => l.destination_url);
-        const bulkLinks = await api.post<
-          { short_code: string; name: string; link_type: string }[]
-        >(`/campaigns/${campaignId}/tracking-links/bulk`, { destination_urls: destUrls });
-        setCreatedLinks(bulkLinks.map((l) => ({ short_code: l.short_code, name: l.name, link_type: l.link_type })));
+        const created: { short_code: string; name: string }[] = [];
+        for (const link of trackingLinks) {
+          const createdLink = await api.post<{ short_code: string }>(`/campaigns/${campaignId}/tracking-links`, {
+            name: link.name,
+            destination_url: link.destination_url,
+          });
+          created.push({ short_code: createdLink.short_code, name: link.name });
+        }
+        setCreatedLinks(created);
+        console.log("[StepPreview] Tracking links created:", created);
       }
 
-      // 4. Chạy agent generate content
+      // 4. Run the agent dispatcher to generate content (same as manual flow)
+      // This ensures content_items are created properly with brand context
       await api.post(`/campaigns/${campaignId}/run`);
+      console.log("[StepPreview] Campaign agent started");
 
-      // 5. Redirect
-      onClose();
-      setTimeout(() => { router.push(`/campaigns/${campaignId}`); }, 300);
+      // 5. Close modal + redirect to campaign page
+      if (trackingLinks.length === 0) {
+        onClose();
+        setTimeout(() => {
+          router.push(`/campaigns/${campaignId}`);
+        }, 300);
+      }
     } catch (err) {
+      console.error("[StepPreview] create error:", err);
       const msg = err instanceof Error ? err.message : "Không thể tạo. Vui lòng thử lại.";
       setError(msg);
     } finally {
@@ -178,11 +225,17 @@ export default function StepPreview({
   }
 
   function addTrackingLink() {
-    if (!linkUrl.trim()) { setLinkError("Nhập URL đích"); return; }
-    if (!linkUrl.trim().startsWith("http")) { setLinkError("URL phải bắt đầu bằng http:// hoặc https://"); return; }
+    if (!linkForm.name.trim() || !linkForm.destination_url.trim()) {
+      setLinkError("Nhập đầy đủ tên và URL đích");
+      return;
+    }
+    if (!linkForm.destination_url.startsWith("http")) {
+      setLinkError("URL phải bắt đầu bằng http:// hoặc https://");
+      return;
+    }
     setLinkError("");
-    onTrackingLinksChange([...trackingLinks, { name: `Link ${trackingLinks.length + 1}`, destination_url: linkUrl.trim() }]);
-    setLinkUrl("");
+    onTrackingLinksChange([...trackingLinks, { name: linkForm.name.trim(), destination_url: linkForm.destination_url.trim() }]);
+    setLinkForm({ name: "", destination_url: "" });
   }
 
   function removeTrackingLink(index: number) {
@@ -196,13 +249,9 @@ export default function StepPreview({
     setTimeout(() => setCopiedCode(null), 1500);
   }
 
-  function linkTypeLabel(lt: string) {
-    if (lt === "email_click") return "Email";
-    if (lt === "facebook_post") return "Facebook";
-    return lt;
-  }
-
   if (!suggestion) return null;
+
+  const objectives = OBJECTIVE_OPTIONS[suggestion.category] || OBJECTIVE_OPTIONS["default"];
 
   // Đã tạo xong - hiển thị tracking links
   if (createdLinks.length > 0) {
@@ -221,12 +270,7 @@ export default function StepPreview({
             <div key={link.short_code} className="flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-xl">
               <Link2 size={14} className="text-green-600 shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900">
-                  {link.name}
-                  <span className="ml-2 text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
-                    {linkTypeLabel(link.link_type)}
-                  </span>
-                </p>
+                <p className="text-sm font-medium text-gray-900">{link.name}</p>
                 <p className="text-[10px] text-gray-500 font-mono">
                   {typeof window !== "undefined" ? window.location.origin : ""}/r/{link.short_code}
                 </p>
@@ -249,7 +293,9 @@ export default function StepPreview({
         <button
           onClick={() => {
             onClose();
-            setTimeout(() => { router.push(`/campaigns/${createdCampaignId}`); }, 300);
+            setTimeout(() => {
+              router.push(`/campaigns/${createdCampaignId}`);
+            }, 300);
           }}
           className="w-full btn-primary py-3"
         >
@@ -259,7 +305,7 @@ export default function StepPreview({
     );
   }
 
-  // Loading state
+  // Loading state - AI generating brief
   if (generating) {
     return (
       <div className="space-y-4 text-center py-12">
@@ -303,7 +349,7 @@ export default function StepPreview({
       <div className="border border-gray-200 rounded-xl p-4 bg-gray-50 space-y-4">
         <p className="text-sm font-medium text-gray-700">Tóm tắt chiến dịch</p>
 
-        {/* Tên chiến dịch */}
+        {/* Tên chiến dịch - có thể sửa */}
         <div>
           <label className="text-xs text-gray-500 block mb-1">Tên chiến dịch</label>
           <input
@@ -314,18 +360,43 @@ export default function StepPreview({
           />
         </div>
 
-        {/* Mục tiêu — text input */}
+        {/* Mục tiêu - dropdown có thể sửa */}
         <div>
           <label className="text-xs text-gray-500 block mb-1">Mục tiêu</label>
-          <input
-            className="input"
-            value={brief.objective}
-            onChange={(e) => updateBrief("objective", e.target.value)}
-            placeholder="VD: Giữ chân khách cũ, tăng doanh số..."
-          />
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowObjectivePicker(!showObjectivePicker)}
+              className="w-full input text-left flex items-center justify-between"
+            >
+              <span className={brief.objective ? "text-gray-900" : "text-gray-400"}>
+                {brief.objective || "Chọn mục tiêu..."}
+              </span>
+              <ChevronDown size={14} className="text-gray-400 shrink-0" />
+            </button>
+            {showObjectivePicker && (
+              <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                {objectives.map((opt) => (
+                  <button
+                    key={opt.label}
+                    onClick={() => {
+                      updateBrief("objective", opt.label);
+                      setShowObjectivePicker(false);
+                    }}
+                    className={`w-full text-left px-4 py-3 hover:bg-blue-50 transition-colors ${
+                      brief.objective === opt.label ? "bg-blue-50" : ""
+                    }`}
+                  >
+                    <p className="text-sm font-medium text-gray-900">{opt.label}</p>
+                    <p className="text-xs text-gray-500">{opt.desc}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Ưu đãi chính */}
+        {/* Ưu đãi chính - có thể sửa */}
         <div>
           <label className="text-xs text-gray-500 block mb-1">Ưu đãi chính</label>
           <input
@@ -336,7 +407,7 @@ export default function StepPreview({
           />
         </div>
 
-        {/* Kênh nội dung */}
+        {/* Kênh nội dung - tick chọn */}
         <div>
           <label className="text-xs text-gray-500 block mb-1">Kênh nội dung</label>
           <div className="flex flex-wrap gap-3 mt-1">
@@ -366,7 +437,7 @@ export default function StepPreview({
         </div>
 
         {/* Hỗ trợ AI tạo ảnh */}
-        <div className="border border-gray-200 rounded-xl p-4">
+        <div className="border border-gray-200 rounded-xl p-4 bg-gray-50">
           <label className="flex items-start gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -384,7 +455,7 @@ export default function StepPreview({
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      {/* Tracking links */}
+      {/* Tracking links opt-in */}
       <div className="border border-gray-200 rounded-xl p-4 bg-gray-50 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -401,9 +472,15 @@ export default function StepPreview({
             }`}
           >
             {showTrackingForm || trackingLinks.length > 0 ? (
-              <><CheckCircle2 size={12} /> Đã bổ sung {trackingLinks.length > 0 && `(${trackingLinks.length})`}</>
+              <>
+                <CheckCircle2 size={12} />
+                Đã bổ sung {trackingLinks.length > 0 && `(${trackingLinks.length})`}
+              </>
             ) : (
-              <><Plus size={12} /> Thêm link</>
+              <>
+                <Plus size={12} />
+                Thêm link
+              </>
             )}
           </button>
         </div>
@@ -411,14 +488,16 @@ export default function StepPreview({
         {showTrackingForm && (
           <div className="space-y-2">
             <p className="text-xs text-gray-500">
-              Hệ thống sẽ tự tạo link riêng cho Email và Facebook từ URL bạn nhập.
+              Tạo link trung gian để theo dõi clicks. Nếu không cần, bỏ qua phần này.
             </p>
 
+            {/* Existing links */}
             {trackingLinks.map((link, i) => (
               <div key={i} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-gray-200">
                 <Link2 size={12} className="text-[#377D73] shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-[11px] font-medium text-gray-800 truncate">{link.destination_url}</p>
+                  <p className="text-[11px] font-medium text-gray-800 truncate">{link.name}</p>
+                  <p className="text-[9px] text-gray-400 truncate">{link.destination_url}</p>
                 </div>
                 <button
                   type="button"
@@ -430,13 +509,21 @@ export default function StepPreview({
               </div>
             ))}
 
+            {/* Add new link form */}
             <div className="flex gap-2">
               <input
-                type="url"
-                value={linkUrl}
-                onChange={(e) => setLinkUrl(e.target.value)}
-                placeholder="https://yoursite.com"
+                type="text"
+                value={linkForm.name}
+                onChange={(e) => setLinkForm({ ...linkForm, name: e.target.value })}
+                placeholder="Tên link (VD: Đặt phòng)"
                 className="input text-[11px] flex-1"
+              />
+              <input
+                type="url"
+                value={linkForm.destination_url}
+                onChange={(e) => setLinkForm({ ...linkForm, destination_url: e.target.value })}
+                placeholder="https://captone2.site"
+                className="input text-[11px] flex-[2]"
               />
               <button
                 type="button"
@@ -458,9 +545,15 @@ export default function StepPreview({
         className="w-full btn-primary py-3 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
         {creating ? (
-          <><Loader2 size={16} className="animate-spin" /> Đang khởi tạo...</>
+          <>
+            <Loader2 size={16} className="animate-spin" />
+            Đang khởi tạo...
+          </>
         ) : (
-          <><Check size={16} /> Bắt đầu tạo chiến dịch</>
+          <>
+            Bắt đầu tạo chiến dịch
+            <Check size={16} />
+          </>
         )}
       </button>
     </div>
