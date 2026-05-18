@@ -38,6 +38,13 @@ interface CalendarItem {
   content_json: Record<string, string>;
 }
 
+interface CalendarCampaign {
+  id: string;
+  campaign_name: string;
+  start_date: string | null;
+  deadline: string;
+}
+
 interface SuggestDatesResponse {
   suggestions: { date: string; score: number; reasons: string[] }[];
   rules_summary: string;
@@ -267,6 +274,7 @@ export default function CalendarPage() {
   const [channelFilter, setChannelFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("approved");
   const [items, setItems] = useState<CalendarItem[]>([]);
+  const [calendarCampaigns, setCalendarCampaigns] = useState<CalendarCampaign[]>([]);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -310,10 +318,18 @@ export default function CalendarPage() {
     const params = new URLSearchParams({ month: monthStr });
     if (channelFilter !== "all") params.set("channel", channelFilter);
     if (statusFilter !== "all") params.set("status", statusFilter);
-    api.get<{ month: string; items: CalendarItem[] }>(`/calendar?${params.toString()}`)
-      .then((r) => setItems(r.items))
+    Promise.all([
+      api.get<{ month: string; items: CalendarItem[] }>(`/calendar?${params.toString()}`),
+      api.get<{ month: string; campaigns: CalendarCampaign[] }>(`/calendar/campaigns?month=${monthStr}`),
+    ])
+      .then(([r1, r2]) => {
+        setItems(r1.items);
+        setCalendarCampaigns(r2.campaigns);
+      })
       .finally(() => setLoading(false));
   }
+
+  // ── Load campaigns whenever month changes ──────────────────────────────
 
   useEffect(() => {
     loadCalendar();
@@ -389,21 +405,21 @@ export default function CalendarPage() {
     return meta;
   }, [items]);
 
-  // ── Unique campaigns in view (for timeline legend) ──────────────────────
+  // ── Unique campaigns in view (from campaigns API) ────────────────────────
   const visibleCampaigns = useMemo(() => {
     const seen = new Map<string, { name: string; start: Date | null; deadline: Date | null; colorIdx: number }>();
-    for (const item of items) {
-      if (!seen.has(item.campaign_id)) {
-        seen.set(item.campaign_id, {
-          name: item.campaign_name,
-          start: item.campaign_start_date ? parseISO(item.campaign_start_date) : null,
-          deadline: item.campaign_deadline ? parseISO(item.campaign_deadline) : null,
-          colorIdx: campaignColorMap[item.campaign_id] ?? 0,
+    for (const c of calendarCampaigns) {
+      if (!seen.has(c.id)) {
+        seen.set(c.id, {
+          name: c.campaign_name,
+          start: c.start_date ? parseISO(c.start_date) : null,
+          deadline: c.deadline ? parseISO(c.deadline) : null,
+          colorIdx: campaignColorMap[c.id] ?? seen.size,
         });
       }
     }
     return Array.from(seen.values());
-  }, [items, campaignColorMap]);
+  }, [calendarCampaigns, campaignColorMap]);
 
   // ── Calendar grid ─────────────────────────────────────────────────────
   const start = viewMode === "month"
@@ -643,25 +659,27 @@ export default function CalendarPage() {
                     >
                       {/* Campaign timeline bars */}
                       {bars.length > 0 && sameMonth && (
-                        <div className="absolute left-0 right-0 top-1 z-10 pointer-events-none flex flex-col gap-0.5 px-1">
+                        <div className="absolute left-0 right-0 top-1 z-10 pointer-events-none flex flex-col gap-1 px-0.5">
                           {bars.map((bar) => {
                             const color = getCampaignColor(bar.colorIdx);
                             return (
-                              <div key={bar.campaignId} className="relative h-1.5">
+                              <div
+                                key={bar.campaignId}
+                                className="h-2 w-full relative"
+                                title={`${bar.campaignId}`}
+                              >
                                 <div
-                                  className="absolute inset-y-0"
+                                  className="absolute inset-0"
                                   style={{
-                                    left: bar.isStart ? "4px" : "0",
-                                    right: bar.isEnd ? "4px" : "0",
                                     backgroundColor: color.bar,
-                                    opacity: 0.7,
+                                    opacity: 0.85,
                                     borderRadius: bar.isStart && bar.isEnd
                                       ? "9999px"
                                       : bar.isStart
-                                        ? "9999px 2px 2px 9999px"
+                                        ? "9999px 4px 4px 9999px"
                                         : bar.isEnd
-                                          ? "2px 9999px 9999px 2px"
-                                          : "2px",
+                                          ? "4px 9999px 9999px 4px"
+                                          : "0",
                                   }}
                                 />
                               </div>

@@ -105,6 +105,58 @@ async def get_calendar(
     return {"month": month, "items": items}
 
 
+@router.get("/campaigns")
+async def get_calendar_campaigns(
+    month: str = Query(..., description="Format: YYYY-MM"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Trả về tất cả campaigns đang hoạt động trong tháng (overlap với month range).
+    Dùng để hiển thị timeline bars trên calendar.
+    """
+    year, m = int(month.split("-")[0]), int(month.split("-")[1])
+    month_start = date(year, m, 1)
+    month_end = date(year, m, monthrange(year, m)[1])
+
+    # Lấy campaigns có start_date hoặc deadline trong tháng
+    # hoặc spanning across cả tháng
+    query = (
+        select(
+            Campaign.id,
+            Campaign.campaign_name,
+            Campaign.start_date,
+            Campaign.deadline,
+        )
+        .where(Campaign.user_id == current_user.id)
+        .where(
+            # Campaign bắt đầu trong tháng
+            (Campaign.start_date >= month_start) & (Campaign.start_date <= month_end)
+            |
+            # Deadline trong tháng
+            (Campaign.deadline >= month_start) & (Campaign.deadline <= month_end)
+            |
+            # Spanning across cả tháng
+            (Campaign.start_date <= month_start) & (Campaign.deadline >= month_end)
+        )
+        .order_by(Campaign.start_date)
+    )
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    campaigns = []
+    for cid, name, start, deadline in rows:
+        campaigns.append({
+            "id": str(cid),
+            "campaign_name": name,
+            "start_date": str(start) if start else None,
+            "deadline": str(deadline),
+        })
+
+    return {"month": month, "campaigns": campaigns}
+
+
 @router.get("/items/{item_id}/suggest-dates")
 async def suggest_dates_for_item(
     item_id: uuid.UUID,
